@@ -11,6 +11,7 @@ import { withLock } from '../state.js';
 import { ensureDir } from '../util/fs.js';
 import { info, next, ok, skip, warn } from '../util/output.js';
 import { findFreePort, isPortFree } from '../util/port.js';
+import { detectProxy, normalizeProxyUrl, redactProxy } from '../util/proxy.js';
 export async function setup(ctx, opts) {
     requireRootInVps(ctx);
     return withLock(ctx, async () => {
@@ -44,6 +45,18 @@ export async function setup(ctx, opts) {
             warn(L(`端口 ${config.port} 被其他程序占用，改用 ${free}`, `Port ${config.port} is taken by another program; using ${free}`));
             config.port = free;
         }
+        // 3.5 出站代理：后台服务拿不到终端的 HTTPS_PROXY，要写进引擎配置
+        if (opts.proxy !== undefined) {
+            config.proxy = opts.proxy === 'none' ? null : normalizeProxyUrl(opts.proxy);
+        }
+        else if (config.proxy === undefined) {
+            const found = await detectProxy(ctx.env, ctx.platform);
+            config.proxy = found?.url ?? null;
+            if (found)
+                ok(L(`检测到代理 ${redactProxy(found.url)}（来自 ${found.source}），引擎将通过它访问上游`, `Detected proxy ${redactProxy(found.url)} (from ${found.source}); the engine will reach upstreams through it`));
+        }
+        if (config.proxy)
+            skip(L(`出站代理：${redactProxy(config.proxy)}（改用 --proxy <地址> 或 --proxy none）`, `Outbound proxy: ${redactProxy(config.proxy)} (change with --proxy <url> or --proxy none)`));
         // 4. engine.yaml + 服务
         await saveAll(ctx, all);
         await applyEngineConfig(ctx, all);

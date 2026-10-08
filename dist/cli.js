@@ -36,6 +36,7 @@ const OPTIONS = {
     all: { type: 'boolean' },
     model: { type: 'string' },
     lines: { type: 'string' },
+    proxy: { type: 'string' },
 };
 function help() {
     const ups = UPSTREAMS.map((u) => u.id).join('|');
@@ -43,7 +44,8 @@ function help() {
 
 用法：dsh-model <命令> [选项]
 
-  setup [--port N] [--profile P]       一键安装：引擎、key、系统服务、接入 dsh（可重复执行）
+  setup [--port N] [--profile P] [--proxy URL|none]
+                                       一键安装：引擎、key、系统服务、接入 dsh（可重复执行）；自动检测代理
   login <${ups}> [--device] [--replace] [--accept-risk]
                                        登录上游订阅
   logout <上游>                         退出登录
@@ -66,7 +68,8 @@ function help() {
 
 Usage: dsh-model <command> [options]
 
-  setup [--port N] [--profile P]       One-step install: engine, key, service, dsh wiring (idempotent)
+  setup [--port N] [--profile P] [--proxy URL|none]
+                                       One-step install: engine, key, service, dsh wiring (idempotent); auto-detects proxy
   login <${ups}> [--device] [--replace] [--accept-risk]
                                        Log in to an upstream subscription
   logout <upstream>                    Log out
@@ -115,7 +118,7 @@ export async function main(argv) {
             throw new Error(L(`端口不合法：${o.port}`, `Invalid port: ${o.port}`));
         switch (cmd) {
             case 'setup':
-                return await setup(ctx, { port, profile: o.profile, force: o.force });
+                return await setup(ctx, { port, profile: o.profile, force: o.force, proxy: o.proxy });
             case 'login':
                 if (!a1)
                     throw new Error(L(`用法：dsh-model login <${UPSTREAMS.map((u) => u.id).join('|')}>`, `Usage: dsh-model login <${UPSTREAMS.map((u) => u.id).join('|')}>`));

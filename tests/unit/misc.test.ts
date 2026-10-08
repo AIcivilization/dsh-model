@@ -66,3 +66,18 @@ describe('misc', () => {
     expect(L('中', 'en')).toBe('中')
   })
 })
+
+describe('proxy', () => {
+  it('detects env proxy and writes requests.proxy-url', async () => {
+    const { detectProxy, normalizeProxyUrl } = await import('../../src/util/proxy.js')
+    expect(await detectProxy({ HTTPS_PROXY: 'http://127.0.0.1:1082/' }, 'linux')).toEqual({ url: 'http://127.0.0.1:1082', source: 'HTTPS_PROXY' })
+    expect(await detectProxy({}, 'linux')).toBeNull()
+    expect(() => normalizeProxyUrl('ftp://x')).toThrow()
+    const { ctx } = await tempCtx()
+    const keys: KeyStore = { keys: [] }
+    addKey(keys, 'dsh')
+    const doc = YAML.parse(renderEngineConfig(ctx, { ...defaultConfig(), proxy: 'http://127.0.0.1:1082' }, keys))
+    expect(doc.requests['proxy-url']).toBe('http://127.0.0.1:1082')
+    expect(YAML.parse(renderEngineConfig(ctx, { ...defaultConfig(), proxy: null }, keys)).requests).toBeUndefined()
+  })
+})

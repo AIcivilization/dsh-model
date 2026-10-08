@@ -14,6 +14,7 @@ import { serviceFor } from '../service/index.js'
 import { UPSTREAMS } from '../upstreams.js'
 import { exists, fileMode, readText, sha256 } from '../util/fs.js'
 import { dim, green, info, isJsonMode, printJson, red, table, yellow } from '../util/output.js'
+import { proxyReachable, redactProxy } from '../util/proxy.js'
 
 export async function status(ctx: Ctx): Promise<number> {
   const all = await loadAll(ctx)
@@ -33,6 +34,7 @@ export async function status(ctx: Ctx): Promise<number> {
     models: models.length,
     dsh: all.state.dsh ? { profile: all.state.dsh.profile, patchFile: all.state.dsh.patchFile, providerPresent: dshOk } : null,
     remote: all.config.remote.mode,
+    proxy: all.config.proxy ? redactProxy(all.config.proxy) : null,
     keys: all.keys.keys.filter((k) => !k.revokedAt).map((k) => k.name),
   }
   if (isJsonMode()) {
@@ -50,6 +52,7 @@ export async function status(ctx: Ctx): Promise<number> {
       [L('模型数', 'Models'), String(models.length)],
       ['dsh', data.dsh ? yes(dshOk, `${data.dsh.profile} ✓`, L(`${data.dsh.profile}：provider 不在了（dsh-model repair）`, `${data.dsh.profile}: provider missing (dsh-model repair)`)) : yellow(L('未接入', 'not connected'))],
       [L('远程访问', 'Remote'), all.config.remote.mode],
+      [L('出站代理', 'Proxy'), data.proxy ?? L('不使用', 'none')],
       ['Keys', data.keys.join(', ') || '-'],
     ]),
   )
@@ -93,6 +96,10 @@ export async function doctor(ctx: Ctx, opts: { e2e?: boolean; all?: boolean; mod
   if (!ctx.serviceDisabled) {
     const s = await serviceFor(ctx).status()
     add('service', s.running ? 'ok' : 'fail', `${serviceFor(ctx).kind}: ${s.detail ?? '-'}`)
+  }
+  if (all.config.proxy) {
+    const reach = await proxyReachable(all.config.proxy)
+    add('proxy', reach ? 'ok' : 'fail', reach ? L(`代理 ${redactProxy(all.config.proxy)} 可连接`, `Proxy ${redactProxy(all.config.proxy)} reachable`) : L(`代理 ${redactProxy(all.config.proxy)} 连不上（代理软件没开？dsh-model setup --proxy <地址>|none）`, `Proxy ${redactProxy(all.config.proxy)} unreachable (proxy app not running? dsh-model setup --proxy <url>|none)`))
   }
   const up = await healthy(all.config.port)
   add('healthz', up ? 'ok' : 'fail', `127.0.0.1:${all.config.port}`)

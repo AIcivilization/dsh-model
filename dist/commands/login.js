@@ -68,7 +68,8 @@ export async function login(ctx, upstream, opts) {
         }
         const cmd = ctx.runAs && ctx.isRoot ? 'sudo' : bin;
         const cmdArgs = ctx.runAs && ctx.isRoot ? ['-u', ctx.runAs, '-H', bin, ...args] : args;
-        const code = await runInherit(cmd, cmdArgs, { cwd: ctx.paths.home });
+        const env = { ...ctx.env, ...(all.config.proxy ? { HTTPS_PROXY: all.config.proxy, HTTP_PROXY: all.config.proxy } : {}) };
+        const code = await runInherit(cmd, all.config.proxy && cmd === 'sudo' ? ['--preserve-env=HTTPS_PROXY,HTTP_PROXY', ...cmdArgs] : cmdArgs, { cwd: ctx.paths.home, env });
         const after = filesFor(await listAuthFiles(ctx), def);
         if (code !== 0 || after.length === 0) {
             for (const f of existing)

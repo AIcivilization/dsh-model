@@ -22,6 +22,7 @@ export function renderEngineConfig(ctx, config, keys, port = config.port) {
         access: { 'api-keys': apiKeys },
         oauth: { 'auth-dir': ctx.paths.auth },
         routing: { strategy: 'fill-first' },
+        ...(config.proxy ? { requests: { 'proxy-url': config.proxy } } : {}),
         observability: { logs: { 'logging-to-file': true, 'logs-max-total-size-mb': 50, 'request-log': false } },
     };
     return `${HEADER}\n${YAML.stringify(doc)}`;

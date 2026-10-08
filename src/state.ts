@@ -19,6 +19,8 @@ export interface Config {
   dsh: { profile: string | null; providerId: string }
   upstreams: Record<string, { riskAcceptedAt?: string }>
   remote: { mode: RemoteMode; domain?: string }
+  /** 出站代理：undefined = 还没定（setup 自动检测），null = 明确不用 */
+  proxy?: string | null
 }
 
 export type ServiceKind = 'launchd' | 'systemd-user' | 'systemd-system'
