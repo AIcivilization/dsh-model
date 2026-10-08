@@ -74,7 +74,14 @@ export async function login(ctx, upstream, opts) {
         if (code !== 0 || after.length === 0) {
             for (const f of existing)
                 await rename(join(ctx.paths.replaced, f), join(ctx.paths.auth, f)).catch(() => { });
-            throw new DshModelError('login_failed', L(`${def.label} 登录没有完成（退出码 ${code}）`, `${def.label} login did not complete (exit code ${code})`));
+            // 引擎等授权回调超时（5 分钟）或被取消时也返回 0，所以按"没拿到凭据"来提示
+            const hint = def.deviceFlag && flag !== def.deviceFlag
+                ? L(`没收到授权回调。网页报错或超时多半是网络 / 代理节点问题：换个节点重试，或改用 device-code：dsh-model login ${def.id} --device`, `No authorization callback received. A web error or timeout is usually a network / proxy-node issue: retry on another node, or use device code: dsh-model login ${def.id} --device`)
+                : L('没收到授权结果，请重试；引擎日志：dsh-model logs', 'No authorization result; please retry. Engine log: dsh-model logs');
+            const message = code === 0
+                ? L(`${def.label} 登录没有完成（超时或已取消）`, `${def.label} login did not complete (timed out or cancelled)`)
+                : L(`${def.label} 登录失败（退出码 ${code}）`, `${def.label} login failed (exit code ${code})`);
+            throw new DshModelError('login_failed', message, hint);
         }
         await rm(ctx.paths.replaced, { recursive: true, force: true });
         await tightenAuthPerms(ctx);
