@@ -12,6 +12,7 @@ import { DshModelError } from '../errors.js'
 import { L } from '../i18n.js'
 import { dshKey, loadAll, saveAll, syncModels } from '../ops.js'
 import { withLock } from '../state.js'
+import { ensureEngine } from './setup.js'
 import { getUpstream, riskNotice } from '../upstreams.js'
 import { runInherit } from '../util/exec.js'
 import { exists } from '../util/fs.js'
@@ -43,7 +44,8 @@ export async function login(ctx: Ctx, upstream: string, opts: LoginOptions): Pro
     const all = await loadAll(ctx)
     const bin = currentBinary(ctx)
     if (!(await exists(bin)) || !(await exists(ctx.paths.engineYaml))) {
-      throw new DshModelError('not_setup', L('引擎还没安装', 'Engine not installed yet'), L('先执行 dsh-model setup', 'Run dsh-model setup first'))
+      info(L('首次使用订阅上游，先安装引擎…', 'First subscription login: installing the engine…'))
+      await ensureEngine(ctx, all)
     }
 
     if (def.requiresRiskAck) {

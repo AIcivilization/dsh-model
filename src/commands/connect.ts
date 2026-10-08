@@ -41,7 +41,7 @@ export async function disconnect(ctx: Ctx): Promise<number> {
       skip(L('没有接入过 dsh', 'Not connected to dsh'))
       return 0
     }
-    const r = await disconnectDsh(ctx, all.state, all.config.dsh.providerId)
+    const r = await disconnectDsh(ctx, all.state)
     await saveAll(ctx, all)
     const say = (what: string, how: string) =>
       how === 'restored'

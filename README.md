@@ -2,7 +2,7 @@
 
 [English](README.en.md) · 中文
 
-一条命令，把**你自己的** CLI 订阅（Codex 等）接进 dsh：装好引擎、接好线、默认带鉴权、能干净卸载。在 VPS 上可以和 [dsh-vps](https://github.com/AIcivilization/dsh-vps) 组合自部署。
+一条命令，把默认模型接进 dsh：**OpenCode Zen**（用你自己的 key）和 **WorkBuddy**（复用 WorkBuddy App 的登录）。也能接入你自己的 CLI 订阅（Codex 等）。全程默认鉴权，可干净卸载。在 VPS 上可以和 [dsh-vps](https://github.com/AIcivilization/dsh-vps) 组合自部署。
 
 对外暴露的是标准 OpenAI 兼容端点，你自己的编辑器、脚本也能用同一个地址。
 
@@ -13,11 +13,15 @@
 ```bash
 # 尚未发布到 npm，先从 GitHub 安装：
 npm install -g https://github.com/AIcivilization/dsh-model/archive/refs/heads/main.tar.gz
-dsh-model setup          # 下载并校验引擎、生成 key、注册服务、接入 dsh
-dsh-model login codex    # 登录订阅
+dsh-model setup          # 接入 OpenCode Zen（会提示输入 key）+ WorkBuddy 插件
 ```
 
-登录后打开 dsh，模型列表里就会出现 dsh-model 提供的模型。dsh 的配置会热加载，不需要重启。
+- **OpenCode Zen**：需要你的 API key（在 opencode.ai 免费注册）。setup 会先用一个免费模型实测，通过后才写入。key 存进 dsh 的凭据库，然后启用 dsh 内置的 `opencode` 路由。OpenCode 的免费档不能免 key 在第三方调用（官方会返回 403）。
+- **WorkBuddy**：检测到 WorkBuddy / WorkBuddy AI 桌面 App 时，通过 dsh 自己的插件管理安装 [dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)（锁定 0.7.1）。它复用 App 的登录，所以 App 要先登录好。
+
+装完打开 dsh，在模型列表里选 OpenCode Zen 或 WorkBuddy 下的模型即可。如果没出现，重启一次 dsh。
+
+**订阅上游（可选）**：执行 `dsh-model login codex` 等，第一次会自动安装引擎。
 
 ## 在 VPS 上（配合 dsh-vps）
 
@@ -43,8 +47,10 @@ sudo dsh-model remote enable --via ssh    # 可选：让你自己的其他设备
 
 | 命令 | 作用 |
 |---|---|
-| `setup` | 一键安装并接入 dsh（可重复执行） |
-| `login <上游>` / `logout <上游>` | 登录或退出订阅，完成后自动把模型同步到 dsh |
+| `setup` | 接入默认模型（OpenCode Zen + WorkBuddy），可重复执行；加 `--engine` 同时安装订阅引擎 |
+| `opencode [status\|key\|remove]` | 设置 / 更换 OpenCode Zen key，或移除（`--stdin` 从管道读 key） |
+| `workbuddy [status\|install\|remove]` | WorkBuddy 插件 |
+| `login <上游>` / `logout <上游>` | 登录或退出订阅（首次自动安装引擎），完成后自动把模型同步到 dsh |
 | `status` / `doctor [--e2e]` | 查看总览 / 逐项自检（`--e2e` 会实际测试流式输出和工具调用） |
 | `connect-dsh [--dry-run]` / `disconnect-dsh` | 写入或还原 dsh 配置 |
 | `models [sync]` | 列出模型 / 同步到 dsh |
@@ -52,7 +58,7 @@ sudo dsh-model remote enable --via ssh    # 可选：让你自己的其他设备
 | `remote enable --via ssh\|tailscale\|caddy` / `remote disable` | 远程访问 |
 | `engine version\|upgrade\|rollback` | 引擎版本：升级前先试运行，失败会自动回滚 |
 | `service ...` / `repair` / `logs` | 服务管理 / 按台账修复 / 查看日志 |
-| `uninstall [--keep-auth]` | 干净卸载：还原 dsh 配置，删除服务和所有文件 |
+| `uninstall [--keep-auth]` | 干净卸载：移除 dsh-model 装的插件，还原 dsh 配置（含 OpenCode 凭据），删除服务和所有文件 |
 
 所有命令都支持 `--lang zh|en`（默认跟随系统语言）和 `--json`。
 

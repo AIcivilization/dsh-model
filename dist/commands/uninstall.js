@@ -12,6 +12,7 @@ import { serviceFor } from '../service/index.js';
 import { exists, timestamp } from '../util/fs.js';
 import { fail, info, ok, warn } from '../util/output.js';
 import { disable as disableRemote } from './remote.js';
+import { removeWorkbuddy } from '../integrations/workbuddy.js';
 async function confirm(question) {
     if (!process.stdin.isTTY)
         return false;
@@ -32,7 +33,7 @@ export async function uninstall(ctx, opts) {
     const all = await loadAll(ctx);
     const authCount = (await listAuthFiles(ctx)).length;
     if (!opts.yes) {
-        info(L('将要：关闭远程访问 → 还原 dsh 配置 → 移除系统服务 → 删除 ' + ctx.paths.home, 'This will: disable remote access → restore dsh config → remove the service → delete ' + ctx.paths.home));
+        info(L('将要：关闭远程访问 → 移除 dsh-model 装的 dsh 插件 → 还原 dsh 配置（含 OpenCode 凭据） → 移除系统服务 → 删除 ' + ctx.paths.home, 'This will: disable remote access → remove dsh plugins installed by dsh-model → restore dsh config (incl. OpenCode credential) → remove the service → delete ' + ctx.paths.home));
         if (authCount && !opts.keepAuth)
             info(L(`其中包括 ${authCount} 个上游登录凭据（加 --keep-auth 可先备份出来）`, `including ${authCount} upstream login credentials (add --keep-auth to back them up first)`));
         if (!(await confirm(L('确认卸载？', 'Proceed with uninstall?')))) {
@@ -54,10 +55,14 @@ export async function uninstall(ctx, opts) {
         if (all.state.remote && all.state.remote.mode !== 'off')
             await disableRemote(ctx, all);
     });
+    await step('workbuddy', async () => {
+        if (await removeWorkbuddy(ctx, all))
+            ok(L('已移除 dsh-model 安装的 WorkBuddy 插件', 'Removed the WorkBuddy plugin installed by dsh-model'));
+    });
     await step('dsh', async () => {
         if (!all.state.dsh)
             return;
-        const r = await disconnectDsh(ctx, all.state, all.config.dsh.providerId);
+        const r = await disconnectDsh(ctx, all.state);
         ok(L(`dsh 配置已还原（patch：${r.patch}，凭据：${r.cred}）`, `dsh config restored (patch: ${r.patch}, credentials: ${r.cred})`));
     });
     await saveAll(ctx, all).catch(() => { });

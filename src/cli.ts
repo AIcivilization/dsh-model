@@ -11,6 +11,8 @@ import { repair, service } from './commands/service.js'
 import { setup } from './commands/setup.js'
 import { doctor, status } from './commands/status.js'
 import { uninstall } from './commands/uninstall.js'
+import { opencode } from './commands/opencode.js'
+import { workbuddy } from './commands/workbuddy.js'
 import { createContext } from './context.js'
 import { isDshModelError } from './errors.js'
 import { L, initLang } from './i18n.js'
@@ -39,6 +41,11 @@ const OPTIONS = {
   model: { type: 'string' },
   lines: { type: 'string' },
   proxy: { type: 'string' },
+  engine: { type: 'boolean' },
+  'skip-opencode': { type: 'boolean' },
+  'skip-workbuddy': { type: 'boolean' },
+  stdin: { type: 'boolean' },
+  'skip-verify': { type: 'boolean' },
 } as const
 
 function help(): string {
@@ -48,10 +55,13 @@ function help(): string {
 
 用法：dsh-model <命令> [选项]
 
-  setup [--port N] [--profile P] [--proxy URL|none]
-                                       一键安装：引擎、key、系统服务、接入 dsh（可重复执行）；自动检测代理
+  setup [--profile P] [--proxy URL|none] [--engine] [--skip-opencode] [--skip-workbuddy]
+                                       一键把默认模型接进 dsh：OpenCode Zen（你的 key）+ WorkBuddy（插件）；可重复执行
+  opencode [status|key|remove] [--stdin] [--skip-verify]
+                                       OpenCode Zen：设置 / 更换 key，或移除
+  workbuddy [status|install|remove]    WorkBuddy 插件（dsh-workbuddy-connect）
   login <${ups}> [--device] [--replace] [--accept-risk]
-                                       登录上游订阅
+                                       登录订阅上游（首次会自动安装引擎）
   logout <上游>                         退出登录
   status                               一屏总览
   doctor [--e2e] [--all] [--model M]   逐项自检；--e2e 实测流式与工具调用
@@ -73,10 +83,13 @@ function help(): string {
 
 Usage: dsh-model <command> [options]
 
-  setup [--port N] [--profile P] [--proxy URL|none]
-                                       One-step install: engine, key, service, dsh wiring (idempotent); auto-detects proxy
+  setup [--profile P] [--proxy URL|none] [--engine] [--skip-opencode] [--skip-workbuddy]
+                                       Wire the default models into dsh: OpenCode Zen (your key) + WorkBuddy (plugin); idempotent
+  opencode [status|key|remove] [--stdin] [--skip-verify]
+                                       OpenCode Zen: set / change the key, or remove
+  workbuddy [status|install|remove]    WorkBuddy plugin (dsh-workbuddy-connect)
   login <${ups}> [--device] [--replace] [--accept-risk]
-                                       Log in to an upstream subscription
+                                       Log in to a subscription upstream (installs the engine on first use)
   logout <upstream>                    Log out
   status                               Overview
   doctor [--e2e] [--all] [--model M]   Health checks; --e2e tests streaming and tool calls
@@ -124,7 +137,11 @@ export async function main(argv: string[]): Promise<number> {
     if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536)) throw new Error(L(`端口不合法：${o.port}`, `Invalid port: ${o.port}`))
     switch (cmd) {
       case 'setup':
-        return await setup(ctx, { port, profile: o.profile, force: o.force, proxy: o.proxy })
+        return await setup(ctx, { port, profile: o.profile, force: o.force, proxy: o.proxy, engine: o.engine, skipOpencode: o['skip-opencode'], skipWorkbuddy: o['skip-workbuddy'] })
+      case 'opencode':
+        return await opencode(ctx, a1, { stdin: o.stdin, skipVerify: o['skip-verify'] })
+      case 'workbuddy':
+        return await workbuddy(ctx, a1)
       case 'login':
         if (!a1) throw new Error(L(`用法：dsh-model login <${UPSTREAMS.map((u) => u.id).join('|')}>`, `Usage: dsh-model login <${UPSTREAMS.map((u) => u.id).join('|')}>`))
         return await login(ctx, a1, { device: o.device, replace: o.replace, acceptRisk: o['accept-risk'] })

@@ -37,7 +37,7 @@ export async function disconnect(ctx) {
             skip(L('没有接入过 dsh', 'Not connected to dsh'));
             return 0;
         }
-        const r = await disconnectDsh(ctx, all.state, all.config.dsh.providerId);
+        const r = await disconnectDsh(ctx, all.state);
         await saveAll(ctx, all);
         const say = (what, how) => how === 'restored'
             ? ok(L(`${what}：已逐字节还原`, `${what}: restored byte-for-byte`))

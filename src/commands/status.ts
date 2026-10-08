@@ -15,6 +15,33 @@ import { UPSTREAMS } from '../upstreams.js'
 import { exists, fileMode, readText, sha256 } from '../util/fs.js'
 import { dim, green, info, isJsonMode, printJson, red, table, yellow } from '../util/output.js'
 import { proxyReachable, redactProxy } from '../util/proxy.js'
+import { OPENCODE_PROVIDER, OPENCODE_REF, opencodeStatus, type OpencodeStatus } from '../integrations/opencode.js'
+import { WORKBUDDY_PLUGIN, detectWorkbuddyApps, workbuddyStatus, type WorkbuddyStatus } from '../integrations/workbuddy.js'
+import { currentBinary } from '../engine/install.js'
+
+async function safe<T>(p: Promise<T>): Promise<T | null> {
+  try {
+    return await p
+  } catch {
+    return null
+  }
+}
+
+function opencodeLabel(st: OpencodeStatus | null): string {
+  if (!st) return '-'
+  return {
+    ours: L('已启用', 'enabled'),
+    'user-configured': L('已启用（你自己配的）', 'enabled (yours)'),
+    'partial-user': L('配置不完整', 'incomplete'),
+    absent: L('未启用（dsh-model opencode key）', 'not enabled (dsh-model opencode key)'),
+  }[st.state]
+}
+
+function workbuddyLabel(st: WorkbuddyStatus | null, apps: string[]): string {
+  if (!apps.length) return L('没装 WorkBuddy App', 'WorkBuddy app not installed')
+  if (!st || st.state === 'absent') return L('插件未安装（dsh-model workbuddy install）', 'plugin not installed (dsh-model workbuddy install)')
+  return `${WORKBUDDY_PLUGIN}@${st.version}${st.state === 'user-installed' ? L('（你自己装的）', ' (yours)') : ''} · ${apps.join(', ')}`
+}
 
 export async function status(ctx: Ctx): Promise<number> {
   const all = await loadAll(ctx)
@@ -25,10 +52,16 @@ export async function status(ctx: Ctx): Promise<number> {
   const models = up && key ? await listModels(all.config.port, key).catch(() => [] as ModelEntry[]) : []
   const { byUpstream } = summarize(await listAuthFiles(ctx))
   const dshOk = await providerPresent(all.state, all.config.dsh.providerId).catch(() => false)
+  const engineInstalled = await exists(currentBinary(ctx))
+  const oc = await safe(opencodeStatus(ctx, all))
+  const wbApps = await detectWorkbuddyApps(ctx)
+  const wb = await safe(workbuddyStatus(ctx, all))
 
   const data = {
     mode: ctx.mode,
     home: ctx.paths.home,
+    opencode: oc?.state ?? null,
+    workbuddy: { apps: wbApps, plugin: wb },
     engine: { version, running: up, port: all.config.port, service: svc },
     upstreams: Object.fromEntries(UPSTREAMS.map((u) => [u.id, (byUpstream[u.id] ?? []).length])),
     models: models.length,
@@ -46,10 +79,16 @@ export async function status(ctx: Ctx): Promise<number> {
   info(
     table([
       [L('模式', 'Mode'), ctx.mode],
-      [L('引擎', 'Engine'), version ? `v${version}` : red(L('未安装', 'not installed'))],
-      [L('运行', 'Running'), yes(up, `127.0.0.1:${all.config.port}`, L('未运行', 'not running')) + (svc ? dim(`  (${svc.detail ?? '-'})`) : '')],
-      [L('已登录', 'Logged in'), logged.length ? logged.join(', ') : yellow(L('无（dsh-model login codex）', 'none (dsh-model login codex)'))],
-      [L('模型数', 'Models'), String(models.length)],
+      ['OpenCode Zen', oc?.state === 'ours' || oc?.state === 'user-configured' ? green(opencodeLabel(oc)) : yellow(opencodeLabel(oc))],
+      ['WorkBuddy', wb && wb.state !== 'absent' ? green(workbuddyLabel(wb, wbApps)) : yellow(workbuddyLabel(wb, wbApps))],
+      ...(engineInstalled
+        ? [
+            [L('订阅引擎', 'Engine'), version ? `v${version}` : red(L('未安装', 'not installed'))],
+            [L('运行', 'Running'), yes(up, `127.0.0.1:${all.config.port}`, L('未运行', 'not running')) + (svc ? dim(`  (${svc.detail ?? '-'})`) : '')],
+            [L('已登录', 'Logged in'), logged.length ? logged.join(', ') : yellow(L('无', 'none'))],
+            [L('订阅模型数', 'Engine models'), String(models.length)],
+          ]
+        : [[L('订阅引擎', 'Engine'), dim(L('未安装（login 时按需安装）', 'not installed (installed on first login)'))]]),
       ['dsh', data.dsh ? yes(dshOk, `${data.dsh.profile} ✓`, L(`${data.dsh.profile}：provider 不在了（dsh-model repair）`, `${data.dsh.profile}: provider missing (dsh-model repair)`)) : yellow(L('未接入', 'not connected'))],
       [L('远程访问', 'Remote'), all.config.remote.mode],
       [L('出站代理', 'Proxy'), data.proxy ?? L('不使用', 'none')],
@@ -90,10 +129,29 @@ export async function doctor(ctx: Ctx, opts: { e2e?: boolean; all?: boolean; mod
   add('single-account', multi.length ? 'warn' : 'ok', multi.length ? L(`同一上游有多个账号：${multi.map(([u]) => u).join(', ')}`, `Multiple accounts for: ${multi.map(([u]) => u).join(', ')}`) : L('每个上游最多一个账号', 'At most one account per upstream'))
   if (other.length) add('unknown-auth', 'warn', L(`不认识的凭据文件：${other.join(', ')}`, `Unrecognized credential files: ${other.join(', ')}`))
 
-  const version = await currentVersion(ctx)
-  add('engine', version ? (version === all.config.engine.version ? 'ok' : 'warn') : 'fail', version ? `v${version}` : L('未安装', 'not installed'))
+  // —— 默认模型 ——
+  const oc = await safe(opencodeStatus(ctx, all))
+  if (oc) {
+    const level: Level = oc.state === 'ours' || oc.state === 'user-configured' ? 'ok' : oc.state === 'partial-user' ? 'fail' : 'warn'
+    add('opencode', level, `OpenCode Zen: ${opencodeLabel(oc)}`)
+    if (oc.state === 'ours' && all.state.dsh) {
+      const refOk = readRef(await readText(all.state.dsh.credFile), OPENCODE_REF) !== undefined
+      const provOk = await providerPresent(all.state, OPENCODE_PROVIDER).catch(() => false)
+      if (!refOk || !provOk) add('opencode-wiring', 'fail', L(`dsh 里缺少 ${!refOk ? OPENCODE_REF : 'providers.opencode'}（dsh-model opencode key 重新设置）`, `dsh is missing ${!refOk ? OPENCODE_REF : 'providers.opencode'} (re-run dsh-model opencode key)`))
+    }
+  }
+  const wbApps = await detectWorkbuddyApps(ctx)
+  const wb = await safe(workbuddyStatus(ctx, all))
+  add('workbuddy', wbApps.length && wb?.state === 'absent' ? 'warn' : 'ok', `WorkBuddy: ${workbuddyLabel(wb, wbApps)}`)
 
-  if (!ctx.serviceDisabled) {
+  const engineInstalled = await exists(currentBinary(ctx))
+  if (!engineInstalled) {
+    add('engine', 'ok', L('订阅引擎未安装（login 时按需安装）', 'Subscription engine not installed (installed on first login)'))
+  }
+  const version = engineInstalled ? await currentVersion(ctx) : null
+  if (engineInstalled) add('engine', version ? (version === all.config.engine.version ? 'ok' : 'warn') : 'fail', version ? `v${version}` : L('未安装', 'not installed'))
+
+  if (engineInstalled && !ctx.serviceDisabled) {
     const s = await serviceFor(ctx).status()
     add('service', s.running ? 'ok' : 'fail', `${serviceFor(ctx).kind}: ${s.detail ?? '-'}`)
   }
@@ -101,8 +159,8 @@ export async function doctor(ctx: Ctx, opts: { e2e?: boolean; all?: boolean; mod
     const reach = await proxyReachable(all.config.proxy)
     add('proxy', reach ? 'ok' : 'fail', reach ? L(`代理 ${redactProxy(all.config.proxy)} 可连接`, `Proxy ${redactProxy(all.config.proxy)} reachable`) : L(`代理 ${redactProxy(all.config.proxy)} 连不上（代理软件没开？dsh-model setup --proxy <地址>|none）`, `Proxy ${redactProxy(all.config.proxy)} unreachable (proxy app not running? dsh-model setup --proxy <url>|none)`))
   }
-  const up = await healthy(all.config.port)
-  add('healthz', up ? 'ok' : 'fail', `127.0.0.1:${all.config.port}`)
+  const up = engineInstalled ? await healthy(all.config.port) : false
+  if (engineInstalled) add('healthz', up ? 'ok' : 'fail', `127.0.0.1:${all.config.port}`)
   if (up) {
     const code = await unauthStatus(all.config.port)
     add('auth-enforced', code === 401 ? 'ok' : 'fail', L(`不带 key 请求返回 ${code}`, `unauthenticated request → ${code}`))
@@ -120,17 +178,15 @@ export async function doctor(ctx: Ctx, opts: { e2e?: boolean; all?: boolean; mod
   if (all.state.dsh) {
     const d = all.state.dsh
     const present = await providerPresent(all.state, all.config.dsh.providerId).catch(() => false)
-    add('dsh-provider', present || !models.length ? 'ok' : 'fail', present ? L(`dsh（${d.profile}）里有 dsh-model`, `dsh-model present in dsh (${d.profile})`) : L('dsh 里没有 dsh-model（dsh-model repair）', 'dsh-model missing in dsh (dsh-model repair)'))
+    if (engineInstalled) add('dsh-provider', present || !models.length ? 'ok' : 'fail', present ? L(`dsh（${d.profile}）里有 dsh-model`, `dsh-model present in dsh (${d.profile})`) : L('dsh 里没有 dsh-model（dsh-model repair）', 'dsh-model missing in dsh (dsh-model repair)'))
     const credText = await readText(d.credFile)
-    add('dsh-key', readRef(credText) === key ? 'ok' : 'fail', readRef(credText) === key ? L(`${KEY_REF} 与 key 一致`, `${KEY_REF} matches`) : L(`${KEY_REF} 与 key 不一致（dsh-model repair）`, `${KEY_REF} does not match (dsh-model repair)`))
+    if (engineInstalled) add('dsh-key', readRef(credText) === key ? 'ok' : 'fail', readRef(credText) === key ? L(`${KEY_REF} 与 key 一致`, `${KEY_REF} matches`) : L(`${KEY_REF} 与 key 不一致（dsh-model repair）`, `${KEY_REF} does not match (dsh-model repair)`))
     const cm = await fileMode(d.credFile)
     if (cm != null) add('dsh-cred-perms', cm === 0o600 ? 'ok' : 'fail', L(`.credentials.yaml 权限 ${cm.toString(8)}（dsh 要求 600）`, `.credentials.yaml mode ${cm.toString(8)} (dsh requires 600)`))
     const patchText = await readText(d.patchFile)
     if (patchText != null && d.writtenPatchSha && sha256(patchText) !== d.writtenPatchSha) {
       add('dsh-patch-edited', 'ok', L('cordis.patch.yml 在接线后被修改过（卸载时只会移除 dsh-model 的部分）', 'cordis.patch.yml edited since connect (uninstall will remove only dsh-model parts)'))
     }
-  } else {
-    add('dsh-provider', 'warn', L('还没接入 dsh（dsh-model connect-dsh）', 'Not connected to dsh (dsh-model connect-dsh)'))
   }
   if (ctx.env[KEY_REF]) add('env-override', 'warn', L(`环境变量 ${KEY_REF} 会覆盖 dsh 凭据里的值`, `Env var ${KEY_REF} overrides the value in dsh credentials`))
   if (await exists('/etc/caddy/dsh-model.conf') && all.config.remote.mode !== 'caddy') add('caddy-orphan', 'warn', L('发现残留的 /etc/caddy/dsh-model.conf', 'Found leftover /etc/caddy/dsh-model.conf'))

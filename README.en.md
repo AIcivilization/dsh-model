@@ -2,7 +2,7 @@
 
 English · [中文](README.md)
 
-One command to wire **your own** CLI subscriptions (Codex and others) into dsh. It installs the engine, connects it to dsh, turns on auth by default, and uninstalls cleanly. On a VPS it pairs with [dsh-vps](https://github.com/AIcivilization/dsh-vps) for self-hosting.
+One command to wire the default models into dsh: **OpenCode Zen** (with your own key) and **WorkBuddy** (reusing the WorkBuddy app sign-in). It can also connect your own CLI subscriptions (Codex and others). Auth is on by default and it uninstalls cleanly. On a VPS it pairs with [dsh-vps](https://github.com/AIcivilization/dsh-vps) for self-hosting.
 
 It exposes a standard OpenAI-compatible endpoint, so your own editors and scripts can use the same address.
 
@@ -13,11 +13,15 @@ It exposes a standard OpenAI-compatible endpoint, so your own editors and script
 ```bash
 # Not on npm yet; install from GitHub:
 npm install -g https://github.com/AIcivilization/dsh-model/archive/refs/heads/main.tar.gz
-dsh-model setup          # download + verify engine, create key, register service, connect dsh
-dsh-model login codex    # log in to your subscription
+dsh-model setup          # OpenCode Zen (prompts for your key) + the WorkBuddy plugin
 ```
 
-Once you log in, open dsh and the dsh-model models appear in the model list. dsh hot-reloads its config, so there is no need to restart it.
+- **OpenCode Zen**: needs your API key (free sign-up at opencode.ai). setup first tests it against a free model and only writes it if the test passes. The key goes into dsh's credential store, and dsh's built-in `opencode` route is enabled. OpenCode's free tier cannot be used without a key from third-party tools (it returns 403).
+- **WorkBuddy**: when the WorkBuddy / WorkBuddy AI desktop app is found, [dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) (pinned to 0.7.1) is installed through dsh's own plugin manager. It reuses the app's sign-in, so sign in to the app first.
+
+Then open dsh and pick an OpenCode Zen or WorkBuddy model. If they do not show up, restart dsh once.
+
+**Subscription upstreams (optional)**: run `dsh-model login codex` and so on; the engine installs on first use.
 
 ## On a VPS (with dsh-vps)
 
@@ -43,8 +47,10 @@ You can log in to one account per upstream. To switch accounts, use `--replace`.
 
 | Command | Purpose |
 |---|---|
-| `setup` | One-step install and dsh wiring (safe to re-run) |
-| `login <up>` / `logout <up>` | Log in or out; models are then synced to dsh automatically |
+| `setup` | Wire the default models (OpenCode Zen + WorkBuddy), safe to re-run; add `--engine` to also install the subscription engine |
+| `opencode [status\|key\|remove]` | Set / change the OpenCode Zen key, or remove it (`--stdin` reads the key from a pipe) |
+| `workbuddy [status\|install\|remove]` | WorkBuddy plugin |
+| `login <up>` / `logout <up>` | Log in or out (installs the engine on first use); models are then synced to dsh automatically |
 | `status` / `doctor [--e2e]` | Overview / health checks (`--e2e` tests streaming and tool calls for real) |
 | `connect-dsh [--dry-run]` / `disconnect-dsh` | Write or restore dsh config |
 | `models [sync]` | List models / sync them to dsh |
@@ -52,7 +58,7 @@ You can log in to one account per upstream. To switch accounts, use `--replace`.
 | `remote enable --via ssh\|tailscale\|caddy` / `remote disable` | Remote access |
 | `engine version\|upgrade\|rollback` | Engine version: trial run before switching, automatic rollback on failure |
 | `service ...` / `repair` / `logs` | Service control / repair from the ledger / view logs |
-| `uninstall [--keep-auth]` | Clean uninstall: restore dsh config, remove the service and all files |
+| `uninstall [--keep-auth]` | Clean uninstall: remove plugins installed by dsh-model, restore dsh config (incl. the OpenCode credential), remove the service and all files |
 
 Every command accepts `--lang zh|en` (defaults to your system language) and `--json`.
 

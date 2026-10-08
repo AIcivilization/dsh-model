@@ -33,6 +33,20 @@
 
 ---
 
+## 1.3 默认模型（v2.1，2026-10-08）
+
+`setup` 默认只在 dsh 里接入两样东西，不安装订阅引擎：
+
+| 来源 | 做法 | 写入 dsh 的内容 |
+|---|---|---|
+| OpenCode Zen | 用户提供的 API key。先用一个免费模型发 1 token 请求实测，通过才写入。实测发现：无 key 和无效 key 都返回 403 FreeTierError，模型列表接口是公开的，验不了 key | `refs.OPENCODE_API_KEY` + `providers.opencode: {apiKeyEnv}`（启用 pi-ai 内置路由，不写 api/baseURL/models） |
+| WorkBuddy | 检测到 WorkBuddy / WorkBuddy AI 桌面 App 时，通过 `dsh plugin --profile <p> add dsh-workbuddy-connect@0.7.1` 安装。dsh 会自己做兼容检查并登记 bundle | profile 的 package.json 依赖与 `dsh.profile.bundles`（由 dsh 插件管理写入） |
+
+- 不选 dsh-connect-workbuddy：它带多账号池、自动换号签到，不符合单账号原则。
+- dsh 自带的 pnpm 11 会把被拦下的依赖构建脚本当成安装失败。涉及的 `@google/genai` preinstall 是 no-op，`protobufjs` postinstall 只打印版本提醒，所以安装时加 `--config.strict-dep-builds=false`：不执行这些脚本，也不判失败。安装失败时，回滚半装状态。
+- 已有的配置（用户自己配的 OpenCode、自己装的插件）一律不动，也不在卸载时移除。dsh-model 只移除台账里自己拥有的项（`state.dsh.ownedProviders/ownedRefs`、`state.plugins[].installedByUs`）。
+- 订阅引擎改为按需安装：第一次 `login` 时安装，或执行 `setup --engine`。
+
 ## 2. 架构
 
 ```

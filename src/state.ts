@@ -36,12 +36,24 @@ export interface DshState {
   patchExisted: boolean
   credExisted: boolean
   createdLlmEntry: boolean
+  /** dsh-model 拥有的 llm-pi-ai provider id 与凭据 ref 名（卸载时只摘这些） */
+  ownedProviders: string[]
+  ownedRefs: string[]
   writtenPatchSha: string | null
   writtenCredSha: string | null
   connectedAt: string
 }
 
+export interface PluginRecord {
+  name: string
+  version: string
+  /** 是 dsh-model 装的（卸载时才移除）；用户原本就装了的为 false */
+  installedByUs: boolean
+  installedAt: string
+}
+
 export interface State {
+  plugins?: PluginRecord[]
   service?: { kind: ServiceKind; file: string; label: string }
   dsh?: DshState
   remote?: {
@@ -84,7 +96,11 @@ export async function saveConfig(ctx: Ctx, config: Config): Promise<void> {
 
 export async function loadState(ctx: Ctx): Promise<State> {
   const stored = await readJson<Partial<State>>(ctx.paths.state)
-  return { ...stored, engine: { versions: [], ...stored?.engine } }
+  const state: State = { ...stored, engine: { versions: [], ...stored?.engine } }
+  // 0.1.0 的台账没有所有权字段：那时只会写 dsh-model 端点与 DSH_MODEL_API_KEY
+  if (state.dsh && !state.dsh.ownedProviders) state.dsh.ownedProviders = [PROVIDER_ID]
+  if (state.dsh && !state.dsh.ownedRefs) state.dsh.ownedRefs = ['DSH_MODEL_API_KEY']
+  return state
 }
 
 export async function saveState(ctx: Ctx, state: State): Promise<void> {

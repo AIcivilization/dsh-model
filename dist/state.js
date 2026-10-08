@@ -34,7 +34,13 @@ export async function saveConfig(ctx, config) {
 }
 export async function loadState(ctx) {
     const stored = await readJson(ctx.paths.state);
-    return { ...stored, engine: { versions: [], ...stored?.engine } };
+    const state = { ...stored, engine: { versions: [], ...stored?.engine } };
+    // 0.1.0 的台账没有所有权字段：那时只会写 dsh-model 端点与 DSH_MODEL_API_KEY
+    if (state.dsh && !state.dsh.ownedProviders)
+        state.dsh.ownedProviders = [PROVIDER_ID];
+    if (state.dsh && !state.dsh.ownedRefs)
+        state.dsh.ownedRefs = ['DSH_MODEL_API_KEY'];
+    return state;
 }
 export async function saveState(ctx, state) {
     await ensureHome(ctx);
