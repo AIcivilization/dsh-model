@@ -1,0 +1,15 @@
+# user comment at top
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      acme-gateway:
+        displayName: Acme
+        apiKeyEnv: ACME_API_KEY # keep this comment
+        api: openai-completions
+        baseURL: https://acme.example/v1
+        models:
+          - id: acme-1
+- id: ui-chat
+  config:
+    transcriptView: standard
