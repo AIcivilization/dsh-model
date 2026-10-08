@@ -1,0 +1,22 @@
+{
+  "name": "dsh-model",
+  "version": "0.0.1",
+  "description": "Use frontier models in dsh with no API key: wrap your CLI subscriptions (Codex, Claude Code, Grok, Muse) as a local OpenAI-compatible API. Powered by CLIProxyAPI.",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "free-model",
+    "no-api-key",
+    "model-provider",
+    "openai-compatible",
+    "cli-subscription"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AIcivilization/dsh-model.git"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
