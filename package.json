@@ -29,7 +29,7 @@
     "test": "vitest run",
     "test:contract": "vitest run tests/engine-contract",
     "pin-engine": "node scripts/pin-engine.mjs",
-    "prepare": "npm run build"
+    "prepack": "npm run build"
   },
   "repository": {
     "type": "git",
