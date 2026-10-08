@@ -1,6 +1,6 @@
 {
   "name": "dsh-model",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One-command setup to wire your own CLI subscriptions into dsh as an authenticated local OpenAI-compatible endpoint, with clean uninstall. Powered by CLIProxyAPI.",
   "keywords": [
     "dsh",
