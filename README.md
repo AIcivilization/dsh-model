@@ -11,7 +11,8 @@
 ## 快速开始
 
 ```bash
-npm install -g dsh-model
+# 尚未发布到 npm，先从 GitHub 安装：
+npm install -g https://github.com/AIcivilization/dsh-model/archive/refs/heads/main.tar.gz
 dsh-model setup          # 下载并校验引擎、生成 key、注册服务、接入 dsh
 dsh-model login codex    # 登录订阅
 ```

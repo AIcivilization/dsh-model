@@ -11,7 +11,8 @@ It exposes a standard OpenAI-compatible endpoint, so your own editors and script
 ## Quick start
 
 ```bash
-npm install -g dsh-model
+# Not on npm yet; install from GitHub:
+npm install -g https://github.com/AIcivilization/dsh-model/archive/refs/heads/main.tar.gz
 dsh-model setup          # download + verify engine, create key, register service, connect dsh
 dsh-model login codex    # log in to your subscription
 ```
