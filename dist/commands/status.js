@@ -1,6 +1,6 @@
 // commands/status.ts — status（一屏总览）与 doctor（逐项检查，--e2e 实测每个模型）
 import { join } from 'node:path';
-import { bridgeConfigPath, installedVariants, loadBridgeConfig, loadCatalogs } from '../bridge/runtime.js';
+import { availableVariants, bridgeConfigPath, loadBridgeConfig, loadCatalogs } from '../bridge/runtime.js';
 import { providerPresent } from '../dsh/connect.js';
 import { KEY_REF, readRef } from '../dsh/credentials.js';
 import { listAuthFiles, summarize } from '../engine/auth.js';
@@ -40,7 +40,7 @@ export async function status(ctx) {
     const bridgeCfg = await loadBridgeConfig(ctx.paths.home);
     const bridgeUp = bridgeCfg ? await bridgeHealthy(bridgeCfg.port, bridgeCfg.secret) : false;
     const cats = await loadCatalogs(ctx.paths.home);
-    const apps = await installedVariants();
+    const apps = await availableVariants(ctx.paths.home);
     const logged = UPSTREAMS.filter((u) => byUpstream[u.id]?.length).map((u) => u.id);
     const data = {
         mode: ctx.mode,
@@ -60,7 +60,7 @@ export async function status(ctx) {
     }
     const yes = (b, t, f) => (b ? green(t) : red(f));
     const wbLine = !apps.length
-        ? dim(L('没装 WorkBuddy App', 'WorkBuddy app not installed'))
+        ? dim(L('未登录（dsh-model workbuddy login）', 'not signed in (dsh-model workbuddy login)'))
         : !bridgeCfg
             ? yellow(L('未启用（dsh-model workbuddy enable）', 'not enabled (dsh-model workbuddy enable)'))
             : !bridgeUp
@@ -141,7 +141,7 @@ export async function doctor(ctx, opts) {
     const oc = await opencodeConfigured(ctx);
     const ocModels = models.filter((m) => m.id.startsWith('opencode/')).length;
     add('opencode', !oc ? 'warn' : up && !ocModels ? 'fail' : 'ok', !oc ? L('OpenCode Zen 未配置（dsh-model opencode key）', 'OpenCode Zen not configured (dsh-model opencode key)') : up && !ocModels ? L('已配置但引擎里没有 opencode/ 模型（dsh-model repair）', 'configured but no opencode/ models in the engine (dsh-model repair)') : L(`OpenCode Zen：${ocModels} 个模型`, `OpenCode Zen: ${ocModels} models`));
-    const apps = await installedVariants();
+    const apps = await availableVariants(ctx.paths.home);
     const bridgeCfg = await loadBridgeConfig(ctx.paths.home);
     if (apps.length) {
         if (!bridgeCfg)

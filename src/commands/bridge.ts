@@ -4,7 +4,7 @@
 // 目录（登录状态 / 模型）有变化就全量同步一次：重写 engine.yaml（引擎热重载）并把模型写进 dsh。
 
 import { createBridge } from '../bridge/server.js'
-import { buildRuntime, installedVariants, loadBridgeConfig, refreshCatalog, type Runtime } from '../bridge/runtime.js'
+import { availableVariants, buildRuntime, loadBridgeConfig, refreshCatalog, type Runtime } from '../bridge/runtime.js'
 import type { Ctx } from '../context.js'
 import { DshModelError, isDshModelError } from '../errors.js'
 import { L } from '../i18n.js'
@@ -45,7 +45,7 @@ async function status(ctx: Ctx): Promise<number> {
 async function run(ctx: Ctx): Promise<number> {
   const cfg = await loadBridgeConfig(ctx.paths.home)
   if (!cfg) throw new DshModelError('bridge_not_configured', L('bridge 未配置，先执行 dsh-model setup', 'bridge not configured; run dsh-model setup first'))
-  const runtimes: Runtime[] = (await installedVariants()).map(buildRuntime)
+  const runtimes: Runtime[] = (await availableVariants(ctx.paths.home)).map((v) => buildRuntime(v, ctx.paths.home))
   log(`bridge: products ${runtimes.map((r) => r.label).join(', ') || '(none)'}`)
 
   let retry: NodeJS.Timeout | undefined

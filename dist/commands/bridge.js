@@ -3,7 +3,7 @@
 // run：按本机装了的 WorkBuddy App 建 runtime → 读目录 → 起 HTTP 服务 → 每 30 分钟刷新；
 // 目录（登录状态 / 模型）有变化就全量同步一次：重写 engine.yaml（引擎热重载）并把模型写进 dsh。
 import { createBridge } from '../bridge/server.js';
-import { buildRuntime, installedVariants, loadBridgeConfig, refreshCatalog } from '../bridge/runtime.js';
+import { availableVariants, buildRuntime, loadBridgeConfig, refreshCatalog } from '../bridge/runtime.js';
 import { DshModelError, isDshModelError } from '../errors.js';
 import { L } from '../i18n.js';
 import { loadAll, syncAll } from '../ops.js';
@@ -44,7 +44,7 @@ async function run(ctx) {
     const cfg = await loadBridgeConfig(ctx.paths.home);
     if (!cfg)
         throw new DshModelError('bridge_not_configured', L('bridge 未配置，先执行 dsh-model setup', 'bridge not configured; run dsh-model setup first'));
-    const runtimes = (await installedVariants()).map(buildRuntime);
+    const runtimes = (await availableVariants(ctx.paths.home)).map((v) => buildRuntime(v, ctx.paths.home));
     log(`bridge: products ${runtimes.map((r) => r.label).join(', ') || '(none)'}`);
     let retry;
     const resync = async () => {

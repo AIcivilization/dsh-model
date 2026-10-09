@@ -18,7 +18,9 @@ setup does the following, in order, and is safe to re-run:
 
 1. **Unified endpoint**: downloads and verifies the engine (CLIProxyAPI, pinned), runs it on `127.0.0.1:8317/v1`, and requires a key.
 2. **OpenCode Zen**: prompts for your API key (free sign-up at opencode.ai), tests it against a free model, and saves it only if the test passes. Models are prefixed `opencode/`.
-3. **WorkBuddy**: when the WorkBuddy / WorkBuddy AI desktop app is found, starts dsh-model's own **bridge**, which reads the app's sign-in. Models are prefixed `workbuddy/` or `workbuddy-ai/`. Sign in to the app first.
+3. **WorkBuddy**: starts dsh-model's own **bridge**; models are prefixed `workbuddy/` or `workbuddy-ai/`. The account comes from one of two places:
+   - on a Mac with the WorkBuddy / WorkBuddy AI desktop app, it reuses the app's sign-in (sign in to the app first);
+   - on a server, or without the app, run `dsh-model workbuddy login` (add `ai` for the international product). It prints a link; open it in a browser on any device and approve. No browser is needed on the server.
 4. **dsh**: adds a single provider, `dsh-model`, that carries all of the models above.
 
 Other software uses `http://127.0.0.1:8317/v1` with a key from `dsh-model key add <name>`. Log in to subscription upstreams with `dsh-model login codex` and so on.
@@ -29,6 +31,7 @@ Other software uses `http://127.0.0.1:8317/v1` with a key from `dsh-model key ad
 |---|---|
 | `setup` | Install the unified endpoint and connect OpenCode Zen, WorkBuddy and dsh (safe to re-run) |
 | `opencode [status\|key\|remove]` | Set / change the OpenCode Zen key, or remove it (`--stdin` reads the key from a pipe) |
+| `workbuddy login [cn\|ai]` / `logout` | Sign in to WorkBuddy through dsh-model itself (prints a link to approve in any browser; works on servers) |
 | `workbuddy [status\|enable\|refresh\|disable]` | WorkBuddy bridge. Run `refresh` after switching accounts or signing in again in the app |
 | `login <up>` / `logout <up>` | Subscription upstreams (codex, kimi, xai, meta; claude and antigravity need `--accept-risk`) |
 | `status` / `doctor [--e2e]` | Overview / health checks (`--e2e` tests streaming and tool calls for one model per group) |
@@ -59,7 +62,7 @@ See the [design doc](docs/DESIGN.md) (in Chinese).
 
 ## Notes
 
-- WorkBuddy: the bridge reads and decrypts the WorkBuddy app's locally stored sign-in and calls its API as the WorkBuddy client. This may conflict with its terms and puts the account at risk; it may break when WorkBuddy changes its encryption. Refreshed tokens are kept only in dsh-model's own copy; the app's files are never rewritten. macOS only for now; Linux servers (CodeBuddy Code CLI) are still to be tested.
+- WorkBuddy: the bridge reads and decrypts the WorkBuddy app's locally stored sign-in and calls its API as the WorkBuddy client. This may conflict with its terms and puts the account at risk; it may break when WorkBuddy changes its encryption. Refreshed tokens are kept only in dsh-model's own copy; the app's files are never rewritten. On Linux servers use `dsh-model workbuddy login`.
 - OpenCode Zen: whether the free tier works from third-party tools depends on what your key's test shows.
 - Using subscription credentials outside the official clients may conflict with some providers' terms.
 - macOS and Linux, Node ≥ 20.

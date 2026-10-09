@@ -75,6 +75,23 @@ export async function installedVariants(): Promise<WorkBuddyVariant[]> {
   return out
 }
 
+/**
+ * bridge 要服务的产品：装了桌面 App 的（macOS），或用 dsh-model workbuddy login 登录过的（任何平台，含 VPS）。
+ */
+export async function availableVariants(home: string): Promise<WorkBuddyVariant[]> {
+  const apps = await installedVariants()
+  const out = [...apps]
+  for (const v of WORKBUDDY_VARIANTS) {
+    if (!out.includes(v) && (await exists(join(bridgeDir(home), v.ownFilename)))) out.push(v)
+  }
+  return out
+}
+
+/** 这个产品有没有 dsh-model 自己登录的那份令牌 */
+export async function hasOwnLogin(home: string, variant: WorkBuddyVariant): Promise<boolean> {
+  return exists(join(bridgeDir(home), variant.ownFilename))
+}
+
 export async function loadCatalogs(home: string): Promise<CatalogFile[]> {
   const out: CatalogFile[] = []
   for (const { key } of Object.values(VARIANT_KEYS)) {
@@ -92,11 +109,18 @@ export interface Runtime extends VariantRuntime {
   wbStore: WorkBuddyCredentialStore
 }
 
-export function buildRuntime(variant: WorkBuddyVariant): Runtime {
+export function buildRuntime(variant: WorkBuddyVariant, home: string): Runtime {
   const ids = VARIANT_KEYS[variant.id] ?? { key: variant.id, prefix: variant.id }
   const client = new WorkBuddyUpstreamClient()
   // 密钥提供器要带 macOS 的 App 发现（mdfind / 默认路径），否则不会去找 WorkBuddy 自带的 Electron（实测）
-  const store = new WorkBuddyCredentialStore({ variant, keyProvider: atRestKeyProviderFor(variant), refresh: (credential) => client.refreshToken(credential) })
+  const store = new WorkBuddyCredentialStore({
+    variant,
+    keyProvider: atRestKeyProviderFor(variant),
+    refresh: (credential) => client.refreshToken(credential),
+    ownPath: join(bridgeDir(home), variant.ownFilename),
+    // 非 macOS 没有可解密的桌面凭据（CodeBuddy CLI 在 Linux 上也加密存储，密钥来源未知）：只用 dsh-model 自己登录的那份
+    ...(process.platform === 'darwin' ? {} : { desktopPath: join(bridgeDir(home), '.no-desktop-credential') }),
+  })
   const catalog = new WorkBuddyCatalog(variant.id === 'workbuddy-ai' ? FALLBACK_WORKBUDDY_AI_MODELS : FALLBACK_WORKBUDDY_MODELS)
   // 没登录时不对外报模型：报了也只会失败
   catalog.setVisible(false)

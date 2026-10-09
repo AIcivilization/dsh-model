@@ -56,8 +56,8 @@ function help() {
                                        一键安装统一端点，接入 OpenCode Zen（你的 key）与 WorkBuddy（自有 bridge），并接进 dsh；可重复执行
   opencode [status|key|remove] [--stdin] [--skip-verify]
                                        OpenCode Zen：设置 / 更换 key，或移除
-  workbuddy [status|enable|refresh|disable]
-                                       WorkBuddy（bridge 读 WorkBuddy App 登录态）
+  workbuddy [status|login [cn|ai]|logout [cn|ai]|enable|refresh|disable]
+                                       WorkBuddy：桌面 App 登录态，或 login 打印链接、在任意浏览器授权（服务器可用）
   login <${ups}> [--device] [--replace] [--accept-risk]
                                        登录订阅上游（首次会自动安装引擎）
   logout <上游>                         退出登录
@@ -84,8 +84,8 @@ Usage: dsh-model <command> [options]
                                        Install the unified endpoint, connect OpenCode Zen (your key) and WorkBuddy (own bridge), wire into dsh; idempotent
   opencode [status|key|remove] [--stdin] [--skip-verify]
                                        OpenCode Zen: set / change the key, or remove
-  workbuddy [status|enable|refresh|disable]
-                                       WorkBuddy (bridge reads the WorkBuddy app sign-in)
+  workbuddy [status|login [cn|ai]|logout [cn|ai]|enable|refresh|disable]
+                                       WorkBuddy: desktop app sign-in, or login prints a link to approve in any browser (works on servers)
   login <${ups}> [--device] [--replace] [--accept-risk]
                                        Log in to a subscription upstream (installs the engine on first use)
   logout <upstream>                    Log out
@@ -138,7 +138,7 @@ export async function main(argv) {
             case 'opencode':
                 return await opencode(ctx, a1, { stdin: o.stdin, skipVerify: o['skip-verify'] });
             case 'workbuddy':
-                return await workbuddy(ctx, a1);
+                return await workbuddy(ctx, a1, a2);
             case 'bridge':
                 return await bridge(ctx, a1);
             case 'login':

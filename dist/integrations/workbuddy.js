@@ -4,7 +4,7 @@
 // v0.2.0 曾经通过 dsh 的插件管理装 dsh-workbuddy-connect：removeWorkbuddyPlugin 负责把 dsh-model 装的那份移除。
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { BRIDGE_DEFAULT_PORT, ensureBridgeConfig, installedVariants, loadBridgeConfig, loadCatalogs } from '../bridge/runtime.js';
+import { BRIDGE_DEFAULT_PORT, availableVariants, ensureBridgeConfig, loadBridgeConfig, loadCatalogs } from '../bridge/runtime.js';
 import { dshPlugin, profileHasDependency } from '../dsh/cli.js';
 import { resolveProfile } from '../dsh/locate.js';
 import { DshModelError } from '../errors.js';
@@ -38,9 +38,11 @@ async function waitCatalogs(ctx, since, expected, timeoutMs = 45_000) {
 }
 /** 检测 App → 首次打印说明 → bridge 配置与服务 → 等目录。返回目录（调用方随后 syncAll） */
 export async function enableWorkbuddy(ctx, all) {
-    const variants = await installedVariants();
+    const variants = await availableVariants(ctx.paths.home);
     if (!variants.length) {
-        skip(ctx.mode === 'vps' ? L('VPS 上没有 WorkBuddy 桌面 App，跳过', 'No WorkBuddy desktop app on a VPS; skipped') : L('没检测到 WorkBuddy 桌面 App，跳过（装好并登录后重新执行 setup）', 'WorkBuddy desktop app not found; skipped (install and sign in, then re-run setup)'));
+        skip(ctx.platform === 'darwin'
+            ? L('没检测到 WorkBuddy 桌面 App，也没有用 dsh-model 登录过；可执行 dsh-model workbuddy login', 'No WorkBuddy desktop app and no dsh-model sign-in; run dsh-model workbuddy login')
+            : L('服务器上没有 WorkBuddy 桌面 App：执行 dsh-model workbuddy login，在任意浏览器里授权即可', 'No WorkBuddy desktop app on this server: run dsh-model workbuddy login and approve in any browser'));
         return [];
     }
     if (!all.config.bridge?.riskNoticeAt) {
