@@ -24,6 +24,8 @@ export interface SourceDef {
   risky?: boolean
   /** 没有订阅时给用户的开通页面 */
   subscribeUrl?: string
+  /** 引擎自带的 device code 登录参数：用它就不经过 127.0.0.1 回调（管理接口只给回调式） */
+  deviceCliFlag?: string
   /** 查不了用量的来源，登录后用这个模型实测一次能不能调（不写就用它的第一个模型） */
   probeModel?: string
   /** 费用：免费 / 免费但额度很少 / 要付费订阅或充值（2026-10 核实，见设计 §14.7） */
@@ -39,7 +41,7 @@ export interface Pricing {
 export const SOURCES: SourceDef[] = [
   { id: 'workbuddy', label: 'WorkBuddy', kind: 'workbuddy', login: 'link', variant: 'workbuddy', pricing: { tier: 'free', zh: '账号自带免费积分（剩余见用量）', en: 'Free credits on the account (see usage)' } },
   { id: 'workbuddy-ai', label: 'WorkBuddy AI', kind: 'workbuddy', login: 'link', variant: 'workbuddy-ai', pricing: { tier: 'free', zh: '账号自带免费积分（剩余见用量）', en: 'Free credits on the account (see usage)' } },
-  { id: 'codex', label: 'Codex (ChatGPT)', kind: 'engine', login: 'paste', engineProvider: 'codex', filePrefix: 'codex-', subscribeUrl: 'https://chatgpt.com/pricing', pricing: { tier: 'paid', zh: '需要 ChatGPT Plus / Pro 订阅', en: 'Needs a ChatGPT Plus / Pro subscription' } },
+  { id: 'codex', label: 'Codex (ChatGPT)', kind: 'engine', login: 'device', deviceCliFlag: '-codex-device-login', engineProvider: 'codex', filePrefix: 'codex-', subscribeUrl: 'https://chatgpt.com/pricing', pricing: { tier: 'paid', zh: '需要 ChatGPT Plus / Pro 订阅', en: 'Needs a ChatGPT Plus / Pro subscription' } },
   { id: 'claude', label: 'Claude', kind: 'engine', login: 'paste', engineProvider: 'claude', filePrefix: 'claude-', riskAck: true, risky: true, subscribeUrl: 'https://claude.com/pricing', pricing: { tier: 'paid', zh: '需要 Claude Pro / Max 订阅', en: 'Needs a Claude Pro / Max subscription' } },
   { id: 'kimi', label: 'Kimi', kind: 'engine', login: 'device', engineProvider: 'kimi', filePrefix: 'kimi-', subscribeUrl: 'https://www.kimi.com/code/#pricing', pricing: { tier: 'paid', zh: '需要 Kimi Code 套餐（普通 Kimi 账号调用会被拒）', en: 'Needs a Kimi Code plan (a regular Kimi account is refused)' } },
   { id: 'xai', label: 'Grok (xAI)', kind: 'engine', login: 'device', engineProvider: 'xai', filePrefix: 'xai-', subscribeUrl: 'https://grok.com/plans', pricing: { tier: 'paid', zh: '需要 SuperGrok 或 X Premium+ 订阅', en: 'Needs SuperGrok or X Premium+' } },

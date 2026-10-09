@@ -418,8 +418,9 @@ dsh-model/
 | 来源 | 登录方式 | 用户要做的 |
 |---|---|---|
 | WorkBuddy / WorkBuddy AI | 自己的登录流程：链接 + 轮询（已实现） | 打开链接，授权 |
-| Codex、Kimi、Grok（xAI）、Muse（Meta） | 引擎管理接口 `oauth/auth-url` 返回链接和 `user_code`，轮询 `oauth/status` | 打开链接，输码，授权 |
-| Claude、Antigravity、Devin | 同上，但授权后浏览器会跳到一个本机回调地址 | 把那个打不开的地址粘贴回页面，由 `POST oauth/callback` 提交 |
+| Kimi、Grok（xAI）、Muse（Meta） | 引擎管理接口 `oauth/auth-url` 返回链接和 `user_code`，轮询 `oauth/status` | 打开链接，输码，授权 |
+| Codex | 管理接口只给回调式，所以改由守护进程运行引擎自带的 `-codex-device-login -no-browser`，解析它打印的网址和码，进程退出 0 即登录成功 | 打开链接，输码，授权（不经过 127.0.0.1） |
+| Claude、Antigravity、Devin | 同上，但授权后浏览器会跳到一个本机回调地址（`localhost:54545`、`localhost:51121`、`127.0.0.1:8317`）。这个地址登记在服务商那边，换成网址会被拒，这几家也没有 device code | 把那个打不开的地址带回页面（「从剪贴板粘贴」一键提交），由 `POST oauth/callback` 提交 |
 | OpenCode Zen | 只能用 key | 粘贴 key，写入前实测 |
 
 开关的含义：

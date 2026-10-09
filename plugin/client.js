@@ -242,10 +242,24 @@ window.__ModuleLoader__.load({
         const t = setTimeout(tick, 2000)
         return () => { stop = true; clearTimeout(t) }
       }, [session.id])
-      const submit = async () => {
-        if (!paste.trim()) return
+      const submit = async (value) => {
+        const v = String(value ?? paste).trim()
+        if (!v) return
+        if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/.*[?&]code=/i.test(v)) {
+          setMsg(L('这不像授权后的跳转地址：应以 http://localhost 或 http://127.0.0.1 开头，并带 code=', 'This does not look like the redirect address: it should start with http://localhost or http://127.0.0.1 and contain code='))
+          return
+        }
         setMsg(L('已提交，等待确认…', 'Submitted, waiting…'))
-        try { await api('POST', `/login/${encodeURIComponent(session.id)}/callback`, { redirectUrl: paste.trim() }) } catch (e) { setMsg(e.message) }
+        try { await api('POST', `/login/${encodeURIComponent(session.id)}/callback`, { redirectUrl: v }) } catch (e) { setMsg(e.message) }
+      }
+      const fromClipboard = async () => {
+        try {
+          const t = (await navigator.clipboard.readText()).trim()
+          setPaste(t)
+          await submit(t)
+        } catch {
+          setMsg(L('浏览器不允许读剪贴板：请手动粘贴到输入框', 'The browser blocked clipboard access: paste into the box manually'))
+        }
       }
       const cancel = async () => {
         try { await api('DELETE', `/login/${encodeURIComponent(session.id)}`) } catch { /* ignore */ }
@@ -261,10 +275,15 @@ window.__ModuleLoader__.load({
           h('span', { style: { ...S.mono, fontSize: 18, fontWeight: 600, letterSpacing: 2 } }, s.userCode),
           h('button', { type: 'button', style: S.btn, onClick: () => copy(s.userCode) }, L('复制', 'Copy'))) : null,
         s.needsPaste ? h('div', { style: { marginBottom: 10 } },
-          h('p', { style: { ...S.note, color: C.text } }, L('授权后，浏览器会跳到一个显示「无法访问此网站 / localhost 拒绝了连接」的页面——这是正常的。把那个页面地址栏里的完整地址（以 http://localhost 开头）复制下来，粘贴到这里：', 'After approving, the browser shows "This site can\'t be reached / localhost refused to connect" — that is expected. Copy the full address from that page\'s address bar (it starts with http://localhost) and paste it here:')),
+          h('div', { style: { ...S.note, color: C.text } },
+            h('div', null, L('授权完成后还差一步：', 'One more step after approving:')),
+            h('div', null, L('① 浏览器会跳到一个打不开的页面（「无法访问此网站」「拒绝连接」），地址以 http://localhost 或 http://127.0.0.1 开头——这是正常的。', '① The browser lands on a page that cannot load ("This site can\'t be reached"), starting with http://localhost or http://127.0.0.1 — that is expected.')),
+            h('div', null, L('② 复制那个页面地址栏里的完整地址，回到这里点「从剪贴板粘贴」（或粘到输入框点提交）。', '② Copy the full address from its address bar, come back and press "Paste from clipboard" (or paste into the box and submit).')),
+            h('div', { style: { color: C.sub } }, L(`这个跳转地址是 ${source.label} 写死的，服务商只接受它，没法换成网址；所以要你把它带回来。`, `${source.label} fixes this redirect address and accepts nothing else, so it cannot be a web URL; you carry it back instead.`))),
           h('div', { style: S.line },
-            h('input', { style: { ...S.input, ...S.grow }, placeholder: 'http://localhost:…/callback?code=…', value: paste, onChange: (e) => setPaste(e.target.value) }),
-            h('button', { type: 'button', style: S.btnPrimary, onClick: submit }, L('提交', 'Submit')))) : null,
+            h('input', { style: { ...S.input, ...S.grow }, placeholder: 'http://127.0.0.1:…/callback?code=…', value: paste, onChange: (e) => setPaste(e.target.value), onPaste: (e) => { const t = e.clipboardData?.getData('text'); if (t) setTimeout(() => void submit(t), 0) } }),
+            h('button', { type: 'button', style: S.btnPrimary, onClick: fromClipboard }, L('从剪贴板粘贴', 'Paste from clipboard')),
+            h('button', { type: 'button', style: S.btn, onClick: () => void submit() }, L('提交', 'Submit')))) : null,
         h('p', { style: { ...S.note, marginTop: 4 } }, L('授权页本身报错（例如 Operation timed out、糟糕出错了）多半是你的浏览器访问该网站的网络问题：换个代理节点，在那个页面点「重试」。', 'If the authorization page itself errors (e.g. "Operation timed out"), it is usually your browser\'s network path to that site: switch proxy nodes and press Retry on that page.')),
         h('div', { style: { fontSize: 12, color: s.status === 'error' ? C.err : C.sub } },
           s.status === 'pending' ? (msg || L('等待授权中…', 'Waiting for approval…')) : s.status === 'ok' ? L('已登录', 'Signed in') : `${L('登录没有完成', 'Login did not complete')}：${s.error || s.status}`))

@@ -4,7 +4,9 @@
 // 引擎配置与 dsh 配置在 vps 模式下归 dsh 用户，引擎热重载，dsh 热加载。
 // 职责：来源状态与开关、登录会话（引擎 OAuth / WorkBuddy 自有登录 / OpenCode key）、key 管理、用量统计。
 // CLI 与 dsh 插件都只通过 /control/* 调这里，逻辑只有一份。
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { currentBinary } from '../engine/install.js';
 import { buildRuntime, availableVariants, refreshCatalog, loadCatalogs } from '../bridge/runtime.js';
 import { workbuddyLogin, workbuddyLogout } from '../bridge/login.js';
 import { WORKBUDDY_VARIANTS } from '../bridge/workbuddy/variants.js';
@@ -407,7 +409,65 @@ export class Daemon {
             return this.startWorkbuddyLogin(def);
         throw new DshModelError('no_login', L(`${def.label} 不需要登录`, `${def.label} has no login`));
     }
+    /** 用引擎自带的 device code 登录（如 -codex-device-login）：打印网址和码，引擎自己轮询并写凭据 */
+    async startCliDeviceLogin(def) {
+        const m = await this.mgmt();
+        const before = credsFor(await m.credentials(), def).map((c) => c.name);
+        const abort = new AbortController();
+        const child = spawn(currentBinary(this.ctx), ['-config', this.ctx.paths.engineYaml, def.deviceCliFlag, '-no-browser'], { cwd: this.ctx.paths.home, stdio: ['ignore', 'pipe', 'pipe'], signal: abort.signal });
+        let out = '';
+        const s = {
+            id: randomBytes(12).toString('hex'),
+            source: def.id,
+            kind: 'device',
+            status: 'pending',
+            expiresAt: new Date(Date.now() + LOGIN_TIMEOUT_MS).toISOString(),
+            needsPaste: false,
+            startedAt: new Date().toISOString(),
+            provider: def.engineProvider,
+            before,
+            abort,
+        };
+        const ready = new Promise((resolve, reject) => {
+            const onData = (b) => {
+                out = (out + b.toString()).slice(-4000);
+                const url = /device URL:\s*(\S+)/i.exec(out)?.[1];
+                const code = /device code:\s*(\S+)/i.exec(out)?.[1];
+                if (url && code) {
+                    s.url = url;
+                    s.userCode = code;
+                    resolve();
+                }
+            };
+            child.stdout.on('data', onData);
+            child.stderr.on('data', onData);
+            child.on('error', (e) => reject(e));
+            child.on('exit', () => reject(new Error(out.trim().split('\n').slice(-3).join(' ') || 'login process exited')));
+            setTimeout(() => reject(new Error(L('30 秒内没拿到登录码', 'No device code within 30s'))), 30_000);
+        });
+        child.on('exit', (code) => {
+            if (s.status !== 'pending')
+                return;
+            if (code === 0)
+                void this.finishEngineLogin(s, def);
+            else {
+                s.status = 'error';
+                s.error = out.trim().split('\n').filter((l) => !/^CLIProxyAPI Version/.test(l)).slice(-2).join(' ') || `exit ${code}`;
+            }
+        });
+        try {
+            await ready;
+        }
+        catch (error) {
+            abort.abort();
+            throw new DshModelError('login_failed', L(`${def.label} 登录没能开始：${error.message}`, `Could not start ${def.label} sign-in: ${error.message}`));
+        }
+        this.sessions.set(s.id, s);
+        return publicSession(s);
+    }
     async startEngineLogin(def) {
+        if (def.deviceCliFlag)
+            return this.startCliDeviceLogin(def);
         const m = await this.mgmt();
         const before = credsFor(await m.credentials(), def).map((c) => c.name);
         const r = await m.authUrl(def.engineProvider);
