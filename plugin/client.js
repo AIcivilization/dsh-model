@@ -327,6 +327,7 @@ window.__ModuleLoader__.load({
         }, (e) => alive && setMsg(e.message))
         return () => { alive = false }
       }, [source.id])
+      if (errCode === 'daemon_not_configured' || errCode === 'daemon_unreachable') return h(Onboarding, { code: errCode, onDone: () => void load(true) })
       if (!data) return h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 8 } }, msg || L('加载中…', 'Loading…'))
       const flip = (id) => setSel((x) => { const n = new Set(x); n.has(id) ? n.delete(id) : n.add(id); return n })
       const save = async (models) => {
@@ -499,19 +500,69 @@ window.__ModuleLoader__.load({
             h('td', { style: S.td }, v.d1.tokensPerSec ?? '-')))))))
     }
 
+    /** 守护进程还没装 / 没在运行：说明 + 一键安装（本机）或命令（VPS 上要 root） */
+    function Onboarding({ code, onDone }) {
+      const [busy, setBusy] = useState(false)
+      const [res, setRes] = useState(null)
+      const notInstalled = code === 'daemon_not_configured'
+      const action = notInstalled ? 'setup' : 'repair'
+      const run = async () => {
+        setBusy(true)
+        setRes(null)
+        try {
+          const r = await fetch('/api-dsh-model/setup', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json', 'x-dsh-model-token': token },
+            body: JSON.stringify({ action, lang: isZh() ? 'zh' : 'en' }),
+          })
+          const j = await r.json().catch(() => ({}))
+          if (r.status === 403 && j?.error?.code === 'refused') { await refreshToken(); setBusy(false); return run() }
+          setRes(j)
+          if (j.code === 0) setTimeout(onDone, 1500)
+        } catch (e) {
+          setRes({ code: -1, output: e.message })
+        } finally {
+          setBusy(false)
+        }
+      }
+      const cmds = notInstalled ? ['npm install -g dsh-model', 'dsh-model setup'] : ['dsh-model repair']
+      const vpsCmds = notInstalled ? ['sudo npm install -g dsh-model', 'sudo dsh-model setup'] : ['sudo dsh-model repair']
+      const cmdBlock = (list) => h('div', { style: { ...S.card, padding: '8px 12px', marginTop: 8 } }, list.map((c) => h('div', { key: c, style: { ...S.line, minHeight: 30 } }, h('code', { style: { ...S.mono, ...S.grow } }, c), h(CopyButton, { get: c }))))
+      return h('div', { style: { color: C.text, maxWidth: 820 } },
+        h('div', { style: S.section },
+          h('div', { style: S.h }, notInstalled ? L('还差一步：在这台机器上装好 dsh-model', 'One more step: set up dsh-model on this machine') : L('dsh-model 的服务没在运行', 'The dsh-model service is not running')),
+          h('p', { style: S.note }, notInstalled
+            ? L('这个页面只是管理界面；模型由 dsh-model 在本机运行的服务提供（统一端点、WorkBuddy bridge、登录与用量）。装好后，来源、key 和模型都在这里管理。', 'This page is only the control panel; models are served by dsh-model\'s local service (the unified endpoint, WorkBuddy bridge, sign-ins and usage). Once it is set up, manage sources, keys and models here.')
+            : L('可能是电脑重启后服务没起来，或者刚升级。修复会按记录重新注册并启动服务。', 'The service may not have started after a reboot, or was just upgraded. Repair re-registers and starts it from the saved records.')),
+          res?.vps ? h('div', null,
+            h('p', { style: { ...S.note, color: C.text } }, L('这是 dsh-vps 服务器：安装要 root 权限，请在服务器终端里执行：', 'This is a dsh-vps server: setup needs root, so run this in a server terminal:')),
+            cmdBlock(vpsCmds),
+            h('p', { style: { ...S.note, marginTop: 8 } }, L('装好后刷新本页。', 'Reload this page when done.'))) : h('div', null,
+            h('div', { style: S.line },
+              h('button', { type: 'button', style: S.btnPrimary, disabled: busy, onClick: run }, busy ? (notInstalled ? L('安装中…（约 1 分钟）', 'Setting up… (about a minute)') : L('修复中…', 'Repairing…')) : (notInstalled ? L('一键安装', 'Set up now') : L('修复', 'Repair'))),
+              h('button', { type: 'button', style: S.btn, onClick: onDone }, L('重新检测', 'Check again'))),
+            h('p', { style: { ...S.note, marginTop: 10 } }, L('也可以在终端里执行：', 'Or run in a terminal:')),
+            cmdBlock(cmds)),
+          res && !res.vps ? h('div', { style: { marginTop: 12 } },
+            h('div', { style: { fontSize: 12, color: res.code === 0 ? C.ok : C.err, marginBottom: 6 } }, res.code === 0 ? L('完成，正在加载…', 'Done, loading…') : L(`没有完成（退出码 ${res.code}），输出如下：`, `Did not finish (exit code ${res.code}); output:`)),
+            h('pre', { style: { ...S.mono, ...S.card, padding: 10, maxHeight: 260, overflow: 'auto', whiteSpace: 'pre-wrap', margin: 0 } }, res.output || '')) : null))
+    }
+
     // —— 整页 ——
     function SettingsSection() {
       const [data, setData] = useState(null)
       const [err, setErr] = useState('')
+      const [errCode, setErrCode] = useState('')
       const [login, setLogin] = useState(null)
       const [keyDialog, setKeyDialog] = useState(false)
       const alive = useRef(true)
       const load = useCallback(async (refresh) => {
         try {
           const [sources, keys, stats, endpoints] = await Promise.all([api('GET', refresh ? '/sources?refresh=1' : '/sources'), api('GET', '/keys'), api('GET', '/stats'), api('GET', '/endpoints').catch(() => null)])
-          if (alive.current) { setData({ sources, keys, stats, endpoints }); setErr('') }
+          if (alive.current) { setData({ sources, keys, stats, endpoints }); setErr(''); setErrCode('') }
         } catch (e) {
-          if (alive.current) setErr(e.hint ? `${e.message}（${e.hint}）` : e.message)
+          if (alive.current) { setErr(e.hint ? `${e.message}（${e.hint}）` : e.message); setErrCode(e.code || '') }
         }
       }, [])
       useEffect(() => {

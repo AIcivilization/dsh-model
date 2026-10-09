@@ -7,10 +7,16 @@
 // - 只转发白名单里的控制接口。
 // 写法照 dsh-vps-manager（同作者）的 routes.js。
 
+import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+/** 本包根目录：插件就是完整的 dsh-model 包，自带命令行 */
+const PKG_ROOT = fileURLToPath(new URL('..', import.meta.url))
+const VPS_ROOT = '/opt/dsh-vps'
 
 export const name = 'dsh-model'
 export const inject = []
@@ -87,6 +93,29 @@ function check(req, token, needToken = true) {
   return null
 }
 
+const exists = (p) => access(p).then(() => true, () => false)
+
+/** 从页面一键执行 setup / repair（只在本机模式：VPS 上要 root，页面只给命令）。同一时间只跑一个 */
+let running = null
+function runCli(args) {
+  if (running) return running
+  running = new Promise((resolve) => {
+    let out = ''
+    const child = spawn(process.execPath, [join(PKG_ROOT, 'bin/dsh-model.js'), ...args], {
+      // dsh 桌面版可能跑在 Electron 里：让它当普通 Node 用
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', FORCE_COLOR: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const add = (b) => { out = (out + b.toString()).slice(-20000) }
+    child.stdout.on('data', add)
+    child.stderr.on('data', add)
+    const timer = setTimeout(() => child.kill('SIGTERM'), 10 * 60 * 1000)
+    child.on('error', (e) => { clearTimeout(timer); resolve({ code: -1, output: `${out}\n${e.message}` }) })
+    child.on('exit', (code) => { clearTimeout(timer); resolve({ code: code ?? -1, output: out.replace(/\x1b\[[0-9;]*m/g, '') }) })
+  }).finally(() => { running = null })
+  return running
+}
+
 export function apply(ctx) {
   const token = randomBytes(24).toString('hex')
   ctx.inject(['webServer'], (webCtx) => {
@@ -132,6 +161,29 @@ export function apply(ctx) {
           } catch {
             return json(res, 503, { error: { code: 'daemon_unreachable', message: 'dsh-model daemon is not running (run dsh-model repair)' } })
           }
+        },
+      }),
+    )
+
+    // 页面上的「一键安装 / 修复」
+    track(
+      ws.register({
+        kind: 'exact',
+        path: '/api-dsh-model/setup',
+        handler: async (req, res) => {
+          const bad = check(req, token)
+          if (bad) return json(res, bad.code, { error: { code: 'refused', message: bad.error } })
+          let body
+          try {
+            body = JSON.parse((await readBody(req)) || '{}')
+          } catch {
+            return json(res, 400, { error: { code: 'invalid_json', message: 'invalid JSON' } })
+          }
+          if (await exists(VPS_ROOT)) return json(res, 200, { vps: true })
+          const action = body.action === 'repair' ? 'repair' : 'setup'
+          const lang = body.lang === 'en' ? 'en' : 'zh'
+          const r = await runCli(action === 'repair' ? ['repair', '--lang', lang] : ['setup', '--skip-dsh-plugin', '--lang', lang])
+          return json(res, 200, r)
         },
       }),
     )

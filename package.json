@@ -1,6 +1,6 @@
 {
   "name": "dsh-model",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "description": "Many model sources behind one authenticated OpenAI-compatible endpoint for DeepSeek Harness (dsh) and your tools: WorkBuddy, OpenCode Zen and your CLI subscriptions (Codex, Kimi…), with a management page inside dsh. 多家模型汇成一个 OpenAI 兼容地址，dsh 和其他软件都能直接用。",
   "keywords": [
     "dsh-plugin",
