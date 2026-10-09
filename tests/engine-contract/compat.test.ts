@@ -132,6 +132,14 @@ describe('engine → bridge (real engine)', () => {
     expect(lastBody.stream).toBe(true)
   })
 
+  it('non-stream when the stream field is absent (OpenAI default): plain JSON, no SSE leaking through', async () => {
+    const r = await post({ model: 'workbuddy/glm-5.3', messages: [{ role: 'user', content: 'hi' }] })
+    expect(r.status).toBe(200)
+    const text = await r.text()
+    expect(text.trimStart().startsWith('{')).toBe(true)
+    expect((JSON.parse(text) as { choices: { message: { content: string } }[] }).choices[0]!.message.content).toBe('hello world')
+  })
+
   it('stream: content arrives and ends with [DONE]', async () => {
     const r = await post({ model: 'workbuddy/glm-5.3', stream: true, messages: [{ role: 'user', content: 'hi' }] })
     expect(r.status).toBe(200)

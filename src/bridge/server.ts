@@ -148,9 +148,11 @@ export function createBridge(options: BridgeOptions): { server: Server; ready: P
       return oaiError(res, 401, 'not_signed_in', `${variant.label}: ${String((error as Error).message ?? error)} — sign in again in the ${variant.label} app`)
     }
     const raw = (await readBody(req)).toString('utf8')
-    let wantsStream = true
+    // OpenAI 规范：不写 stream 就是非流式。曾按 "!== false" 判断，没写 stream 的请求被当成流式，
+    // 把上游的 ": heartbeat" 原样透传给引擎，引擎既解析不了 JSON，也拿不到 token 用量（VPS 实测）
+    let wantsStream = false
     try {
-      wantsStream = (JSON.parse(raw) as { stream?: unknown }).stream !== false
+      wantsStream = (JSON.parse(raw) as { stream?: unknown }).stream === true
     } catch {
       return oaiError(res, 400, 'invalid_json', 'request body is not JSON')
     }
