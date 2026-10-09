@@ -3,8 +3,9 @@ import { join } from 'node:path';
 import { L } from '../i18n.js';
 import { readText } from '../util/fs.js';
 import { info, warn } from '../util/output.js';
-export async function logs(ctx, lines = 80) {
-    for (const file of [join(ctx.paths.logs, 'main.log'), join(ctx.paths.home, 'engine.stdout.log')]) {
+export async function logs(ctx, lines = 80, which = 'engine') {
+    const files = which === 'bridge' ? [join(ctx.paths.home, 'bridge.stdout.log')] : [join(ctx.paths.logs, 'main.log'), join(ctx.paths.home, 'engine.stdout.log')];
+    for (const file of files) {
         const text = await readText(file);
         if (text == null)
             continue;

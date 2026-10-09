@@ -68,7 +68,14 @@ bridge 的职责只有一件：把"WorkBuddy 私有接口 + App 登录态"变成
 **代码来源（已定）**：凭据解密、请求头身份、刷新这三块是 dsh-workbuddy-connect 逆向出来的协议细节。方案是**按 MIT 协议移植**这部分到 `src/bridge/workbuddy/`，保留版权声明并锁定来源 commit；bridge 的服务端、生命周期、目录同步、接线都由我们自己写。另一个选项是不看它、完全重写，但结果只会一样，还更容易出错。
 
 **限制与风险**：
-- 只在装了 WorkBuddy 桌面 App 的 Mac 上可用（VPS 上没有 App）。
+- **Mac**：读 WorkBuddy / WorkBuddy AI 桌面 App 的登录态（已实现）。
+- **Linux / VPS（待实测）**：WorkBuddy 没有 Linux 桌面版，服务器上要装的是 WorkBuddy 内置的同一个 agent CLI，即 **`@tencent-ai/codebuddy-code`**（命令 `codebuddy` / `cbc`；App 里打包的 `@genie/agent-cli` 就是它）。2026-10-08 读包得到的事实：
+  - 后端相同：`copilot.tencent.com`、`www.workbuddy.cn`、`www.codebuddy.ai`；
+  - 登录方式是 `cli-external-link`（打印链接，在浏览器授权），无 GUI 也能用；
+  - 凭据目录也是 `~/.local/share/CodeBuddyExtension/Data/Public/auth/`；
+  - 代码里同样有 `wbEncrypted` / `atRestSecretKey`，Linux 上很可能也加密存储，密钥来源只能在真机登录后确认。
+  - 移植代码在 Linux 上只认明文凭据，所以 VPS 支持要等实测后再补。
+- 注意：npm 上的 `@workbuddy/cli` 与腾讯 WorkBuddy **无关**。它对接 `*.workbuddy.com` 租户的 OAuth2 client_credentials，同名而已。
 - 会读取并解密另一个 App 的登录凭据，并以它的客户端身份发请求：这是在绕开 WorkBuddy 自己的凭据保护，可能违反其服务条款，账号存在风险。
 - WorkBuddy 改了加密方式、AAD 或请求头校验，bridge 就会失效，需要跟进。
 - **默认启用**（已定）：setup 检测到 App 就启用，第一次启用时打印一次风险说明，不需要 `--accept-risk`。

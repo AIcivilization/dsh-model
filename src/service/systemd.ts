@@ -27,6 +27,7 @@ export function renderUnit(spec: ServiceSpec, system: boolean): string {
     'RestartSec=5',
     `StandardOutput=append:${spec.stdoutPath}`,
     `StandardError=append:${spec.stdoutPath}`,
+    ...Object.entries(spec.env ?? {}).map(([k, v]) => `Environment=${quote(`${k}=${v}`)}`),
   ]
   if (system) {
     lines.push(

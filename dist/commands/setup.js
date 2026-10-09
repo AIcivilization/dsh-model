@@ -1,23 +1,23 @@
-// commands/setup.ts — 一条命令把默认模型接进 dsh：OpenCode Zen（你的 key）+ WorkBuddy（插件）。可重复执行
+// commands/setup.ts — 一条命令：引擎（统一端点）+ OpenCode Zen + WorkBuddy bridge → 全部接进 dsh。可重复执行
 //
-// 订阅类上游（codex 等）要的引擎不再默认安装：第一次 login 时才装（ensureEngine），已经装过的照常维护。
+// 设计 §1.3：所有模型都从引擎 127.0.0.1:8317/v1 出去，dsh 只认 dsh-model 一个 provider。
 import { requireRootInVps } from '../context.js';
 import { locateDsh } from '../dsh/locate.js';
 import { listModels, unauthStatus, waitHealthy } from '../engine/client.js';
 import { activateVersion, currentVersion, fetchUpstreamAsset, installVersion, loadManifest, platformTarget } from '../engine/install.js';
 import { DshModelError, isDshModelError } from '../errors.js';
 import { L } from '../i18n.js';
+import { migrateDshOpencode } from '../integrations/opencode.js';
+import { enableWorkbuddy, removeWorkbuddyPlugin, userPluginInstalled } from '../integrations/workbuddy.js';
 import { ensureDshKey, saveKeys } from '../keys.js';
-import { applyEngineConfig, loadAll, saveAll, syncModels } from '../ops.js';
+import { applyEngineConfig, loadAll, saveAll, syncAll } from '../ops.js';
 import { serviceFor } from '../service/index.js';
 import { withLock } from '../state.js';
-import { ensureDir, exists } from '../util/fs.js';
+import { ensureDir } from '../util/fs.js';
 import { bold, info, next, ok, skip, warn } from '../util/output.js';
 import { findFreePort, isPortFree } from '../util/port.js';
 import { detectProxy, normalizeProxyUrl, redactProxy } from '../util/proxy.js';
-import { currentBinary } from '../engine/install.js';
 import { configureOpencode } from './opencode.js';
-import { configureWorkbuddy } from './workbuddy.js';
 export async function setup(ctx, opts) {
     requireRootInVps(ctx);
     return withLock(ctx, async () => {
@@ -26,7 +26,6 @@ export async function setup(ctx, opts) {
         resolveProxy(all, opts, await detectProxy(ctx.env, ctx.platform));
         if (opts.profile)
             all.config.dsh.profile = opts.profile;
-        // 先确认 dsh 在
         const loc = await locateDsh(ctx, all.config.dsh.profile);
         all.config.dsh.profile = loc.profile;
         ok(L(`dsh ${loc.version ?? ''}（profile：${loc.profile}）`, `dsh ${loc.version ?? ''} (profile: ${loc.profile})`));
@@ -44,32 +43,62 @@ export async function setup(ctx, opts) {
             }
             await saveAll(ctx, all);
         };
+        // v0.2.0 的做法（dsh 内置 opencode 路由、dsh-workbuddy-connect 插件）迁到统一端点
+        await step('migrate', async () => {
+            if (await migrateDshOpencode(ctx, all))
+                ok(L('已把 OpenCode 从 dsh 内置路由迁到统一端点', 'Moved OpenCode from the dsh built-in route to the unified endpoint'));
+            if (await removeWorkbuddyPlugin(ctx, all))
+                ok(L('已移除上一版安装的 dsh-workbuddy-connect 插件，改用 dsh-model 自己的 bridge', 'Removed the dsh-workbuddy-connect plugin installed by the previous version; using dsh-model\'s own bridge'));
+        });
+        info('');
+        info(bold(L('统一端点（引擎）', 'Unified endpoint (engine)')));
+        let engineRunning = false;
+        await step('engine', async () => {
+            engineRunning = await ensureEngine(ctx, all, { port: opts.port });
+        });
+        if (failures.includes('engine')) {
+            warn(L('引擎没装好，后面的步骤都依赖它，先停在这里', 'The engine is not ready and everything else depends on it; stopping here'));
+            return 1;
+        }
         info('');
         info(bold('OpenCode Zen'));
         if (opts.skipOpencode)
             skip(L('已跳过（--skip-opencode）', 'Skipped (--skip-opencode)'));
         else
-            await step('opencode', () => configureOpencode(ctx, all, { interactive: true, force: opts.force }));
+            await step('opencode', () => configureOpencode(ctx, all));
         info('');
         info(bold('WorkBuddy'));
         if (opts.skipWorkbuddy)
             skip(L('已跳过（--skip-workbuddy）', 'Skipped (--skip-workbuddy)'));
-        else
-            await step('workbuddy', () => configureWorkbuddy(ctx, all));
-        // 引擎：要求了，或者以前装过（保持配置同步，比如代理变了）
-        const engineInstalled = await exists(currentBinary(ctx));
-        if (opts.engine || engineInstalled) {
-            info('');
-            info(bold(L('订阅引擎', 'Subscription engine')));
-            await step('engine', () => ensureEngine(ctx, all, { port: opts.port, force: opts.force }));
+        else {
+            await step('workbuddy', () => enableWorkbuddy(ctx, all));
+            if (await userPluginInstalled(ctx, all))
+                warn(L('你自己装了 dsh-workbuddy-connect 插件：dsh 里会有两组 WorkBuddy 模型。不需要的话可在 dsh 的插件页移除它', 'You installed the dsh-workbuddy-connect plugin yourself: dsh will show two WorkBuddy groups. Remove it from the dsh Plugins page if you do not need it'));
         }
         info('');
-        if (failures.length) {
-            warn(L(`有 ${failures.length} 项没完成：${failures.join('、')}。修好后重新执行 dsh-model setup 即可`, `${failures.length} item(s) not done: ${failures.join(', ')}. Fix them and re-run dsh-model setup`));
+        info(bold(L('同步到 dsh', 'Sync to dsh')));
+        let ids = [];
+        if (engineRunning) {
+            await step('sync', async () => {
+                ids = await syncAll(ctx, all);
+            });
         }
-        next(L('在 dsh 的模型列表里选 OpenCode Zen / WorkBuddy 下的模型即可（dsh 配置热加载，WorkBuddy 插件如未出现请重启 dsh）', 'Pick an OpenCode Zen / WorkBuddy model in dsh (config hot-reloads; restart dsh if the WorkBuddy models do not appear)'));
-        if (!engineInstalled && !opts.engine)
-            info(L('  订阅类上游（codex 等）：dsh-model login <上游>，首次会自动安装引擎', '  Subscription upstreams (codex etc.): dsh-model login <upstream>; the engine installs on first use'));
+        else {
+            await applyEngineConfig(ctx, all);
+            skip(L('引擎没在运行，跳过同步到 dsh（启动后执行 dsh-model models sync）', 'Engine not running; skipped syncing to dsh (run dsh-model models sync once it is up)'));
+        }
+        const groups = new Map();
+        for (const id of ids) {
+            const g = id.includes('/') ? id.split('/')[0] : L('订阅', 'subscription');
+            groups.set(g, (groups.get(g) ?? 0) + 1);
+        }
+        if (groups.size)
+            info(`  ${[...groups].map(([g, n]) => `${g} ${n}`).join(' · ')}`);
+        info('');
+        if (failures.length)
+            warn(L(`有 ${failures.length} 项没完成：${failures.join('、')}。修好后重新执行 dsh-model setup 即可`, `${failures.length} item(s) not done: ${failures.join(', ')}. Fix them and re-run dsh-model setup`));
+        next(L(`在 dsh 的模型列表里选 dsh-model 下的模型。其他软件：Base URL http://127.0.0.1:${all.config.port}/v1，key 用 dsh-model key add <名称> 领取`, `Pick a dsh-model model in dsh. Other software: Base URL http://127.0.0.1:${all.config.port}/v1, get a key with dsh-model key add <name>`));
+        info(L('  订阅上游（codex 等）：dsh-model login <上游>', '  Subscription upstreams (codex etc.): dsh-model login <upstream>'));
         return failures.length ? 1 : 0;
     });
 }
@@ -86,6 +115,7 @@ function resolveProxy(all, opts, found) {
         skip(L(`出站代理：${redactProxy(all.config.proxy)}（改用 --proxy <地址> 或 --proxy none）`, `Outbound proxy: ${redactProxy(all.config.proxy)} (change with --proxy <url> or --proxy none)`));
 }
 /** 订阅引擎：下载校验 → key → 端口 → engine.yaml → 服务 → 鉴权自检 → 同步模型到 dsh。setup --engine 与首次 login 共用 */
+/** 返回引擎是否在运行（DSH_MODEL_SERVICE=none 时可能没跑） */
 export async function ensureEngine(ctx, all, opts = {}) {
     const { config, state, keys } = all;
     if (config.proxy === undefined) {
@@ -132,7 +162,7 @@ export async function ensureEngine(ctx, all, opts = {}) {
     if (!(await waitHealthy(config.port, ctx.serviceDisabled ? 1500 : 15_000))) {
         if (ctx.serviceDisabled) {
             warn(L('引擎未运行（服务已跳过）', 'Engine not running (service skipped)'));
-            return;
+            return false;
         }
         throw new DshModelError('engine_unhealthy', L(`引擎没有在 127.0.0.1:${config.port} 上启动`, `Engine did not come up on 127.0.0.1:${config.port}`), L('查看日志：dsh-model logs', 'Check logs: dsh-model logs'));
     }
@@ -140,7 +170,7 @@ export async function ensureEngine(ctx, all, opts = {}) {
     if (unauth !== 401)
         throw new DshModelError('auth_not_enforced', L(`不带 key 的请求返回了 ${unauth}（应为 401），已停止`, `Unauthenticated request returned ${unauth} (expected 401); stopping`));
     ok(L(`引擎已在 127.0.0.1:${config.port} 运行，鉴权已生效`, `Engine running on 127.0.0.1:${config.port} with auth enforced`));
-    await syncModels(ctx, all, { force: opts.force });
+    return true;
 }
 async function portIsOurs(port, keys) {
     for (const k of keys.keys.filter((x) => !x.revokedAt)) {

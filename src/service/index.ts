@@ -5,11 +5,16 @@ import { join } from 'node:path'
 import type { Ctx } from '../context.js'
 import type { ServiceKind } from '../state.js'
 import { currentBinary } from '../engine/install.js'
+import { PKG_ROOT } from '../util/pkg.js'
 import { launchd } from './launchd.js'
 import { systemd } from './systemd.js'
 
 export const SERVICE_LABEL = 'com.dsh-model.engine'
 export const UNIT_NAME = 'dsh-model-engine.service'
+export const BRIDGE_LABEL = 'com.dsh-model.bridge'
+export const BRIDGE_UNIT = 'dsh-model-bridge.service'
+
+export type ServiceName = 'engine' | 'bridge'
 
 export interface ServiceStatus {
   installed: boolean
@@ -26,6 +31,7 @@ export interface ServiceSpec {
   stdoutPath: string
   user?: string
   home: string
+  env?: Record<string, string>
 }
 
 export interface ServiceManager {
@@ -46,19 +52,33 @@ export function serviceKind(ctx: Ctx): ServiceKind {
   return ctx.platform === 'darwin' ? 'launchd' : 'systemd-user'
 }
 
-export function serviceFor(ctx: Ctx): ServiceManager {
+/** bridge 是 Node 进程：用当前 node 的绝对路径，加上本包的入口 */
+function bridgeProgram(): string[] {
+  return [process.execPath, join(PKG_ROOT, 'bin', 'dsh-model.js'), 'bridge', 'run']
+}
+
+/**
+ * bridge 进程的环境：DSH_MODEL_HOME；有代理时让 Node 的 fetch 走代理（NODE_USE_ENV_PROXY，Node ≥ 22.21），
+ * 但国内版 WorkBuddy 的域名与本机回环直连。
+ */
+export function bridgeEnv(ctx: Ctx, proxy: string | null | undefined): Record<string, string> {
+  return {
+    DSH_MODEL_HOME: ctx.paths.home,
+    ...(proxy ? { NODE_USE_ENV_PROXY: '1', HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NO_PROXY: '127.0.0.1,localhost,::1,.tencent.com,.codebuddy.cn,.qq.com' } : {}),
+  }
+}
+
+export function serviceFor(ctx: Ctx, name: ServiceName = 'engine', proxy?: string | null): ServiceManager {
   const kind = serviceKind(ctx)
+  const label = name === 'engine' ? (kind === 'launchd' ? SERVICE_LABEL : UNIT_NAME) : kind === 'launchd' ? BRIDGE_LABEL : BRIDGE_UNIT
   const common = {
-    program: [currentBinary(ctx), '-config', ctx.paths.engineYaml],
+    program: name === 'engine' ? [currentBinary(ctx), '-config', ctx.paths.engineYaml] : bridgeProgram(),
     workingDirectory: ctx.paths.home,
-    stdoutPath: join(ctx.paths.home, 'engine.stdout.log'),
+    stdoutPath: join(ctx.paths.home, `${name}.stdout.log`),
     home: ctx.paths.home,
+    ...(name === 'bridge' ? { env: bridgeEnv(ctx, proxy) } : {}),
   }
-  if (kind === 'launchd') {
-    return launchd({ ...common, label: SERVICE_LABEL, file: join(homedir(), 'Library/LaunchAgents', `${SERVICE_LABEL}.plist`) })
-  }
-  if (kind === 'systemd-user') {
-    return systemd('systemd-user', { ...common, label: UNIT_NAME, file: join(homedir(), '.config/systemd/user', UNIT_NAME) })
-  }
-  return systemd('systemd-system', { ...common, label: UNIT_NAME, file: join('/etc/systemd/system', UNIT_NAME), user: ctx.runAs })
+  if (kind === 'launchd') return launchd({ ...common, label, file: join(homedir(), 'Library/LaunchAgents', `${label}.plist`) })
+  if (kind === 'systemd-user') return systemd('systemd-user', { ...common, label, file: join(homedir(), '.config/systemd/user', label) })
+  return systemd('systemd-system', { ...common, label, file: join('/etc/systemd/system', label), user: ctx.runAs })
 }

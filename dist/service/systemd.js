@@ -23,6 +23,7 @@ export function renderUnit(spec, system) {
         'RestartSec=5',
         `StandardOutput=append:${spec.stdoutPath}`,
         `StandardError=append:${spec.stdoutPath}`,
+        ...Object.entries(spec.env ?? {}).map(([k, v]) => `Environment=${quote(`${k}=${v}`)}`),
     ];
     if (system) {
         lines.push(`User=${spec.user}`, `Group=${spec.user}`, 'NoNewPrivileges=yes', 'PrivateTmp=yes', 'ProtectSystem=strict', `ReadWritePaths=${spec.home}`);

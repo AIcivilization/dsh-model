@@ -1,54 +1,56 @@
-// commands/workbuddy.ts — dsh-model workbuddy [status|install|remove]，以及 setup 里的 WorkBuddy 步骤
+// commands/workbuddy.ts — dsh-model workbuddy [status|enable|refresh|disable]
 
 import type { Ctx } from '../context.js'
 import { requireRootInVps } from '../context.js'
+import { installedVariants, loadCatalogs } from '../bridge/runtime.js'
 import { DshModelError } from '../errors.js'
 import { L } from '../i18n.js'
-import { WORKBUDDY_PLUGIN, WORKBUDDY_PLUGIN_VERSION, detectWorkbuddyApps, installWorkbuddy, removeWorkbuddy, workbuddyStatus } from '../integrations/workbuddy.js'
-import { loadAll, saveAll, type All } from '../ops.js'
+import { disableWorkbuddy, enableWorkbuddy, refreshBridge } from '../integrations/workbuddy.js'
+import { loadAll, saveAll, syncAll } from '../ops.js'
 import { withLock } from '../state.js'
 import { info, isJsonMode, ok, printJson, skip, warn } from '../util/output.js'
 
-/** 有 App 且插件没装 → 用 dsh 的插件管理装上；已装（无论谁装的）就不动 */
-export async function configureWorkbuddy(ctx: Ctx, all: All): Promise<void> {
-  const apps = await detectWorkbuddyApps(ctx)
-  if (!apps.length) {
-    skip(ctx.mode === 'vps' ? L('VPS 上没有 WorkBuddy 桌面 App，跳过', 'No WorkBuddy desktop app on a VPS; skipped') : L('没检测到 WorkBuddy 桌面 App，跳过（装好并登录后重新执行 setup）', 'WorkBuddy desktop app not found; skipped (install and sign in, then re-run setup)'))
-    return
-  }
-  const st = await workbuddyStatus(ctx, all)
-  if (st.state !== 'absent') {
-    skip(L(`${WORKBUDDY_PLUGIN}@${st.version} 已安装${st.state === 'user-installed' ? '（你自己装的，dsh-model 不改动）' : ''}`, `${WORKBUDDY_PLUGIN}@${st.version} already installed${st.state === 'user-installed' ? ' (installed by you; dsh-model leaves it alone)' : ''}`))
-    return
-  }
-  info(L(`检测到 ${apps.join('、')}，用 dsh 的插件管理安装 ${WORKBUDDY_PLUGIN}@${WORKBUDDY_PLUGIN_VERSION}…`, `Found ${apps.join(', ')}; installing ${WORKBUDDY_PLUGIN}@${WORKBUDDY_PLUGIN_VERSION} through the dsh plugin manager…`))
-  await installWorkbuddy(ctx, all)
-  ok(L(`${WORKBUDDY_PLUGIN} 已安装。它复用 WorkBuddy App 的登录，请确保 App 已登录`, `${WORKBUDDY_PLUGIN} installed. It reuses the WorkBuddy app sign-in, so make sure the app is signed in`))
-}
-
 export async function workbuddy(ctx: Ctx, sub: string | undefined): Promise<number> {
   if (!sub || sub === 'status') {
-    const all = await loadAll(ctx)
-    const [apps, st] = await Promise.all([detectWorkbuddyApps(ctx), workbuddyStatus(ctx, all)])
-    if (isJsonMode()) printJson({ apps, plugin: st })
-    else {
-      info(L(`App：${apps.length ? apps.join('、') : '未检测到'}`, `App: ${apps.length ? apps.join(', ') : 'not found'}`))
-      info(L(`插件：${st.state === 'absent' ? '未安装' : `${WORKBUDDY_PLUGIN}@${st.version}（${st.state === 'ours' ? 'dsh-model 安装' : '你自己安装'}）`}`, `Plugin: ${st.state === 'absent' ? 'not installed' : `${WORKBUDDY_PLUGIN}@${st.version} (${st.state === 'ours' ? 'installed by dsh-model' : 'installed by you'})`}`))
+    const [apps, cats] = await Promise.all([installedVariants(), loadCatalogs(ctx.paths.home)])
+    if (isJsonMode()) {
+      printJson({ apps: apps.map((v) => v.displayName), catalogs: cats.map(({ models, ...c }) => ({ ...c, models: models.length })) })
+      return 0
+    }
+    info(L(`App：${apps.length ? apps.map((v) => v.displayName).join('、') : '未检测到'}`, `App: ${apps.length ? apps.map((v) => v.displayName).join(', ') : 'not found'}`))
+    for (const c of cats) {
+      info(`  ${c.label}: ${c.signedIn ? L(`已登录${c.nickname ? `（${c.nickname}）` : ''}，${c.models.length} 个模型`, `signed in${c.nickname ? ` (${c.nickname})` : ''}, ${c.models.length} models`) : L('未登录', 'not signed in')}${c.error ? `  — ${c.error}` : ''}`)
     }
     return 0
   }
   requireRootInVps(ctx)
+  if (sub === 'refresh') {
+    if (await refreshBridge(ctx)) ok(L('bridge 已重读 WorkBuddy 登录态与目录，并同步到引擎和 dsh', 'bridge re-read WorkBuddy sign-in and catalog and synced the engine and dsh'))
+    else warn(L('bridge 没在运行（dsh-model workbuddy enable）', 'bridge is not running (dsh-model workbuddy enable)'))
+    return 0
+  }
   return withLock(ctx, async () => {
     const all = await loadAll(ctx)
-    if (sub === 'install') {
-      await configureWorkbuddy(ctx, all)
+    if (sub === 'enable') {
+      await enableWorkbuddy(ctx, all)
       await saveAll(ctx, all)
+      await syncAll(ctx, all)
       return 0
     }
-    if (sub === 'remove') {
-      if (await removeWorkbuddy(ctx, all)) ok(L(`已移除 ${WORKBUDDY_PLUGIN}`, `Removed ${WORKBUDDY_PLUGIN}`))
-      else warn(L(`${WORKBUDDY_PLUGIN} 不是 dsh-model 装的，不动它`, `${WORKBUDDY_PLUGIN} was not installed by dsh-model; leaving it alone`))
+    if (sub === 'disable') {
+      if (!(await disableWorkbuddy(ctx, all))) {
+        skip(L('WorkBuddy 本来就没启用', 'WorkBuddy was not enabled'))
+        return 0
+      }
+      delete all.config.bridge
       await saveAll(ctx, all)
+      // bridge 不在了，目录文件也作废：删掉后重新生成引擎配置
+      const { rm } = await import('node:fs/promises')
+      const { bridgeDir, bridgeConfigPath } = await import('../bridge/runtime.js')
+      await rm(bridgeDir(ctx.paths.home), { recursive: true, force: true })
+      await rm(bridgeConfigPath(ctx.paths.home), { force: true })
+      await syncAll(ctx, all, { quiet: true })
+      ok(L('已停用 WorkBuddy（bridge 服务、目录与登录副本已移除）', 'WorkBuddy disabled (bridge service, catalogs and token copies removed)'))
       return 0
     }
     throw new DshModelError('unknown_command', L(`未知子命令：workbuddy ${sub}`, `Unknown subcommand: workbuddy ${sub}`))

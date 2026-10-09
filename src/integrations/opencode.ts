@@ -1,43 +1,24 @@
-// integrations/opencode.ts — 启用 dsh 内置的 OpenCode Zen 路由
+// integrations/opencode.ts — OpenCode Zen 作为引擎的 openai-compatibility 上游（统一端点，设计 §1.3）
 //
-// dsh 的 llm-pi-ai 自带 opencode provider（pi-ai 目录里的路由，不用写 api/baseURL/models），
-// 但没有 providers 条目时处于休眠状态。所以写两处：
-//   refs.OPENCODE_API_KEY = <你的 Zen key>   （.credentials.yaml）
-//   providers.opencode = { apiKeyEnv: OPENCODE_API_KEY }   （cordis.patch.yml）
+// key 存在 dsh-model 自己的 secrets.json（0600），由引擎持有；模型目录取自公开的 /zen/v1/models。
 // OpenCode 的免费档不能免 key 从第三方调用（官方 403 FreeTierError），所以必须有 key。
+// v0.2.0 曾把 key 写进 dsh 的凭据库并启用 dsh 内置 opencode 路由：migrateDshOpencode 负责迁走。
 
 import type { Ctx } from '../context.js'
 import { applyDsh } from '../dsh/connect.js'
 import { readRef } from '../dsh/credentials.js'
-import { locateDsh } from '../dsh/locate.js'
-import { readProvider } from '../dsh/patch.js'
 import { DshModelError } from '../errors.js'
+import { opencodeModelsPath, type OpencodeModelsFile } from '../engine/compat.js'
 import { L } from '../i18n.js'
 import type { All } from '../ops.js'
+import { loadSecrets, saveSecrets } from '../secrets.js'
 import { run } from '../util/exec.js'
-import { readText } from '../util/fs.js'
+import { readText, writeJson } from '../util/fs.js'
 
 export const OPENCODE_PROVIDER = 'opencode'
 export const OPENCODE_REF = 'OPENCODE_API_KEY'
 export const OPENCODE_MODELS_URL = 'https://opencode.ai/zen/v1/models'
 export const OPENCODE_KEY_PAGE = 'https://opencode.ai/auth'
-
-export type OpencodeStatus =
-  | { state: 'ours' }
-  | { state: 'user-configured' } // 用户自己在 dsh 里配好了，dsh-model 不碰
-  | { state: 'partial-user'; hasRef: boolean; hasProvider: boolean }
-  | { state: 'absent' }
-
-export async function opencodeStatus(ctx: Ctx, all: All): Promise<OpencodeStatus> {
-  const owned = all.state.dsh?.ownedProviders?.includes(OPENCODE_PROVIDER)
-  if (owned) return { state: 'ours' }
-  const loc = await locateDsh(ctx, all.config.dsh.profile)
-  const hasRef = readRef(await readText(loc.credFile), OPENCODE_REF) !== undefined || Boolean(ctx.env[OPENCODE_REF])
-  const hasProvider = readProvider(await readText(loc.patchFile), OPENCODE_PROVIDER) != null
-  if (hasRef && hasProvider) return { state: 'user-configured' }
-  if (hasRef || hasProvider) return { state: 'partial-user', hasRef, hasProvider }
-  return { state: 'absent' }
-}
 
 /**
  * 校验 key。/zen/v1/models 是公开的，验不了 key；而且无效 key 和不带 key 一样返回
@@ -86,15 +67,44 @@ export function validateKeyShape(key: string): void {
   }
 }
 
-export async function enableOpencode(ctx: Ctx, all: All, key: string): Promise<void> {
-  await applyDsh(
-    ctx,
-    all.state,
-    { refs: { [OPENCODE_REF]: key }, providers: { [OPENCODE_PROVIDER]: { displayName: 'OpenCode Zen', apiKeyEnv: OPENCODE_REF } } },
-    { profile: all.config.dsh.profile },
-  )
+/** 拉公开模型目录写到 opencode-models.json（走 curl：它认代理） */
+export async function refreshOpencodeModels(ctx: Ctx, proxy: string | null | undefined): Promise<number> {
+  const r = await run('curl', ['-s', '-m', '20', ...(proxy ? ['-x', proxy] : []), OPENCODE_MODELS_URL], { timeoutMs: 30_000 })
+  let ids: string[] = []
+  try {
+    ids = ((JSON.parse(r.stdout) as { data?: { id: string }[] }).data ?? []).map((m) => m.id).filter((id) => typeof id === 'string' && id)
+  } catch {
+    throw new DshModelError('opencode_models_failed', L(`取不到 OpenCode 模型目录${proxy ? '' : '（需要代理？）'}`, `Could not fetch the OpenCode model list${proxy ? '' : ' (proxy needed?)'}`))
+  }
+  const file: OpencodeModelsFile = { updatedAt: new Date().toISOString(), models: ids.map((id) => ({ id })) }
+  await writeJson(opencodeModelsPath(ctx), file, { owner: ctx.owner })
+  return ids.length
 }
 
-export async function disableOpencode(ctx: Ctx, all: All): Promise<void> {
+export async function opencodeConfigured(ctx: Ctx): Promise<boolean> {
+  return Boolean((await loadSecrets(ctx)).opencode?.key)
+}
+
+export async function saveOpencodeKey(ctx: Ctx, key: string, verifiedModel?: string): Promise<void> {
+  const secrets = await loadSecrets(ctx)
+  secrets.opencode = { key, verifiedAt: new Date().toISOString(), ...(verifiedModel ? { verifiedModel } : {}) }
+  await saveSecrets(ctx, secrets)
+}
+
+export async function removeOpencodeKey(ctx: Ctx): Promise<boolean> {
+  const secrets = await loadSecrets(ctx)
+  if (!secrets.opencode) return false
+  delete secrets.opencode
+  await saveSecrets(ctx, secrets)
+  return true
+}
+
+/** v0.2.0 → 统一端点：把 dsh-model 写进 dsh 的 OPENCODE_API_KEY 收回 secrets.json，并移除 dsh 里的 opencode 路由 */
+export async function migrateDshOpencode(ctx: Ctx, all: All): Promise<boolean> {
+  const dsh = all.state.dsh
+  if (!dsh?.ownedProviders?.includes(OPENCODE_PROVIDER) && !dsh?.ownedRefs?.includes(OPENCODE_REF)) return false
+  const key = readRef(await readText(dsh.credFile), OPENCODE_REF)
+  if (key && !(await opencodeConfigured(ctx))) await saveOpencodeKey(ctx, key)
   await applyDsh(ctx, all.state, { refs: { [OPENCODE_REF]: null }, providers: { [OPENCODE_PROVIDER]: null } }, { profile: all.config.dsh.profile })
+  return true
 }

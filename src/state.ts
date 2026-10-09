@@ -21,6 +21,8 @@ export interface Config {
   remote: { mode: RemoteMode; domain?: string }
   /** 出站代理：undefined = 还没定（setup 自动检测），null = 明确不用 */
   proxy?: string | null
+  /** WorkBuddy bridge（统一端点下的自有组件） */
+  bridge?: { port: number; riskNoticeAt?: string }
 }
 
 export type ServiceKind = 'launchd' | 'systemd-user' | 'systemd-system'
@@ -54,6 +56,8 @@ export interface PluginRecord {
 
 export interface State {
   plugins?: PluginRecord[]
+  /** bridge 的系统服务（与引擎分开登记） */
+  bridgeService?: { kind: ServiceKind; file: string; label: string }
   service?: { kind: ServiceKind; file: string; label: string }
   dsh?: DshState
   remote?: {

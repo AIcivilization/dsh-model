@@ -12,6 +12,7 @@ import { doctor, status } from './commands/status.js';
 import { uninstall } from './commands/uninstall.js';
 import { opencode } from './commands/opencode.js';
 import { workbuddy } from './commands/workbuddy.js';
+import { bridge } from './commands/bridge.js';
 import { createContext } from './context.js';
 import { isDshModelError } from './errors.js';
 import { L, initLang } from './i18n.js';
@@ -39,7 +40,7 @@ const OPTIONS = {
     model: { type: 'string' },
     lines: { type: 'string' },
     proxy: { type: 'string' },
-    engine: { type: 'boolean' },
+    bridge: { type: 'boolean' },
     'skip-opencode': { type: 'boolean' },
     'skip-workbuddy': { type: 'boolean' },
     stdin: { type: 'boolean' },
@@ -51,11 +52,12 @@ function help() {
 
 用法：dsh-model <命令> [选项]
 
-  setup [--profile P] [--proxy URL|none] [--engine] [--skip-opencode] [--skip-workbuddy]
-                                       一键把默认模型接进 dsh：OpenCode Zen（你的 key）+ WorkBuddy（插件）；可重复执行
+  setup [--profile P] [--proxy URL|none] [--skip-opencode] [--skip-workbuddy]
+                                       一键安装统一端点，接入 OpenCode Zen（你的 key）与 WorkBuddy（自有 bridge），并接进 dsh；可重复执行
   opencode [status|key|remove] [--stdin] [--skip-verify]
                                        OpenCode Zen：设置 / 更换 key，或移除
-  workbuddy [status|install|remove]    WorkBuddy 插件（dsh-workbuddy-connect）
+  workbuddy [status|enable|refresh|disable]
+                                       WorkBuddy（bridge 读 WorkBuddy App 登录态）
   login <${ups}> [--device] [--replace] [--accept-risk]
                                        登录订阅上游（首次会自动安装引擎）
   logout <上游>                         退出登录
@@ -70,7 +72,7 @@ function help() {
   engine version|upgrade [版本]|rollback 引擎版本管理
   service status|install|start|stop|restart|uninstall
   repair                               按台账修复配置、服务与接线
-  logs [--lines N]                     引擎日志
+  logs [--lines N] [--bridge]          引擎 / bridge 日志
   uninstall [--yes] [--keep-auth]      干净卸载
 
 通用选项：--lang zh|en  --json  --help  --version
@@ -78,11 +80,12 @@ function help() {
 
 Usage: dsh-model <command> [options]
 
-  setup [--profile P] [--proxy URL|none] [--engine] [--skip-opencode] [--skip-workbuddy]
-                                       Wire the default models into dsh: OpenCode Zen (your key) + WorkBuddy (plugin); idempotent
+  setup [--profile P] [--proxy URL|none] [--skip-opencode] [--skip-workbuddy]
+                                       Install the unified endpoint, connect OpenCode Zen (your key) and WorkBuddy (own bridge), wire into dsh; idempotent
   opencode [status|key|remove] [--stdin] [--skip-verify]
                                        OpenCode Zen: set / change the key, or remove
-  workbuddy [status|install|remove]    WorkBuddy plugin (dsh-workbuddy-connect)
+  workbuddy [status|enable|refresh|disable]
+                                       WorkBuddy (bridge reads the WorkBuddy app sign-in)
   login <${ups}> [--device] [--replace] [--accept-risk]
                                        Log in to a subscription upstream (installs the engine on first use)
   logout <upstream>                    Log out
@@ -97,7 +100,7 @@ Usage: dsh-model <command> [options]
   engine version|upgrade [ver]|rollback  Engine version management
   service status|install|start|stop|restart|uninstall
   repair                               Repair config, service and wiring from the ledger
-  logs [--lines N]                     Engine logs
+  logs [--lines N] [--bridge]          Engine / bridge logs
   uninstall [--yes] [--keep-auth]      Clean uninstall
 
 Global: --lang zh|en  --json  --help  --version
@@ -131,11 +134,13 @@ export async function main(argv) {
             throw new Error(L(`端口不合法：${o.port}`, `Invalid port: ${o.port}`));
         switch (cmd) {
             case 'setup':
-                return await setup(ctx, { port, profile: o.profile, force: o.force, proxy: o.proxy, engine: o.engine, skipOpencode: o['skip-opencode'], skipWorkbuddy: o['skip-workbuddy'] });
+                return await setup(ctx, { port, profile: o.profile, force: o.force, proxy: o.proxy, skipOpencode: o['skip-opencode'], skipWorkbuddy: o['skip-workbuddy'] });
             case 'opencode':
                 return await opencode(ctx, a1, { stdin: o.stdin, skipVerify: o['skip-verify'] });
             case 'workbuddy':
                 return await workbuddy(ctx, a1);
+            case 'bridge':
+                return await bridge(ctx, a1);
             case 'login':
                 if (!a1)
                     throw new Error(L(`用法：dsh-model login <${UPSTREAMS.map((u) => u.id).join('|')}>`, `Usage: dsh-model login <${UPSTREAMS.map((u) => u.id).join('|')}>`));
@@ -165,7 +170,7 @@ export async function main(argv) {
             case 'repair':
                 return await repair(ctx);
             case 'logs':
-                return await logs(ctx, o.lines ? Number(o.lines) : undefined);
+                return await logs(ctx, o.lines ? Number(o.lines) : undefined, o.bridge ? 'bridge' : 'engine');
             case 'uninstall':
                 return await uninstall(ctx, { yes: o.yes, keepAuth: o['keep-auth'] });
             default:

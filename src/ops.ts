@@ -2,7 +2,9 @@
 
 import type { Ctx } from './context.js'
 import { connectDsh } from './dsh/connect.js'
-import { listModels, waitModelsChange } from './engine/client.js'
+import { listModels, waitModelsChange, type ModelEntry } from './engine/client.js'
+import { compatModelIndex, loadCompatUpstreams } from './engine/compat.js'
+import type { DshModel } from './dsh/patch.js'
 import { writeEngineConfig } from './engine/config.js'
 import { DshModelError, isDshModelError } from './errors.js'
 import { L } from './i18n.js'
@@ -47,12 +49,24 @@ export async function syncModels(ctx: Ctx, all: All, opts: { before?: string[]; 
   const key = dshKey(all.keys)
   const models = opts.before ? await waitModelsChange(all.config.port, key, opts.before) : await listModels(all.config.port, key)
   const ids = models.map((m) => m.id)
+  const meta = compatModelIndex(await loadCompatUpstreams(ctx))
+  const entries: DshModel[] = ids.map((id) => {
+    const m = meta.get(id)
+    if (!m) return { id, name: id }
+    return {
+      id,
+      name: m.displayName ?? id,
+      ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+      ...(m.maxTokens ? { maxTokens: m.maxTokens } : {}),
+      input: m.image ? ['text', 'image'] : ['text'],
+    }
+  })
   try {
     const r = await connectDsh(ctx, all.state, all.keys, {
       providerId: all.config.dsh.providerId,
       port: all.config.port,
       key,
-      models: ids.map((id) => ({ id, name: id })),
+      models: entries,
       profile: opts.profile ?? all.config.dsh.profile,
       force: opts.force,
     })
@@ -74,4 +88,32 @@ export async function syncModels(ctx: Ctx, all: All, opts: { before?: string[]; 
   }
   await saveAll(ctx, all)
   return ids
+}
+
+/** 等引擎热重载后列出这些模型（openai-compatibility 上游改动之后），最多 timeoutMs */
+async function waitForAliases(port: number, key: string, expected: string[], timeoutMs = 6000): Promise<ModelEntry[]> {
+  const deadline = Date.now() + timeoutMs
+  let last: ModelEntry[] = []
+  while (Date.now() < deadline) {
+    try {
+      last = await listModels(port, key)
+      const have = new Set(last.map((m) => m.id))
+      if (expected.every((id) => have.has(id))) return last
+    } catch {
+      // 重载中
+    }
+    await new Promise((r) => setTimeout(r, 300))
+  }
+  return last
+}
+
+/**
+ * 全量同步：按当前的 OpenCode key / WorkBuddy 目录重写 engine.yaml → 等引擎加载 → 把模型清单写进 dsh。
+ * setup、opencode key、bridge 发现目录变化时都走这里。
+ */
+export async function syncAll(ctx: Ctx, all: All, opts: { quiet?: boolean } = {}): Promise<string[]> {
+  await applyEngineConfig(ctx, all)
+  const expected = [...compatModelIndex(await loadCompatUpstreams(ctx)).keys()]
+  if (expected.length) await waitForAliases(all.config.port, dshKey(all.keys), expected)
+  return syncModels(ctx, all, { quiet: opts.quiet })
 }

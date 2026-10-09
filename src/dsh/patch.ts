@@ -16,6 +16,9 @@ export const LLM_ENTRY_NAME = '@deepseek-ai/dsh-llm-pi-ai'
 export interface DshModel {
   id: string
   name: string
+  contextWindow?: number
+  maxTokens?: number
+  input?: ('text' | 'image')[]
 }
 
 export interface ProviderSpec {
