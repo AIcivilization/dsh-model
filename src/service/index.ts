@@ -64,7 +64,7 @@ function bridgeProgram(): string[] {
 export function bridgeEnv(ctx: Ctx, proxy: string | null | undefined): Record<string, string> {
   return {
     DSH_MODEL_HOME: ctx.paths.home,
-    ...(proxy ? { NODE_USE_ENV_PROXY: '1', HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NO_PROXY: '127.0.0.1,localhost,::1,.tencent.com,.codebuddy.cn,.qq.com' } : {}),
+    ...(proxy ? { NODE_USE_ENV_PROXY: '1', HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NO_PROXY: '127.0.0.1,localhost,::1,.tencent.com,.codebuddy.cn,.workbuddy.cn,.qq.com' } : {}),
   }
 }
 
