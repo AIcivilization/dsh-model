@@ -1,6 +1,6 @@
 // ops.ts — 各命令共用的流程：读全部状态、应用引擎配置、同步模型到 dsh
 import { connectDsh } from './dsh/connect.js';
-import { listModels, waitModelsChange } from './engine/client.js';
+import { listModels, waitHealthy, waitModelsChange } from './engine/client.js';
 import { compatModelIndex, loadCompatUpstreams } from './engine/compat.js';
 import { writeEngineConfig } from './engine/config.js';
 import { DshModelError, isDshModelError } from './errors.js';
@@ -23,11 +23,19 @@ export function dshKey(keys) {
         throw new DshModelError('not_setup', L('还没有初始化', 'Not set up yet'), L('先执行 dsh-model setup', 'Run dsh-model setup first'));
     return k.key;
 }
-/** 写 engine.yaml；portChanged 时需要重启服务（端口不在热重载范围内） */
-export async function applyEngineConfig(ctx, all, opts = {}) {
+/**
+ * 写 engine.yaml；内容变了且服务已注册，就重启引擎并等它起来。
+ * 不能指望引擎的热重载：我们原子写（临时文件 + rename）会换掉文件 inode，
+ * Linux 上引擎的 fsnotify 盯着旧 inode，收不到变化（VPS 实测：写入后引擎一直是 0 个 OpenAI-compat）。
+ */
+export async function applyEngineConfig(ctx, all) {
     const wrote = await writeEngineConfig(ctx, all.config, all.keys);
-    if (wrote && opts.restart && !ctx.serviceDisabled && all.state.service)
-        await serviceFor(ctx).restart();
+    if (!wrote || ctx.serviceDisabled || !all.state.service)
+        return;
+    await serviceFor(ctx).restart();
+    if (!(await waitHealthy(all.config.port, 15_000))) {
+        throw new DshModelError('engine_unhealthy', L('引擎重启后没有起来', 'Engine did not come back after restart'), L('查看日志：dsh-model logs', 'Check logs: dsh-model logs'));
+    }
 }
 /**
  * 把引擎当前的模型列表写进 dsh。dsh 没装 / 没接过线时只提示，不算失败。

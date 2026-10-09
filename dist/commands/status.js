@@ -164,7 +164,7 @@ export async function doctor(ctx, opts) {
     if (all.state.dsh) {
         const d = all.state.dsh;
         const present = await providerPresent(all.state, all.config.dsh.providerId).catch(() => false);
-        add('dsh-provider', present || !models.length ? 'ok' : 'fail', present ? L(`dsh（${d.profile}）里有 dsh-model`, `dsh-model present in dsh (${d.profile})`) : L('dsh 里没有 dsh-model（dsh-model repair）', 'dsh-model missing in dsh (dsh-model repair)'));
+        add('dsh-provider', present ? 'ok' : models.length ? 'fail' : 'warn', present ? L(`dsh（${d.profile}）里有 dsh-model`, `dsh-model present in dsh (${d.profile})`) : models.length ? L('dsh 里没有 dsh-model（dsh-model repair）', 'dsh-model missing in dsh (dsh-model repair)') : L('dsh 里还没有 dsh-model：引擎里还没有模型', 'dsh-model not in dsh yet: the engine has no models'));
         const credText = await readText(d.credFile);
         add('dsh-key', readRef(credText) === key ? 'ok' : 'fail', readRef(credText) === key ? L(`${KEY_REF} 与 key 一致`, `${KEY_REF} matches`) : L(`${KEY_REF} 与 key 不一致（dsh-model repair）`, `${KEY_REF} does not match (dsh-model repair)`));
         const cm = await fileMode(d.credFile);

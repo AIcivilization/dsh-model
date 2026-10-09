@@ -1,6 +1,6 @@
 {
   "name": "dsh-model",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "One local, authenticated OpenAI-compatible endpoint for dsh and your tools: OpenCode Zen, WorkBuddy (own bridge) and your CLI subscriptions. Clean uninstall. Powered by CLIProxyAPI.",
   "keywords": [
     "dsh",

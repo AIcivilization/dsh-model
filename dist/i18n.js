@@ -15,6 +15,9 @@ export function systemLang(env = process.env) {
     const fromEnv = env.LC_ALL || env.LC_MESSAGES || env.LANG || '';
     if (fromEnv && !/^(C|POSIX)(\.|$)/i.test(fromEnv))
         return normalizeLang(fromEnv) || 'zh';
+    // 服务器上常见 LANG=C / C.UTF-8 或干脆没设：本项目以中文为主，这时默认中文（英文用 --lang en 或 DSH_MODEL_LANG=en）
+    if (fromEnv || process.platform !== 'darwin')
+        return 'zh';
     try {
         return normalizeLang(Intl.DateTimeFormat().resolvedOptions().locale) || 'zh';
     }
