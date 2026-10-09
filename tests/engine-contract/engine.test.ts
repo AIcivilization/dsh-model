@@ -45,6 +45,7 @@ describe('engine contract (real binary)', () => {
       DSH_MODEL_SERVICE: 'none',
       DSH_MODEL_ENGINE_ARCHIVE: t.ctx.env.DSH_MODEL_ENGINE_ARCHIVE,
       DSH_MODEL_LANG: 'en',
+      DSH_MODEL_NO_APP_DISCOVERY: '1',
     })
     await writeFile(join(t.profileDir, 'cordis.patch.yml'), await fixture('no-llm.yml'), { mode: 0o600 })
     await writeFile(join(t.ctx.dshHome, '.credentials.yaml'), await fixture('credentials.yml'), { mode: 0o600 })
@@ -67,8 +68,9 @@ describe('engine contract (real binary)', () => {
     child = spawn(currentBinary(t.ctx), ['-config', t.ctx.paths.engineYaml], { cwd: t.ctx.paths.home, stdio: 'ignore' })
     expect(await waitHealthy(port, 15_000)).toBe(true)
     expect(await unauthStatus(port)).toBe(401)
-    const res = await fetch(`http://127.0.0.1:${port}/v0/management/config`)
-    expect(res.status).toBe(404)
+    // 管理接口打开了（设计 §14.4），但不带管理密钥一律 401
+    const res = await fetch(`http://127.0.0.1:${port}/v8/management/credentials`)
+    expect(res.status).toBe(401)
     const keys = await loadKeys(t.ctx)
     expect(await listModels(port, keys.keys[0]!.key)).toEqual([])
   }, 30_000)

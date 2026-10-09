@@ -14,7 +14,8 @@ export function opencodeModelsPath(ctx) {
 export async function loadCompatUpstreams(ctx) {
     const out = [];
     const secrets = await loadSecrets(ctx);
-    if (secrets.opencode?.key) {
+    const disabled = new Set((await readJson(join(ctx.paths.home, 'config.json')))?.disabledSources ?? []);
+    if (secrets.opencode?.key && !disabled.has('opencode')) {
         const list = await readJson(opencodeModelsPath(ctx));
         const models = (list?.models ?? []).map((m) => ({
             name: m.id,
@@ -30,7 +31,7 @@ export async function loadCompatUpstreams(ctx) {
     const bridge = await readJson(bridgeConfigPath(ctx.paths.home));
     if (bridge) {
         for (const c of await loadCatalogs(ctx.paths.home)) {
-            if (!c.signedIn || !c.models.length)
+            if (!c.signedIn || !c.models.length || disabled.has(c.prefix))
                 continue;
             out.push({
                 name: c.prefix,

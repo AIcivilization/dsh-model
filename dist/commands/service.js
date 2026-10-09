@@ -5,6 +5,7 @@ import { L } from '../i18n.js';
 import { applyEngineConfig, loadAll, saveAll, syncAll } from '../ops.js';
 import { serviceFor } from '../service/index.js';
 import { withLock } from '../state.js';
+import { ensureDaemon } from '../daemon/service.js';
 import { waitHealthy } from '../engine/client.js';
 import { info, isJsonMode, ok, printJson } from '../util/output.js';
 export async function service(ctx, sub) {
@@ -63,12 +64,7 @@ export async function repair(ctx) {
             if (!(await waitHealthy(all.config.port, 15_000)))
                 throw new DshModelError('engine_unhealthy', L('引擎没有启动，查看 dsh-model logs', 'Engine did not start; see dsh-model logs'));
             ok(L('服务已重装并重启', 'Service reinstalled and restarted'));
-            if (all.config.bridge && all.state.bridgeService) {
-                const b = serviceFor(ctx, 'bridge', all.config.proxy);
-                await b.install();
-                await b.restart();
-                ok(L('bridge 服务已重装并重启', 'bridge service reinstalled and restarted'));
-            }
+            await ensureDaemon(ctx, all);
         }
         await syncAll(ctx, all);
         return 0;

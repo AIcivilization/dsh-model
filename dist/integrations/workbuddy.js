@@ -4,13 +4,13 @@
 // v0.2.0 曾经通过 dsh 的插件管理装 dsh-workbuddy-connect：removeWorkbuddyPlugin 负责把 dsh-model 装的那份移除。
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { BRIDGE_DEFAULT_PORT, availableVariants, ensureBridgeConfig, loadBridgeConfig, loadCatalogs } from '../bridge/runtime.js';
+import { availableVariants, loadBridgeConfig, loadCatalogs } from '../bridge/runtime.js';
+import { ensureDaemon } from '../daemon/service.js';
 import { dshPlugin, profileHasDependency } from '../dsh/cli.js';
 import { resolveProfile } from '../dsh/locate.js';
 import { DshModelError } from '../errors.js';
 import { L } from '../i18n.js';
 import { serviceFor } from '../service/index.js';
-import { findFreePort, isPortFree } from '../util/port.js';
 import { info, ok, skip, warn } from '../util/output.js';
 export const WORKBUDDY_PLUGIN = 'dsh-workbuddy-connect';
 export function riskNotice() {
@@ -47,31 +47,13 @@ export async function enableWorkbuddy(ctx, all) {
     }
     if (!all.config.bridge?.riskNoticeAt) {
         warn(riskNotice());
-        all.config.bridge = { port: all.config.bridge?.port ?? BRIDGE_DEFAULT_PORT, riskNoticeAt: new Date().toISOString() };
-    }
-    let port = all.config.bridge?.port ?? BRIDGE_DEFAULT_PORT;
-    const existing = await loadBridgeConfig(ctx.paths.home);
-    const ours = existing && (await bridgeHealthy(existing.port, existing.secret));
-    if (!ours && !(await isPortFree(port)))
-        port = await findFreePort(port + 1);
-    all.config.bridge = { ...all.config.bridge, port };
-    const cfg = await ensureBridgeConfig(ctx.paths.home, port, ctx.owner);
-    if (ctx.serviceDisabled) {
-        skip(L('已跳过 bridge 系统服务（DSH_MODEL_SERVICE=none）', 'Skipped bridge service (DSH_MODEL_SERVICE=none)'));
-        return loadCatalogs(ctx.paths.home);
+        all.config.bridge = { port: all.config.bridge?.port ?? 0, riskNoticeAt: new Date().toISOString() };
     }
     const since = Date.now();
-    const svc = serviceFor(ctx, 'bridge', all.config.proxy);
-    await svc.install();
-    await svc.restart();
-    all.state.bridgeService = { kind: svc.kind, file: svc.spec.file, label: svc.spec.label };
-    const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline && !(await bridgeHealthy(cfg.port, cfg.secret)))
-        await new Promise((r) => setTimeout(r, 300));
-    if (!(await bridgeHealthy(cfg.port, cfg.secret))) {
-        throw new DshModelError('bridge_unhealthy', L(`bridge 没有在 127.0.0.1:${cfg.port} 上启动`, `bridge did not come up on 127.0.0.1:${cfg.port}`), L('查看日志：dsh-model logs --bridge', 'Check logs: dsh-model logs --bridge'));
-    }
-    ok(L(`bridge 已在 127.0.0.1:${cfg.port} 运行`, `bridge running on 127.0.0.1:${cfg.port}`));
+    // 守护进程（bridge）重启后会按当前登录的产品重建，并读一遍目录
+    await ensureDaemon(ctx, all);
+    if (ctx.serviceDisabled)
+        return loadCatalogs(ctx.paths.home);
     info(L('正在读取 WorkBuddy 登录态与模型目录（首次会运行 App 自带的程序取密钥）…', 'Reading WorkBuddy sign-in and model catalog (first run executes the app binary to obtain the key)…'));
     const cats = await waitCatalogs(ctx, since, variants.length);
     for (const c of cats) {

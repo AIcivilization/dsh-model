@@ -30,6 +30,8 @@ export interface BridgeOptions {
   log?: (message: string) => void
   /** POST /refresh：立刻重读登录态与目录（dsh-model workbuddy refresh 用） */
   onRefresh?: () => Promise<unknown>
+  /** /control/*：守护进程的控制接口（来源开关、登录、key、统计），给 CLI 与 dsh 插件用 */
+  onControl?: (method: string, path: string, body: unknown, query: URLSearchParams) => Promise<{ status: number; body: unknown }>
 }
 
 const BODY_LIMIT = 64 * 1024 * 1024
@@ -73,7 +75,7 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
 
 export function createBridge(options: BridgeOptions): { server: Server; ready: Promise<number>; close: () => Promise<void> } {
   const expected = Buffer.from(options.secret)
-  const byKey = new Map(options.variants.map((v) => [v.key, v]))
+  // variants 可能在运行中增加（新登录了一个产品），每次请求现查
   const log = options.log ?? (() => {})
 
   const authorized = (req: IncomingMessage): boolean => {
@@ -96,7 +98,8 @@ export function createBridge(options: BridgeOptions): { server: Server; ready: P
     if (!originIsLoopback(req.headers.origin)) return oaiError(res, 403, 'origin_not_allowed', 'Origin must be loopback')
     if (!authorized(req)) return oaiError(res, 401, 'unauthorized', 'missing or invalid bearer')
 
-    const url = (req.url ?? '/').split('?')[0]!.replace(/\/+$/, '') || '/'
+    const fullUrl = new URL(req.url ?? '/', 'http://127.0.0.1')
+    const url = fullUrl.pathname.replace(/\/+$/, '') || '/'
     if (req.method === 'GET' && url === '/healthz') return json(res, 200, { ok: true })
     if (req.method === 'GET' && url === '/status') {
       const out: Record<string, unknown> = {}
@@ -107,13 +110,26 @@ export function createBridge(options: BridgeOptions): { server: Server; ready: P
       return json(res, 200, out)
     }
 
+    if (url.startsWith('/control/') && options.onControl) {
+      let body: unknown = undefined
+      if (req.method !== 'GET' && req.method !== 'DELETE') {
+        const raw = (await readBody(req)).toString('utf8')
+        try {
+          body = raw ? JSON.parse(raw) : undefined
+        } catch {
+          return oaiError(res, 400, 'invalid_json', 'request body is not JSON')
+        }
+      }
+      const r = await options.onControl(req.method ?? 'GET', url.slice('/control'.length), body, fullUrl.searchParams)
+      return json(res, r.status, r.body)
+    }
     if (req.method === 'POST' && url === '/refresh') {
       if (!options.onRefresh) return oaiError(res, 404, 'not_found', 'refresh not supported')
       return json(res, 200, { ok: true, result: await options.onRefresh() })
     }
 
     const m = /^\/([a-z]+)\/v1\/(models|chat\/completions)$/.exec(url)
-    const variant = m ? byKey.get(m[1]!) : undefined
+    const variant = m ? options.variants.find((v) => v.key === m[1]) : undefined
     if (!m || !variant) return oaiError(res, 404, 'not_found', `no such route: ${req.method} ${url}`)
 
     if (m[2] === 'models' && req.method === 'GET') {

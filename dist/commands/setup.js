@@ -18,6 +18,7 @@ import { bold, info, next, ok, skip, warn } from '../util/output.js';
 import { findFreePort, isPortFree } from '../util/port.js';
 import { detectProxy, normalizeProxyUrl, redactProxy } from '../util/proxy.js';
 import { configureOpencode } from './opencode.js';
+import { ensureDaemon } from '../daemon/service.js';
 export async function setup(ctx, opts) {
     requireRootInVps(ctx);
     return withLock(ctx, async () => {
@@ -60,6 +61,9 @@ export async function setup(ctx, opts) {
             warn(L('引擎没装好，后面的步骤都依赖它，先停在这里', 'The engine is not ready and everything else depends on it; stopping here'));
             return 1;
         }
+        info('');
+        info(bold(L('守护进程', 'Daemon')));
+        await step('daemon', () => ensureDaemon(ctx, all));
         info('');
         info(bold('OpenCode Zen'));
         if (opts.skipOpencode)

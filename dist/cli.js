@@ -3,7 +3,6 @@ import { parseArgs } from 'node:util';
 import { connect, disconnect, models } from './commands/connect.js';
 import { engine } from './commands/engine.js';
 import { key } from './commands/key.js';
-import { login, logout } from './commands/login.js';
 import { logs } from './commands/logs.js';
 import { remote } from './commands/remote.js';
 import { repair, service } from './commands/service.js';
@@ -13,6 +12,7 @@ import { uninstall } from './commands/uninstall.js';
 import { opencode } from './commands/opencode.js';
 import { workbuddy } from './commands/workbuddy.js';
 import { bridge } from './commands/bridge.js';
+import { enableInteractive, source, sources, stats } from './commands/sources.js';
 import { createContext } from './context.js';
 import { isDshModelError } from './errors.js';
 import { L, initLang } from './i18n.js';
@@ -58,9 +58,11 @@ function help() {
                                        OpenCode Zen：设置 / 更换 key，或移除
   workbuddy [status|login [cn|ai]|logout [cn|ai]|enable|refresh|disable]
                                        WorkBuddy：桌面 App 登录态，或 login 打印链接、在任意浏览器授权（服务器可用）
-  login <${ups}> [--device] [--replace] [--accept-risk]
-                                       登录订阅上游（首次会自动安装引擎）
-  logout <上游>                         退出登录
+  sources                              来源列表：开关、登录状态、账号、模型数
+  source enable|disable|logout <来源> [--accept-risk]
+                                       打开（未登录就打印链接登录）/ 关闭（保留登录）/ 退出登录
+  login <来源> / logout <来源>          同 source enable / source logout
+  stats                                按 key / 来源 / 模型的成功率、延迟、速度
   status                               一屏总览
   doctor [--e2e] [--all] [--model M]   逐项自检；--e2e 实测流式与工具调用
   connect-dsh [--dry-run] [--force]    写入 / 刷新 dsh 配置
@@ -86,9 +88,11 @@ Usage: dsh-model <command> [options]
                                        OpenCode Zen: set / change the key, or remove
   workbuddy [status|login [cn|ai]|logout [cn|ai]|enable|refresh|disable]
                                        WorkBuddy: desktop app sign-in, or login prints a link to approve in any browser (works on servers)
-  login <${ups}> [--device] [--replace] [--accept-risk]
-                                       Log in to a subscription upstream (installs the engine on first use)
-  logout <upstream>                    Log out
+  sources                              Sources: switch, sign-in state, account, models
+  source enable|disable|logout <source> [--accept-risk]
+                                       Turn on (prints a login link if needed) / off (keeps sign-in) / sign out
+  login <source> / logout <source>     Same as source enable / source logout
+  stats                                Success rate, latency and speed by key / source / model
   status                               Overview
   doctor [--e2e] [--all] [--model M]   Health checks; --e2e tests streaming and tool calls
   connect-dsh [--dry-run] [--force]    Write / refresh dsh config
@@ -142,13 +146,20 @@ export async function main(argv) {
             case 'bridge':
                 return await bridge(ctx, a1);
             case 'login':
+                // 统一走守护进程：链接 + 码 / 贴回跳转地址，服务器上不需要浏览器（设计 §14.2）
                 if (!a1)
-                    throw new Error(L(`用法：dsh-model login <${UPSTREAMS.map((u) => u.id).join('|')}>`, `Usage: dsh-model login <${UPSTREAMS.map((u) => u.id).join('|')}>`));
-                return await login(ctx, a1, { device: o.device, replace: o.replace, acceptRisk: o['accept-risk'] });
+                    throw new Error(L('用法：dsh-model login <来源>（dsh-model sources 查看）', 'Usage: dsh-model login <source> (see dsh-model sources)'));
+                return await enableInteractive(ctx, a1, { acceptRisk: o['accept-risk'] });
             case 'logout':
                 if (!a1)
-                    throw new Error(L('用法：dsh-model logout <上游>', 'Usage: dsh-model logout <upstream>'));
-                return await logout(ctx, a1);
+                    throw new Error(L('用法：dsh-model logout <来源>', 'Usage: dsh-model logout <source>'));
+                return await source(ctx, 'logout', a1, {});
+            case 'sources':
+                return await sources(ctx);
+            case 'source':
+                return await source(ctx, a1, a2, { acceptRisk: o['accept-risk'] });
+            case 'stats':
+                return await stats(ctx);
             case 'status':
                 return await status(ctx);
             case 'doctor':

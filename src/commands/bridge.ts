@@ -1,22 +1,16 @@
-// commands/bridge.ts — dsh-model bridge run（系统服务的入口，常驻）与 bridge status
+// commands/bridge.ts — dsh-model bridge run（守护进程入口，系统服务调用，常驻）与 bridge status
 //
-// run：按本机装了的 WorkBuddy App 建 runtime → 读目录 → 起 HTTP 服务 → 每 30 分钟刷新；
-// 目录（登录状态 / 模型）有变化就全量同步一次：重写 engine.yaml（引擎热重载）并把模型写进 dsh。
+// 守护进程 = WorkBuddy bridge（OpenAI 兼容转发）+ 控制接口（来源开关、登录、key、统计，设计 §14）。
 
 import { createBridge } from '../bridge/server.js'
-import { availableVariants, buildRuntime, loadBridgeConfig, refreshCatalog, type Runtime } from '../bridge/runtime.js'
+import { loadBridgeConfig } from '../bridge/runtime.js'
 import type { Ctx } from '../context.js'
-import { DshModelError, isDshModelError } from '../errors.js'
+import { Daemon } from '../daemon/core.js'
+import { DshModelError } from '../errors.js'
 import { L } from '../i18n.js'
-import { loadAll, syncAll } from '../ops.js'
-import { withLock } from '../state.js'
 import { info, isJsonMode, printJson } from '../util/output.js'
 
-const REFRESH_MS = 30 * 60 * 1000
-const RETRY_MS = 60 * 1000
-
-const stamp = () => new Date().toISOString()
-const log = (m: string) => console.error(`[${stamp()}] ${m}`)
+const log = (m: string) => console.error(`[${new Date().toISOString()}] ${m}`)
 
 export async function bridge(ctx: Ctx, sub: string | undefined): Promise<number> {
   if (sub === 'run') return run(ctx)
@@ -27,7 +21,7 @@ export async function bridge(ctx: Ctx, sub: string | undefined): Promise<number>
 async function status(ctx: Ctx): Promise<number> {
   const cfg = await loadBridgeConfig(ctx.paths.home)
   if (!cfg) {
-    info(L('bridge 未配置（dsh-model setup）', 'bridge not configured (dsh-model setup)'))
+    info(L('守护进程未配置（dsh-model setup）', 'Daemon not configured (dsh-model setup)'))
     return 1
   }
   try {
@@ -37,66 +31,36 @@ async function status(ctx: Ctx): Promise<number> {
     else info(JSON.stringify(body, null, 2))
     return 0
   } catch {
-    info(L(`bridge 没在 127.0.0.1:${cfg.port} 上运行`, `bridge is not running on 127.0.0.1:${cfg.port}`))
+    info(L(`守护进程没在 127.0.0.1:${cfg.port} 上运行`, `Daemon is not running on 127.0.0.1:${cfg.port}`))
     return 1
   }
 }
 
 async function run(ctx: Ctx): Promise<number> {
   const cfg = await loadBridgeConfig(ctx.paths.home)
-  if (!cfg) throw new DshModelError('bridge_not_configured', L('bridge 未配置，先执行 dsh-model setup', 'bridge not configured; run dsh-model setup first'))
-  const runtimes: Runtime[] = (await availableVariants(ctx.paths.home)).map((v) => buildRuntime(v, ctx.paths.home))
-  log(`bridge: products ${runtimes.map((r) => r.label).join(', ') || '(none)'}`)
-
-  let retry: NodeJS.Timeout | undefined
-  const resync = async (): Promise<void> => {
-    try {
-      await withLock(ctx, async () => syncAll(ctx, await loadAll(ctx), { quiet: true }))
-      log('bridge: engine + dsh synced')
-    } catch (error) {
-      // CLI 正持锁（例如 setup 进行中）：稍后再试，setup 结束时自己也会同步
-      log(`bridge: sync deferred: ${isDshModelError(error) ? error.code : String(error)}`)
-      clearTimeout(retry)
-      retry = setTimeout(() => void resync(), RETRY_MS)
-    }
-  }
-
-  const refreshAll = async (): Promise<boolean> => {
-    let changed = false
-    for (const rt of runtimes) {
-      try {
-        if (await refreshCatalog(ctx.paths.home, rt, ctx.owner)) changed = true
-      } catch (error) {
-        log(`bridge: ${rt.label} refresh failed: ${String(error)}`)
-      }
-    }
-    return changed
-  }
+  if (!cfg) throw new DshModelError('bridge_not_configured', L('守护进程未配置，先执行 dsh-model setup', 'Daemon not configured; run dsh-model setup first'))
+  const daemon = new Daemon(ctx)
+  await daemon.start()
+  log(`daemon: products ${daemon.runtimes.map((r) => r.label).join(', ') || '(none)'}`)
 
   const server = createBridge({
     port: cfg.port,
     secret: cfg.secret,
-    variants: runtimes,
+    variants: daemon.runtimes,
     log,
     onRefresh: async () => {
-      const changed = await refreshAll()
-      if (changed) await resync()
+      const changed = await daemon.refreshCatalogs()
+      if (changed) await daemon.resync()
       return { changed }
     },
+    onControl: (method, path, body, query) => daemon.handle(method, path, body, query),
   })
   await server.ready
-  log(`bridge: listening on 127.0.0.1:${cfg.port}`)
-
-  if (await refreshAll()) await resync()
-  const timer = setInterval(() => {
-    void refreshAll().then((changed) => (changed ? resync() : undefined))
-  }, REFRESH_MS)
+  log(`daemon: listening on 127.0.0.1:${cfg.port}`)
 
   await new Promise<void>((resolve) => {
     const stop = () => {
-      clearInterval(timer)
-      clearTimeout(retry)
-      void server.close().then(resolve)
+      void daemon.stop().then(() => server.close()).then(resolve)
     }
     process.once('SIGTERM', stop)
     process.once('SIGINT', stop)

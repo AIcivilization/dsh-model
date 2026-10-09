@@ -143,12 +143,17 @@ export async function doctor(ctx, opts) {
     add('opencode', !oc ? 'warn' : up && !ocModels ? 'fail' : 'ok', !oc ? L('OpenCode Zen 未配置（dsh-model opencode key）', 'OpenCode Zen not configured (dsh-model opencode key)') : up && !ocModels ? L('已配置但引擎里没有 opencode/ 模型（dsh-model repair）', 'configured but no opencode/ models in the engine (dsh-model repair)') : L(`OpenCode Zen：${ocModels} 个模型`, `OpenCode Zen: ${ocModels} models`));
     const apps = await availableVariants(ctx.paths.home);
     const bridgeCfg = await loadBridgeConfig(ctx.paths.home);
-    if (apps.length) {
+    // 守护进程（来源开关、登录、统计、WorkBuddy 转发）总要在跑；只有刻意跳过系统服务时不查
+    if (!ctx.serviceDisabled) {
         if (!bridgeCfg)
-            add('workbuddy', 'warn', L('检测到 WorkBuddy App，但没启用（dsh-model workbuddy enable）', 'WorkBuddy app found but not enabled (dsh-model workbuddy enable)'));
+            add('daemon', 'fail', L('守护进程没配置（dsh-model setup）', 'Daemon not configured (dsh-model setup)'));
         else {
             const bUp = await bridgeHealthy(bridgeCfg.port, bridgeCfg.secret);
-            add('bridge', bUp ? 'ok' : 'fail', bUp ? L(`bridge 127.0.0.1:${bridgeCfg.port} 运行中`, `bridge 127.0.0.1:${bridgeCfg.port} running`) : L(`bridge 没在运行（dsh-model logs --bridge；dsh-model repair）`, 'bridge not running (dsh-model logs --bridge; dsh-model repair)'));
+            add('daemon', bUp ? 'ok' : 'fail', bUp ? L(`守护进程 127.0.0.1:${bridgeCfg.port} 运行中`, `daemon 127.0.0.1:${bridgeCfg.port} running`) : L('守护进程没在运行（dsh-model logs --bridge；dsh-model repair）', 'daemon not running (dsh-model logs --bridge; dsh-model repair)'));
+        }
+    }
+    if (apps.length && bridgeCfg) {
+        {
             for (const c of await loadCatalogs(ctx.paths.home)) {
                 const inEngine = models.filter((m) => m.id.startsWith(`${c.prefix}/`)).length;
                 if (!c.signedIn)

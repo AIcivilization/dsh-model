@@ -65,7 +65,8 @@ export async function ensureBridgeConfig(home: string, port: number, owner?: Own
 
 /** 本机装了哪几个 WorkBuddy App（看 Electron 可执行文件） */
 export async function installedVariants(): Promise<WorkBuddyVariant[]> {
-  if (process.platform !== 'darwin') return []
+  // 测试用：不去发现本机真实的 WorkBuddy App（免得读到真实凭据）
+  if (process.platform !== 'darwin' || process.env.DSH_MODEL_NO_APP_DISCOVERY === '1') return []
   const out: WorkBuddyVariant[] = []
   for (const v of WORKBUDDY_VARIANTS) {
     const p = v.electron?.macOS?.defaultPath
