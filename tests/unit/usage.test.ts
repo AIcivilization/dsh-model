@@ -41,3 +41,13 @@ describe('subscription usage parsers', () => {
     expect(parseGrokBilling({}).credits).toBeUndefined()
   })
 })
+
+describe('probe classification', () => {
+  it('treats quota / payment refusals as no access', async () => {
+    const { classifyProbeFailure } = await import('../../src/daemon/usage.js')
+    expect(classifyProbeFailure(403, '{"error":{"message":"devin upstream error (permission_denied)","code":"insufficient_quota"}}')).toEqual({ ok: false, reason: 'devin upstream error (permission_denied)' })
+    expect(classifyProbeFailure(400, 'access_terminated_error').ok).toBe(false)
+    expect(() => classifyProbeFailure(429, '{"error":{"message":"rate limited"}}')).toThrow(/429/)
+    expect(() => classifyProbeFailure(502, 'bad gateway')).toThrow(/502/)
+  })
+})

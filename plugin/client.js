@@ -129,12 +129,12 @@ window.__ModuleLoader__.load({
 
     function Usage({ usage, subscribeUrl }) {
       if (!usage) return null
-      if (usage.unsupported) return h('div', { style: { ...S.meta, marginTop: 6, paddingLeft: 46 } }, L('用量：暂不支持', 'Usage: not supported yet'))
       if (usage.noAccess) {
         return h('div', { style: { ...S.line, alignItems: 'flex-start', fontSize: 12, color: C.warn, marginTop: 6, paddingLeft: 46, lineHeight: 1.6 } },
-          h('span', { style: S.grow }, L('当前账号没有可用订阅，调用会被拒绝（不会扣费），所以它的模型已在 dsh 中隐藏。开通后把开关关掉再打开即可恢复。', 'This account has no usable subscription — calls are refused (no charge), so its models are hidden in dsh. After subscribing, turn the switch off and on again.')),
+          h('span', { style: S.grow }, L(`当前账号没有可用订阅，调用会被拒绝（不会扣费），所以它的模型已在 dsh 中隐藏。开通后把开关关掉再打开即可恢复。${usage.error ? `（${usage.error}）` : ''}`, 'This account has no usable subscription — calls are refused (no charge), so its models are hidden in dsh. After subscribing, turn the switch off and on again.')),
           subscribeUrl ? h('a', { href: subscribeUrl, target: '_blank', rel: 'noopener noreferrer', style: { ...S.btnPrimary, textDecoration: 'none', flex: 'none' } }, L('去开通 ↗', 'Subscribe ↗')) : null)
       }
+      if (usage.unsupported) return h('div', { style: { ...S.meta, marginTop: 6, paddingLeft: 46 } }, L('已实测可以调用；用量暂不支持查询', 'Tested OK; usage not available yet'))
       const lines = []
       if (usage.plan) lines.push(h('div', { key: 'plan', style: { ...S.meta, marginTop: 6 } }, `${L('套餐', 'Plan')}：${usage.plan}`))
       for (const w of usage.windows || []) {

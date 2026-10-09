@@ -17,7 +17,7 @@ import { L } from '../i18n.js'
 import { refreshOpencodeModels, removeOpencodeKey, saveOpencodeKey, validateKeyShape, verifyOpencodeKey } from '../integrations/opencode.js'
 import { riskNotice as workbuddyRiskNotice } from '../integrations/workbuddy.js'
 import { DSH_KEY_NAME, addKey, loadKeys, revokeKey, rotateKey, saveKeys } from '../keys.js'
-import { applyEngineConfig, loadAll, saveAll, syncAll } from '../ops.js'
+import { applyEngineConfig, dshKey, loadAll, saveAll, syncAll } from '../ops.js'
 import { loadSecrets } from '../secrets.js'
 import { SOURCES, credsFor, findSource, paymentRequired, type SourceDef } from '../sources.js'
 import { withLock } from '../state.js'
@@ -25,7 +25,7 @@ import { riskNotice as upstreamRiskNotice } from '../upstreams.js'
 import { getUpstream } from '../upstreams.js'
 import { redactKey } from '../util/redact.js'
 import { Stats, type StatsSnapshot } from './stats.js'
-import { USAGE_UNSUPPORTED, fetchEngineUsage, fetchWorkbuddyUsage, usageFilePath, type SourceUsage } from './usage.js'
+import { USAGE_UNSUPPORTED, probeEngineSource, fetchEngineUsage, fetchWorkbuddyUsage, usageFilePath, type SourceUsage } from './usage.js'
 import { writeJson } from '../util/fs.js'
 
 const LOGIN_POLL_MS = 2000
@@ -35,6 +35,8 @@ const STATS_SAVE_MS = 60_000
 const CATALOG_REFRESH_MS = 30 * 60 * 1000
 const RESYNC_RETRY_MS = 60_000
 const USAGE_REFRESH_MS = 5 * 60 * 1000
+/** 查不了用量的来源多久重新实测一次 */
+const PROBE_MS = 6 * 60 * 60 * 1000
 
 export interface SourceState {
   id: string
@@ -171,7 +173,12 @@ export class Daemon {
   async sources(): Promise<SourceState[]> {
     const list = (await this.sourcesRaw()).map((s) => {
       const u = this.usageCache.get(s.id)
-      if (USAGE_UNSUPPORTED.has(s.id) && s.loggedIn) return { ...s, usage: { source: s.id, windows: [], fetchedAt: new Date().toISOString(), unsupported: true } }
+      // 引擎来源：实测结果出来前不显示用量行；OpenCode 的 key 设置时已实测
+      if (USAGE_UNSUPPORTED.has(s.id) && s.loggedIn) {
+        const stub = s.kind === 'engine' ? undefined : { source: s.id, windows: [], fetchedAt: new Date().toISOString(), unsupported: true }
+        const usage = u ?? stub
+        return usage ? { ...s, usage } : s
+      }
       return u && s.loggedIn ? { ...s, usage: u } : s
     })
     // 排序：可用（已接入）→ 已登录但关闭 → 已登录但没有订阅 → 未登录；同档保持注册顺序
@@ -264,6 +271,7 @@ export class Daemon {
     if (def.kind === 'engine') {
       const m = await this.mgmt()
       for (const c of credsFor(await m.credentials(), def)) if (c.disabled) await m.setDisabled(c.name, false)
+      this.forgetProbe(def.id)
     } else {
       await this.setSourceDisabled(def.id, false)
     }
@@ -344,8 +352,12 @@ export class Daemon {
     await Promise.all(
       states.map(async (s) => {
         const def = findSource(s.id)!
-        if (!s.loggedIn || USAGE_UNSUPPORTED.has(s.id)) {
+        if (!s.loggedIn || (USAGE_UNSUPPORTED.has(s.id) && def.kind !== 'engine')) {
           this.usageCache.delete(s.id)
+          return
+        }
+        if (USAGE_UNSUPPORTED.has(s.id)) {
+          await this.probe(s, def, creds)
           return
         }
         const fetchedAt = new Date().toISOString()
@@ -368,6 +380,33 @@ export class Daemon {
         }
       }),
     )
+  }
+
+  /** 查不了用量的引擎来源：实测一次能不能调（每 6 小时；登录 / 重新打开后立即） */
+  private async probe(s: SourceState, def: SourceDef, creds: CredentialEntry[]): Promise<void> {
+    const prev = this.usageCache.get(s.id)
+    if (!s.enabled) return
+    if (prev && Date.now() - Date.parse(prev.fetchedAt) < PROBE_MS) return
+    const fetchedAt = new Date().toISOString()
+    try {
+      const cred = credsFor(creds, def).find((c) => !c.disabled)
+      if (!cred) return
+      const model = def.probeModel ?? (await (await this.mgmt()).credentialModels(cred.name))[0]?.id
+      if (!model) return
+      const all = await loadAll(this.ctx)
+      const r = await probeEngineSource(all.config.port, dshKey(all.keys), model)
+      this.usageCache.set(s.id, { source: s.id, windows: [], fetchedAt, unsupported: true, ...(r.ok ? {} : { noAccess: true, plan: 'none', error: r.reason }) })
+      log(`daemon: probe ${def.id} (${model}) → ${r.ok ? 'ok' : `denied: ${r.reason}`}`)
+    } catch (error) {
+      // 网络 / 限流：不下结论，下一轮再试
+      if (prev) this.usageCache.set(s.id, { ...prev, fetchedAt: new Date(Date.now() - PROBE_MS + 10 * 60 * 1000).toISOString() })
+      log(`daemon: probe ${def.id} inconclusive: ${String((error as Error).message ?? error)}`)
+    }
+  }
+
+  /** 让某个来源下一轮重新实测 */
+  private forgetProbe(id: string): void {
+    if (USAGE_UNSUPPORTED.has(id)) this.usageCache.delete(id)
   }
 
   async usage(refresh = false): Promise<SourceUsage[]> {
@@ -451,7 +490,9 @@ export class Daemon {
       await tightenAuthPerms(this.ctx)
       s.status = 'ok'
       log(`daemon: ${def.label} signed in`)
+      this.forgetProbe(def.id)
       await this.resync()
+      void this.refreshUsage()
     } catch (error) {
       s.status = 'error'
       s.error = String((error as Error).message ?? error)

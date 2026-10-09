@@ -24,6 +24,8 @@ export interface SourceDef {
   risky?: boolean
   /** 没有订阅时给用户的开通页面 */
   subscribeUrl?: string
+  /** 查不了用量的来源，登录后用这个模型实测一次能不能调（不写就用它的第一个模型） */
+  probeModel?: string
   /** 费用：免费 / 免费但额度很少 / 要付费订阅或充值（2026-10 核实，见设计 §14.7） */
   pricing: Pricing
 }
@@ -43,7 +45,7 @@ export const SOURCES: SourceDef[] = [
   { id: 'xai', label: 'Grok (xAI)', kind: 'engine', login: 'device', engineProvider: 'xai', filePrefix: 'xai-', subscribeUrl: 'https://grok.com/plans', pricing: { tier: 'paid', zh: '需要 SuperGrok 或 X Premium+ 订阅', en: 'Needs SuperGrok or X Premium+' } },
   { id: 'meta', label: 'Muse (Meta)', kind: 'engine', login: 'device', engineProvider: 'meta', filePrefix: 'meta-', pricing: { tier: 'paid', zh: '需要 Muse Code 套餐（$5 / 月起），meta.ai 的免费版接不进来', en: 'Needs a Muse Code plan (from $5/mo); the free meta.ai tier cannot be used here' } },
   { id: 'antigravity', label: 'Antigravity', kind: 'engine', login: 'paste', engineProvider: 'antigravity', filePrefix: 'antigravity-', riskAck: true, risky: true, pricing: { tier: 'limited', zh: 'Google 账号有免费额度，额度有限', en: 'Free quota with a Google account, limited' } },
-  { id: 'devin', label: 'Devin', kind: 'engine', login: 'paste', engineProvider: 'devin', filePrefix: 'devin-', subscribeUrl: 'https://devin.ai/pricing', pricing: { tier: 'limited', zh: '有免费档，额度很少；Pro $20 / 月', en: 'Free tier with a small quota; Pro $20/mo' } },
+  { id: 'devin', label: 'Devin', kind: 'engine', login: 'paste', engineProvider: 'devin', filePrefix: 'devin-', subscribeUrl: 'https://devin.ai/pricing', probeModel: 'devin/swe-1-7-lightning', pricing: { tier: 'paid', zh: '需要 Devin Pro（$20 / 月）；免费档实测调用被拒（insufficient_quota）', en: 'Needs Devin Pro ($20/mo); the free tier is refused in testing (insufficient_quota)' } },
   { id: 'opencode', label: 'OpenCode Zen', kind: 'opencode', login: 'key', subscribeUrl: 'https://opencode.ai/zen', pricing: { tier: 'paid', zh: '要先充值拿 key 按量计费；它的免费模型只能在 OpenCode 软件里用', en: 'Top up for a pay-as-you-go key; its free models only work inside the OpenCode app' } },
 ]
 

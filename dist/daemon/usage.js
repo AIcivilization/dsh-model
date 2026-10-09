@@ -179,6 +179,34 @@ export function packageSummary(names) {
             counts.set(n, (counts.get(n) ?? 0) + 1);
     return [...counts].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n)).join(' + ');
 }
+/** 实测一次能不能调：发一条极短的请求（经引擎，用 dsh 的 key）。
+ *  被拒（402/403、insufficient_quota、payment_required、access_terminated）→ noAccess；
+ *  其他失败（网络、限流、上游 5xx）不下结论，抛错由调用方保留上次结果。 */
+export async function probeEngineSource(port, key, model) {
+    const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: 'ok' }], max_tokens: 1, stream: false }),
+        signal: AbortSignal.timeout(60_000),
+    });
+    const text = await res.text();
+    if (res.ok)
+        return { ok: true };
+    return classifyProbeFailure(res.status, text);
+}
+export function classifyProbeFailure(status, text) {
+    const denied = status === 402 || status === 403 || /insufficient_quota|payment_required|access_terminated|subscription/i.test(text);
+    let msg = text;
+    try {
+        msg = String(JSON.parse(text).error?.message ?? text);
+    }
+    catch {
+        // 不是 JSON
+    }
+    if (denied)
+        return { ok: false, reason: msg.slice(0, 160) };
+    throw new Error(`HTTP ${status}: ${msg.slice(0, 160)}`);
+}
 /** 守护进程把用量写到这里，同步模型时（任何进程）据此隐藏没有订阅的来源 */
 export function usageFilePath(home) {
     return join(home, 'usage.json');

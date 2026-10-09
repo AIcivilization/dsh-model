@@ -479,7 +479,7 @@ dsh-model 只是转接口，不产出额度：一个来源能不能用，取决�
 | 来源 | 标签 | 说明 |
 |---|---|---|
 | WorkBuddy / WorkBuddy AI | 免费 | 账号自带免费积分 |
-| Devin | 免费·额度少 | 有 Free 档，额度很少；Pro $20/月 |
+| Devin | 需付费 | 需要 Pro（$20/月）；免费档实测调用返回 403 insufficient_quota |
 | Antigravity | 免费·额度少 | Google 账号有免费额度（高风险，默认隐藏） |
 | OpenCode Zen | 需付费 | 充值拿 key 按量计费；免费模型实测只能在 OpenCode 软件里用（API 返回 FreeTierError） |
 | Codex | 需付费 | ChatGPT Plus / Pro |
@@ -487,3 +487,5 @@ dsh-model 只是转接口，不产出额度：一个来源能不能用，取决�
 | Grok | 需付费 | SuperGrok / X Premium+ |
 | Muse | 需付费 | Muse Code 套餐（$5/月起） |
 | Claude | 需付费 | Pro / Max（高风险，默认隐藏） |
+
+查不了用量的引擎来源（Devin、Muse、Antigravity）登录成功或重新打开时，守护进程经引擎发一条 `max_tokens: 1` 的请求实测（之后每 6 小时一次）：被拒（402/403、insufficient_quota、payment_required）就标为"没有可用订阅"，dsh 里隐藏它的模型，页面给出开通链接；网络或限流失败不下结论。
