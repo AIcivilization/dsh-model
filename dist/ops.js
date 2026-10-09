@@ -80,7 +80,8 @@ export async function syncModels(ctx, all, opts = {}) {
             if (r.providers.length) {
                 const summary = groups.map((g) => `${g.displayName} ${g.models.length}`).join(' · ');
                 const shown = groups.reduce((n, g) => n + g.models.length, 0);
-                (r.changed ? ok : skip)(L(`dsh（${r.location.profile}）显示 ${shown} 个模型（共 ${ids.length} 个可用）：${summary}`, `dsh (${r.location.profile}) shows ${shown} of ${ids.length} models: ${summary}`));
+                const usable = [...candidates.values()].reduce((n, c) => n + c.models.length, 0);
+                (r.changed ? ok : skip)(L(`dsh（${r.location.profile}）显示 ${shown} 个模型（共 ${usable} 个可用）：${summary}`, `dsh (${r.location.profile}) shows ${shown} of ${usable} models: ${summary}`));
             }
             else {
                 skip(L('还没有登录任何上游，dsh 里暂时没有 dsh-model 的模型', 'No upstream logged in yet, so dsh has no dsh-model models for now'));
