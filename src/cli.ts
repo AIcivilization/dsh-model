@@ -160,7 +160,7 @@ export async function main(argv: string[]): Promise<number> {
         if (!a1) throw new Error(L('用法：dsh-model logout <来源>', 'Usage: dsh-model logout <source>'))
         return await source(ctx, 'logout', a1, {})
       case 'sources':
-        return await sources(ctx)
+        return await sources(ctx, { all: o.all })
       case 'source':
         return await source(ctx, a1, a2, { acceptRisk: o['accept-risk'] })
       case 'stats':

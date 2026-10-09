@@ -6,13 +6,13 @@
 export const SOURCES = [
     { id: 'workbuddy', label: 'WorkBuddy', kind: 'workbuddy', login: 'link', variant: 'workbuddy' },
     { id: 'workbuddy-ai', label: 'WorkBuddy AI', kind: 'workbuddy', login: 'link', variant: 'workbuddy-ai' },
-    { id: 'codex', label: 'Codex (ChatGPT)', kind: 'engine', login: 'paste', engineProvider: 'codex', filePrefix: 'codex-' },
-    { id: 'claude', label: 'Claude', kind: 'engine', login: 'paste', engineProvider: 'claude', filePrefix: 'claude-', riskAck: true },
-    { id: 'kimi', label: 'Kimi', kind: 'engine', login: 'device', engineProvider: 'kimi', filePrefix: 'kimi-' },
+    { id: 'codex', label: 'Codex (ChatGPT)', kind: 'engine', login: 'paste', engineProvider: 'codex', filePrefix: 'codex-', subscribeUrl: 'https://chatgpt.com/pricing' },
+    { id: 'claude', label: 'Claude', kind: 'engine', login: 'paste', engineProvider: 'claude', filePrefix: 'claude-', riskAck: true, risky: true },
+    { id: 'kimi', label: 'Kimi', kind: 'engine', login: 'device', engineProvider: 'kimi', filePrefix: 'kimi-', subscribeUrl: 'https://www.kimi.com/code/#pricing' },
     { id: 'xai', label: 'Grok (xAI)', kind: 'engine', login: 'device', engineProvider: 'xai', filePrefix: 'xai-' },
     { id: 'meta', label: 'Muse (Meta)', kind: 'engine', login: 'device', engineProvider: 'meta', filePrefix: 'meta-' },
-    { id: 'antigravity', label: 'Antigravity', kind: 'engine', login: 'paste', engineProvider: 'antigravity', filePrefix: 'antigravity-', riskAck: true },
-    { id: 'devin', label: 'Devin', kind: 'engine', login: 'paste', engineProvider: 'devin', filePrefix: 'devin-' },
+    { id: 'antigravity', label: 'Antigravity', kind: 'engine', login: 'paste', engineProvider: 'antigravity', filePrefix: 'antigravity-', riskAck: true, risky: true },
+    { id: 'devin', label: 'Devin', kind: 'engine', login: 'paste', engineProvider: 'devin', filePrefix: 'devin-', subscribeUrl: 'https://devin.ai/pricing' },
     { id: 'opencode', label: 'OpenCode Zen', kind: 'opencode', login: 'key' },
 ];
 const ALIASES = { grok: 'xai', muse: 'meta', chatgpt: 'codex', openai: 'codex', 'workbuddy-cn': 'workbuddy', wb: 'workbuddy', 'wb-ai': 'workbuddy-ai' };

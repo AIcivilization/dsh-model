@@ -42,6 +42,9 @@ export interface SourceState {
   kind: SourceDef['kind']
   login: SourceDef['login']
   riskAck: boolean
+  /** 高风险来源：界面默认隐藏 */
+  risky: boolean
+  subscribeUrl?: string
   loggedIn: boolean
   enabled: boolean
   account?: string
@@ -165,12 +168,14 @@ export class Daemon {
   // —— 来源 ——
 
   async sources(): Promise<SourceState[]> {
-    const list = await this.sourcesRaw()
-    return list.map((s) => {
+    const list = (await this.sourcesRaw()).map((s) => {
       const u = this.usageCache.get(s.id)
       if (USAGE_UNSUPPORTED.has(s.id) && s.loggedIn) return { ...s, usage: { source: s.id, windows: [], fetchedAt: new Date().toISOString(), unsupported: true } }
       return u && s.loggedIn ? { ...s, usage: u } : s
     })
+    // 排序：可用（已接入）→ 已登录但关闭 → 已登录但没有订阅 → 未登录；同档保持注册顺序
+    const rank = (s: SourceState) => (s.loggedIn && s.enabled && !s.usage?.noAccess ? 0 : s.loggedIn && !s.enabled ? 1 : s.loggedIn ? 2 : 3)
+    return list.map((s, i) => ({ s, i })).sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i).map((x) => x.s)
   }
 
   private async sourcesRaw(): Promise<SourceState[]> {
@@ -187,7 +192,7 @@ export class Daemon {
     const snap = this.stats.snapshot()
     const modelCount = (prefix: string) => Object.entries(snap.byModel).filter(([m]) => m.startsWith(`${prefix}/`)).length
     return SOURCES.map((def): SourceState => {
-      const base = { id: def.id, label: def.label, kind: def.kind, login: def.login, riskAck: Boolean(def.riskAck) }
+      const base = { id: def.id, label: def.label, kind: def.kind, login: def.login, riskAck: Boolean(def.riskAck), risky: Boolean(def.risky), ...(def.subscribeUrl ? { subscribeUrl: def.subscribeUrl } : {}) }
       if (def.kind === 'engine') {
         const mine = credsFor(creds, def)
         const active = mine.filter((c) => !c.disabled)

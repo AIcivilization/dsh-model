@@ -35,7 +35,7 @@ export function usageLines(s) {
     if (u.unsupported)
         return [dim(L('    用量：暂不支持', '    usage: not supported yet'))];
     if (u.noAccess)
-        return [yellow(L('    当前账号没有可用订阅（调用会被拒绝、不扣费），模型已在 dsh 中隐藏', '    No usable subscription on this account (calls refused, no charge); its models are hidden in dsh'))];
+        return [yellow(L(`    当前账号没有可用订阅（调用会被拒绝、不扣费），模型已在 dsh 中隐藏${s.subscribeUrl ? `；开通：${s.subscribeUrl}` : ''}`, `    No usable subscription on this account (calls refused, no charge); its models are hidden in dsh${s.subscribeUrl ? `; subscribe: ${s.subscribeUrl}` : ''}`))];
     const out = [];
     for (const w of u.windows) {
         const pct = w.usedPercent;
@@ -52,8 +52,9 @@ export function usageLines(s) {
         out.push(yellow(L(`    用量暂不可用：${u.error}`, `    usage unavailable: ${u.error}`)));
     return out;
 }
-export async function sources(ctx) {
-    const list = await control(ctx, 'GET', '/sources?refresh=1');
+export async function sources(ctx, opts = {}) {
+    // 高风险来源（Claude、Antigravity）默认不列出；已登录的照常显示，方便退出登录
+    const list = (await control(ctx, 'GET', '/sources?refresh=1')).filter((s) => opts.all || !s.risky || s.loggedIn);
     if (isJsonMode()) {
         printJson(list);
         return 0;
@@ -77,7 +78,7 @@ export async function sources(ctx) {
                 info(line);
         }
     }
-    info(dim(L('\n打开：dsh-model source enable <来源>   关闭：dsh-model source disable <来源>', '\nTurn on: dsh-model source enable <source>   off: dsh-model source disable <source>')));
+    info(dim(L('\n打开：dsh-model source enable <来源>   关闭：dsh-model source disable <来源>   高风险来源（Claude、Antigravity）：dsh-model sources --all', '\nTurn on: dsh-model source enable <source>   off: dsh-model source disable <source>   High-risk sources (Claude, Antigravity): dsh-model sources --all')));
     return 0;
 }
 export async function source(ctx, sub, id, opts) {

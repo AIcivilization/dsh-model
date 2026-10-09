@@ -127,10 +127,14 @@ window.__ModuleLoader__.load({
     }
     const rateColor = (x) => (x == null ? C.sub : x >= 0.98 ? C.ok : x >= 0.9 ? C.warn : C.err)
 
-    function Usage({ usage }) {
+    function Usage({ usage, subscribeUrl }) {
       if (!usage) return null
       if (usage.unsupported) return h('div', { style: { ...S.meta, marginTop: 6, paddingLeft: 46 } }, L('用量：暂不支持', 'Usage: not supported yet'))
-      if (usage.noAccess) return h('div', { style: { fontSize: 12, color: C.warn, marginTop: 6, paddingLeft: 46, lineHeight: 1.6 } }, L('当前账号没有可用订阅，调用会被拒绝（不会扣费），所以它的模型已在 dsh 中隐藏。开通套餐后把开关关掉再打开即可恢复。', 'This account has no usable subscription — calls are refused (no charge), so its models are hidden in dsh. After subscribing, turn the switch off and on again.'))
+      if (usage.noAccess) {
+        return h('div', { style: { ...S.line, alignItems: 'flex-start', fontSize: 12, color: C.warn, marginTop: 6, paddingLeft: 46, lineHeight: 1.6 } },
+          h('span', { style: S.grow }, L('当前账号没有可用订阅，调用会被拒绝（不会扣费），所以它的模型已在 dsh 中隐藏。开通后把开关关掉再打开即可恢复。', 'This account has no usable subscription — calls are refused (no charge), so its models are hidden in dsh. After subscribing, turn the switch off and on again.')),
+          subscribeUrl ? h('a', { href: subscribeUrl, target: '_blank', rel: 'noopener noreferrer', style: { ...S.btnPrimary, textDecoration: 'none', flex: 'none' } }, L('去开通 ↗', 'Subscribe ↗')) : null)
+      }
       const lines = []
       if (usage.plan) lines.push(h('div', { key: 'plan', style: { ...S.meta, marginTop: 6 } }, `${L('套餐', 'Plan')}：${usage.plan}`))
       for (const w of usage.windows || []) {
@@ -232,9 +236,21 @@ window.__ModuleLoader__.load({
     }
 
     // —— 来源 ——
+    const RISKY_KEY = 'dsh-model.showRisky'
+    const readRisky = () => {
+      try { return window.localStorage.getItem(RISKY_KEY) === '1' } catch { return false }
+    }
     function SourcesCard({ sources, reload, onLogin, onKey }) {
       const [busy, setBusy] = useState({})
       const [err, setErr] = useState('')
+      const [showRisky, setShowRisky] = useState(readRisky)
+      const toggleRisky = (v) => {
+        setShowRisky(v)
+        try { window.localStorage.setItem(RISKY_KEY, v ? '1' : '0') } catch { /* 无痕模式等：只在本次生效 */ }
+      }
+      // 高风险来源默认隐藏；已登录的照常显示，方便退出登录
+      const visible = sources.filter((s) => showRisky || !s.risky || s.loggedIn)
+      const hidden = sources.length - visible.length
       const toggle = async (s, on) => {
         setErr('')
         setBusy((b) => ({ ...b, [s.id]: true }))
@@ -261,20 +277,26 @@ window.__ModuleLoader__.load({
         try { await api('POST', `/sources/${s.id}/logout`); await reload() } catch (e) { setErr(e.message) }
       }
       return h('div', { style: S.section },
-        h('div', { style: S.h }, L('来源', 'Sources')),
+        h('div', { style: S.line },
+          h('div', { style: { ...S.h, ...S.grow, margin: 0 } }, L('来源', 'Sources')),
+          h('label', { style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' } },
+            h('input', { type: 'checkbox', checked: showRisky, onChange: (e) => toggleRisky(e.target.checked) }),
+            L(`显示高风险来源${!showRisky && hidden ? `（${hidden}）` : ''}`, `Show high-risk sources${!showRisky && hidden ? ` (${hidden})` : ''}`))),
         h('p', { style: S.note }, L('打开就接入，没登录会弹出登录；关闭只停用，登录保留。所有模型都经同一个端点 http://127.0.0.1:8317/v1 提供。', 'Turn on to connect (signs in if needed); turning off keeps the sign-in. All models are served from one endpoint, http://127.0.0.1:8317/v1.')),
         err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
-        h('div', { style: S.card }, sources.map((s, i) => h('div', { key: s.id, style: i ? S.row : S.rowFirst },
+        showRisky ? h('p', { style: { ...S.note, color: C.warn } }, L('高风险来源（Claude、Antigravity）：服务商有封禁第三方使用订阅的先例，账号可能被封。仅在你清楚风险时使用。', 'High-risk sources (Claude, Antigravity): the providers have banned third-party use of subscriptions before; your account may be suspended. Use only if you accept the risk.')) : null,
+        h('div', { style: S.card }, visible.map((s, i) => h('div', { key: s.id, style: i ? S.row : S.rowFirst },
           h('div', { style: S.line },
             h(Switch, { on: s.enabled, busy: busy[s.id], label: s.label, onChange: (on) => toggle(s, on) }),
             h('div', { style: S.grow },
               h('span', { style: S.label }, s.label),
+              s.risky ? h('span', { style: { fontSize: 11, color: C.err, marginLeft: 6, border: `1px solid ${C.err}`, borderRadius: 4, padding: '0 4px' } }, L('高风险', 'High risk')) : null,
               h('span', { style: { ...S.meta, marginLeft: 8 } },
                 s.loggedIn ? (s.account || '') : L('未登录', 'Signed out'),
                 s.models ? ` · ${L(`${s.models} 个模型`, `${s.models} models`)}` : '')),
             s.loggedIn && s.kind !== 'opencode' ? h('button', { type: 'button', style: S.btn, onClick: () => logout(s) }, L('退出登录', 'Sign out')) : null,
             s.kind === 'opencode' && s.loggedIn ? h('button', { type: 'button', style: S.btn, onClick: onKey }, L('换 key', 'Change key')) : null),
-          s.enabled ? h(Usage, { usage: s.usage }) : null,
+          s.enabled ? h(Usage, { usage: s.usage, subscribeUrl: s.subscribeUrl }) : null,
           !s.loggedIn && s.detail ? h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 4 } }, s.detail) : null))))
     }
 
