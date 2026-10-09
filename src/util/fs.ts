@@ -32,6 +32,24 @@ export async function atomicWrite(file: string, data: string | Buffer, options: 
   }
 }
 
+/**
+ * 原地覆盖写（保留 inode）：给"被别的进程用 fsnotify 盯着的文件"用。
+ * atomicWrite 的 rename 会换掉 inode，Linux 上盯着旧 inode 的监听就再也收不到变化（引擎热重载实测失效）。
+ * 文件不存在时退回 atomicWrite。代价是极短时间内可能读到半个文件——引擎会按 SHA 去抖并在解析失败时保留旧配置。
+ */
+export async function writeInPlace(file: string, data: string | Buffer, options: WriteOptions = {}): Promise<void> {
+  const mode = options.mode ?? 0o600
+  try {
+    await stat(file)
+  } catch (error) {
+    if (isNotFound(error)) return atomicWrite(file, data, options)
+    throw error
+  }
+  await writeFile(file, data)
+  await chmod(file, mode)
+  if (options.owner) await chown(file, options.owner.uid, options.owner.gid)
+}
+
 export async function ensureDir(dir: string, options: WriteOptions = {}): Promise<void> {
   await mkdir(dir, { recursive: true, mode: options.mode ?? 0o700 })
   await chmod(dir, options.mode ?? 0o700)

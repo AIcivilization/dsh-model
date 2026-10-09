@@ -29,12 +29,22 @@ export function dshKey(keys) {
  * Linux 上引擎的 fsnotify 盯着旧 inode，收不到变化（VPS 实测：写入后引擎一直是 0 个 OpenAI-compat）。
  */
 export async function applyEngineConfig(ctx, all) {
-    const wrote = await writeEngineConfig(ctx, all.config, all.keys);
-    if (!wrote || ctx.serviceDisabled || !all.state.service)
-        return;
-    await serviceFor(ctx).restart();
-    if (!(await waitHealthy(all.config.port, 15_000))) {
-        throw new DshModelError('engine_unhealthy', L('引擎重启后没有起来', 'Engine did not come back after restart'), L('查看日志：dsh-model logs', 'Check logs: dsh-model logs'));
+    return writeEngineConfig(ctx, all.config, all.keys);
+}
+/**
+ * 兜底重启：热重载没生效时用。vps 模式下 bridge 以 dsh 用户运行，没有权限重启系统服务——
+ * 这时只记警告不失败（实测：bridge 写完配置后 systemctl restart 被拒）。
+ */
+async function restartEngineBestEffort(ctx, all) {
+    if (ctx.serviceDisabled || !all.state.service)
+        return false;
+    try {
+        await serviceFor(ctx).restart();
+        return waitHealthy(all.config.port, 15_000);
+    }
+    catch (error) {
+        warn(L(`没能重启引擎（${isDshModelError(error) ? error.code : String(error)}）；稍后执行 dsh-model repair`, `Could not restart the engine (${isDshModelError(error) ? error.code : String(error)}); run dsh-model repair later`));
+        return false;
     }
 }
 /**
@@ -115,7 +125,13 @@ async function waitForAliases(port, key, expected, timeoutMs = 6000) {
 export async function syncAll(ctx, all, opts = {}) {
     await applyEngineConfig(ctx, all);
     const expected = [...compatModelIndex(await loadCompatUpstreams(ctx)).keys()];
-    if (expected.length)
-        await waitForAliases(all.config.port, dshKey(all.keys), expected);
+    if (expected.length) {
+        const key = dshKey(all.keys);
+        const have = new Set((await waitForAliases(all.config.port, key, expected, 8000)).map((m) => m.id));
+        // 不看"这次有没有写文件"，而看引擎实际加载了没有：别的进程可能已经写过同样的内容（VPS 实测）
+        if (!expected.every((id) => have.has(id)) && (await restartEngineBestEffort(ctx, all))) {
+            await waitForAliases(all.config.port, key, expected, 8000);
+        }
+    }
     return syncModels(ctx, all, { quiet: opts.quiet });
 }

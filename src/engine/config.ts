@@ -8,7 +8,7 @@ import { DshModelError } from '../errors.js'
 import { L } from '../i18n.js'
 import { activeKeys, type KeyStore } from '../keys.js'
 import type { Config } from '../state.js'
-import { atomicWrite, readText } from '../util/fs.js'
+import { readText, writeInPlace } from '../util/fs.js'
 import { loadCompatUpstreams, renderCompat, type CompatUpstream } from './compat.js'
 
 const HEADER = [
@@ -39,6 +39,7 @@ export function renderEngineConfig(ctx: Ctx, config: Config, keys: KeyStore, por
 export async function writeEngineConfig(ctx: Ctx, config: Config, keys: KeyStore): Promise<boolean> {
   const text = renderEngineConfig(ctx, config, keys, config.port, await loadCompatUpstreams(ctx))
   if ((await readText(ctx.paths.engineYaml)) === text) return false
-  await atomicWrite(ctx.paths.engineYaml, text, { owner: ctx.owner })
+  // 原地写：保留 inode，让引擎（含 Linux）的 fsnotify 能收到变化并热重载，谁写都行、不用重启
+  await writeInPlace(ctx.paths.engineYaml, text, { owner: ctx.owner })
   return true
 }
