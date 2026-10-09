@@ -360,6 +360,12 @@ export class Daemon {
             const cred = credsFor(creds, def).find((c) => !c.disabled);
             if (!cred)
                 return;
+            // 引擎已经因 403 payment_required 冷却了它：不用再发请求（冷却期内引擎只回 503 auth_unavailable）
+            if (paymentRequired(cred)) {
+                this.usageCache.set(s.id, { source: s.id, windows: [], fetchedAt, unsupported: true, noAccess: true, plan: 'none', error: 'payment_required' });
+                log(`daemon: probe ${def.id} → denied (engine cooldown: payment_required)`);
+                return;
+            }
             const model = def.probeModel ?? (await (await this.mgmt()).credentialModels(cred.name))[0]?.id;
             if (!model)
                 return;

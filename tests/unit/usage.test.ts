@@ -51,3 +51,10 @@ describe('probe classification', () => {
     expect(() => classifyProbeFailure(502, 'bad gateway')).toThrow(/502/)
   })
 })
+
+describe('probe classification (engine cooldown)', () => {
+  it('503 carrying the upstream permission_denied is no access', async () => {
+    const { classifyProbeFailure } = await import('../../src/daemon/usage.js')
+    expect(classifyProbeFailure(503, '{"error":{"message":"auth_unavailable: no auth available (last upstream error: devin upstream error (permission_denied))"}}').ok).toBe(false)
+  })
+})

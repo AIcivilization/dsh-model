@@ -195,7 +195,7 @@ export async function probeEngineSource(port, key, model) {
     return classifyProbeFailure(res.status, text);
 }
 export function classifyProbeFailure(status, text) {
-    const denied = status === 402 || status === 403 || /insufficient_quota|payment_required|access_terminated|subscription/i.test(text);
+    const denied = status === 402 || status === 403 || /insufficient_quota|payment_required|permission_denied|access_terminated|subscription/i.test(text);
     let msg = text;
     try {
         msg = String(JSON.parse(text).error?.message ?? text);
