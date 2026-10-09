@@ -18,12 +18,14 @@ export interface RunOptions {
 /** 跑一个命令并收集输出；不抛错，调用方看 code */
 export function run(cmd: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd: options.cwd, env: options.env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'] })
+    // 不需要输入时 stdin 直接 ignore；需要时子进程可能不读就退出（或命令不存在），写入会 EPIPE，必须吞掉（服务器上实测会崩）
+    const hasInput = options.input !== undefined
+    const child = spawn(cmd, args, { cwd: options.cwd, env: options.env ?? process.env, stdio: [hasInput ? 'pipe' : 'ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
     const timer = options.timeoutMs ? setTimeout(() => child.kill('SIGKILL'), options.timeoutMs) : null
-    child.stdout.on('data', (d) => (stdout += d))
-    child.stderr.on('data', (d) => (stderr += d))
+    child.stdout?.on('data', (d) => (stdout += d))
+    child.stderr?.on('data', (d) => (stderr += d))
     child.on('error', (error) => {
       if (timer) clearTimeout(timer)
       resolve({ code: 127, stdout, stderr: stderr + String(error.message) })
@@ -32,7 +34,10 @@ export function run(cmd: string, args: string[], options: RunOptions = {}): Prom
       if (timer) clearTimeout(timer)
       resolve({ code: code ?? 1, stdout, stderr })
     })
-    child.stdin.end(options.input ?? '')
+    if (hasInput && child.stdin) {
+      child.stdin.on('error', () => {})
+      child.stdin.end(options.input)
+    }
   })
 }
 
