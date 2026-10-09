@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseClaudeUsage, parseCodexUsage, parseGrokBilling, parseKimiUsage } from '../../src/daemon/usage.js'
+import { packageSummary, parseClaudeUsage, parseCodexUsage, parseGrokBilling, parseKimiUsage } from '../../src/daemon/usage.js'
 
 describe('subscription usage parsers', () => {
   it('codex: primary/secondary windows, plan and credits', () => {
@@ -30,6 +30,10 @@ describe('subscription usage parsers', () => {
     })
     expect(r.windows[0]).toMatchObject({ label: '5h', used: 139, limit: 200, usedPercent: 69.5 })
     expect(r.windows[1]).toMatchObject({ id: 'total', used: 214, limit: 2048 })
+  })
+
+  it('workbuddy: package names are deduplicated with counts', () => {
+    expect(packageSummary(['个人版', '加量包', '加量包', '加量包'])).toBe('个人版 + 加量包 ×3')
   })
 
   it('grok: tolerant credit parsing', () => {

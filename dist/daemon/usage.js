@@ -166,6 +166,14 @@ export async function fetchWorkbuddyUsage(rt) {
     return {
         windows: [],
         credits: { remaining: credits.total, ...(size > 0 ? { total: size } : {}), ...(unlimited ? { unlimited: true } : {}), label: 'credits' },
-        ...(credits.accounts[0]?.packageName ? { plan: credits.accounts.map((a) => a.packageName).join(' + ') } : {}),
+        ...(credits.accounts.length ? { plan: packageSummary(credits.accounts.map((a) => a.packageName)) } : {}),
     };
+}
+/** 套餐名去重计数："个人版 + 加量包 ×38"（账号下常有几十个同名加量包，实测） */
+export function packageSummary(names) {
+    const counts = new Map();
+    for (const n of names)
+        if (n)
+            counts.set(n, (counts.get(n) ?? 0) + 1);
+    return [...counts].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n)).join(' + ');
 }
