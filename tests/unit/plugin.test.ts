@@ -75,7 +75,7 @@ describe('dsh plugin host side', () => {
 describe('dsh plugin client side', () => {
   it('loads with a stub React and registers the settings section', () => {
     const src = readFileSync(join(__dirname, '../../plugin/client.js'), 'utf8')
-    let mod: { apply: (ctx: unknown) => void; __test: { until: (s?: string) => string; pct: (x: number | null) => string } } | undefined
+    let mod: { inject: string[]; apply: (ctx: unknown) => void; __test: { until: (s?: string) => string; pct: (x: number | null) => string } } | undefined
     const registered: { name: string; id: string }[] = []
     const stubReact = { createElement: () => ({}), useState: (v: unknown) => [v, () => {}], useEffect: () => {}, useCallback: (f: unknown) => f, useRef: (v: unknown) => ({ current: v }) }
     runInNewContext(src, {
@@ -85,6 +85,7 @@ describe('dsh plugin client side', () => {
       console,
     })
     mod!.apply({ slots: { inject: (_n: string, fn: () => void) => fn(), register: (o: { name: string; id: string }) => registered.push(o) } })
+    expect(mod!.inject).toContain('slots')
     expect(registered).toEqual([expect.objectContaining({ name: 'settings.section', id: 'dsh-model' })])
     expect(mod!.__test.pct(0.987)).toBe('99%')
     expect(mod!.__test.until(new Date(Date.now() + 3 * 3600_000 + 5 * 60_000).toISOString())).toMatch(/^3 小时 5 分后重置$/)

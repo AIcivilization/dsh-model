@@ -371,7 +371,8 @@ window.__ModuleLoader__.load({
     }
 
     const name = 'dsh-model'
-    const inject = []
+    // 用到的服务必须先声明，否则 ctx.slots 读不到（实测：cannot get property "slots" without inject）
+    const inject = ['slots']
     function apply(ctx) {
       try {
         ctx.slots.inject('settings.section', () =>
