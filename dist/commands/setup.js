@@ -19,6 +19,7 @@ import { findFreePort, isPortFree } from '../util/port.js';
 import { detectProxy, normalizeProxyUrl, redactProxy } from '../util/proxy.js';
 import { configureOpencode } from './opencode.js';
 import { ensureDaemon } from '../daemon/service.js';
+import { installDshPlugin } from '../integrations/dshplugin.js';
 export async function setup(ctx, opts) {
     requireRootInVps(ctx);
     return withLock(ctx, async () => {
@@ -79,6 +80,12 @@ export async function setup(ctx, opts) {
             if (await userPluginInstalled(ctx, all))
                 warn(L('你自己装了 dsh-workbuddy-connect 插件：dsh 里会有两组 WorkBuddy 模型。不需要的话可在 dsh 的插件页移除它', 'You installed the dsh-workbuddy-connect plugin yourself: dsh will show two WorkBuddy groups. Remove it from the dsh Plugins page if you do not need it'));
         }
+        info('');
+        info(bold(L('dsh 插件页', 'dsh plugin page')));
+        if (opts.skipDshPlugin)
+            skip(L('已跳过（--skip-dsh-plugin）', 'Skipped (--skip-dsh-plugin)'));
+        else
+            await step('dsh-plugin', () => installDshPlugin(ctx, all));
         info('');
         info(bold(L('同步到 dsh', 'Sync to dsh')));
         let ids = [];

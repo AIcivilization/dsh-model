@@ -45,6 +45,7 @@ const OPTIONS = {
   bridge: { type: 'boolean' },
   'skip-opencode': { type: 'boolean' },
   'skip-workbuddy': { type: 'boolean' },
+  'skip-dsh-plugin': { type: 'boolean' },
   stdin: { type: 'boolean' },
   'skip-verify': { type: 'boolean' },
 } as const
@@ -144,7 +145,7 @@ export async function main(argv: string[]): Promise<number> {
     if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536)) throw new Error(L(`端口不合法：${o.port}`, `Invalid port: ${o.port}`))
     switch (cmd) {
       case 'setup':
-        return await setup(ctx, { port, profile: o.profile, force: o.force, proxy: o.proxy, skipOpencode: o['skip-opencode'], skipWorkbuddy: o['skip-workbuddy'] })
+        return await setup(ctx, { port, profile: o.profile, force: o.force, proxy: o.proxy, skipOpencode: o['skip-opencode'], skipWorkbuddy: o['skip-workbuddy'], skipDshPlugin: o['skip-dsh-plugin'] })
       case 'opencode':
         return await opencode(ctx, a1, { stdin: o.stdin, skipVerify: o['skip-verify'] })
       case 'workbuddy':

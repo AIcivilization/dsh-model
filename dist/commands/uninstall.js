@@ -13,6 +13,7 @@ import { exists, timestamp } from '../util/fs.js';
 import { fail, info, ok, warn } from '../util/output.js';
 import { disable as disableRemote } from './remote.js';
 import { disableWorkbuddy, removeWorkbuddyPlugin } from '../integrations/workbuddy.js';
+import { removeDshPlugin } from '../integrations/dshplugin.js';
 async function confirm(question) {
     if (!process.stdin.isTTY)
         return false;
@@ -54,6 +55,10 @@ export async function uninstall(ctx, opts) {
     await step('remote', async () => {
         if (all.state.remote && all.state.remote.mode !== 'off')
             await disableRemote(ctx, all);
+    });
+    await step('dsh-plugin', async () => {
+        if (await removeDshPlugin(ctx, all))
+            ok(L('已从 dsh 移除 dsh-model 插件', 'Removed the dsh-model plugin from dsh'));
     });
     await step('workbuddy', async () => {
         if (await removeWorkbuddyPlugin(ctx, all))

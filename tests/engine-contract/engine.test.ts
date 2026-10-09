@@ -58,7 +58,7 @@ describe('engine contract (real binary)', () => {
 
   it('setup installs and verifies the pinned engine', async () => {
     const free = 19000 + Math.floor(Math.random() * 500)
-    expect(await main(['setup', '--skip-opencode', '--skip-workbuddy', '--port', String(free)])).toBe(0)
+    expect(await main(['setup', '--skip-opencode', '--skip-workbuddy', '--skip-dsh-plugin', '--port', String(free)])).toBe(0)
     port = (await loadConfig(t.ctx)).port
     const v = await probeBinaryVersion(currentBinary(t.ctx))
     expect(v).toBe((await loadManifest()).version)

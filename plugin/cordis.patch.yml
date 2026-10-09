@@ -1,0 +1,4 @@
+# dsh-model 的 dsh 插件：在「设置」里加一个 dsh-model 分区（来源开关、订阅用量、key 状态）
+- insert:
+    - id: dsh-model
+      name: dsh-model
