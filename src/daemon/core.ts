@@ -25,6 +25,7 @@ import { riskNotice as upstreamRiskNotice } from '../upstreams.js'
 import { getUpstream } from '../upstreams.js'
 import { redactKey } from '../util/redact.js'
 import { Stats, type StatsSnapshot } from './stats.js'
+import { USAGE_UNSUPPORTED, fetchEngineUsage, fetchWorkbuddyUsage, type SourceUsage } from './usage.js'
 
 const LOGIN_POLL_MS = 2000
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000
@@ -32,6 +33,7 @@ const USAGE_POLL_MS = 5000
 const STATS_SAVE_MS = 60_000
 const CATALOG_REFRESH_MS = 30 * 60 * 1000
 const RESYNC_RETRY_MS = 60_000
+const USAGE_REFRESH_MS = 5 * 60 * 1000
 
 export interface SourceState {
   id: string
@@ -44,6 +46,8 @@ export interface SourceState {
   account?: string
   detail?: string
   models: number
+  /** 订阅用量（已登录且已打开的来源才查） */
+  usage?: SourceUsage
 }
 
 export interface LoginSession {
@@ -76,6 +80,8 @@ export class Daemon {
   private timers: NodeJS.Timeout[] = []
   private resyncTimer?: NodeJS.Timeout
   private keyNames = new Map<string, string>()
+  private usageCache = new Map<string, SourceUsage>()
+  private usageInflight?: Promise<void>
 
   constructor(private readonly ctx: Ctx) {
     this.stats = new Stats(Stats.path(ctx.paths.home), ctx.owner)
@@ -92,6 +98,8 @@ export class Daemon {
     this.timers.push(setInterval(() => void this.pollUsage(), USAGE_POLL_MS))
     this.timers.push(setInterval(() => void this.stats.save().catch(() => {}), STATS_SAVE_MS))
     this.timers.push(setInterval(() => void this.reloadKeyNames(), STATS_SAVE_MS))
+    this.timers.push(setInterval(() => void this.refreshUsage(), USAGE_REFRESH_MS))
+    setTimeout(() => void this.refreshUsage(), 3000)
   }
 
   async stop(): Promise<void> {
@@ -156,6 +164,15 @@ export class Daemon {
   // —— 来源 ——
 
   async sources(): Promise<SourceState[]> {
+    const list = await this.sourcesRaw()
+    return list.map((s) => {
+      const u = this.usageCache.get(s.id)
+      if (USAGE_UNSUPPORTED.has(s.id) && s.loggedIn) return { ...s, usage: { source: s.id, windows: [], fetchedAt: new Date().toISOString(), unsupported: true } }
+      return u && s.loggedIn ? { ...s, usage: u } : s
+    })
+  }
+
+  private async sourcesRaw(): Promise<SourceState[]> {
     const all = await loadAll(this.ctx)
     const disabled = new Set(all.config.disabledSources ?? [])
     let creds: CredentialEntry[] = []
@@ -231,6 +248,7 @@ export class Daemon {
       await this.setSourceDisabled(def.id, false)
     }
     await this.resync()
+    void this.refreshUsage()
     return { enabled: true }
   }
 
@@ -276,6 +294,56 @@ export class Daemon {
     await this.setSourceDisabled('opencode', false)
     await this.resync()
     return { ...(model ? { model } : {}) }
+  }
+
+  // —— 订阅用量 ——
+
+  /** 刷新所有已登录且已打开来源的用量（单飞：并发调用共用一次） */
+  refreshUsage(): Promise<void> {
+    this.usageInflight ??= this.doRefreshUsage().finally(() => (this.usageInflight = undefined))
+    return this.usageInflight
+  }
+
+  private async doRefreshUsage(): Promise<void> {
+    const states = await this.sourcesRaw().catch(() => [] as SourceState[])
+    let creds: CredentialEntry[] = []
+    try {
+      creds = await (await this.mgmt()).credentials()
+    } catch {
+      // 引擎没起来
+    }
+    await Promise.all(
+      states.map(async (s) => {
+        const def = findSource(s.id)!
+        if (!s.loggedIn || USAGE_UNSUPPORTED.has(s.id)) {
+          this.usageCache.delete(s.id)
+          return
+        }
+        const fetchedAt = new Date().toISOString()
+        try {
+          let u: Omit<SourceUsage, 'source' | 'fetchedAt'>
+          if (def.kind === 'workbuddy') {
+            const rt = this.runtimes.find((r) => r.variant.id === def.variant)
+            if (!rt) return
+            u = await fetchWorkbuddyUsage(rt)
+          } else if (def.kind === 'engine') {
+            const cred = credsFor(creds, def)[0]
+            if (!cred) return
+            u = await fetchEngineUsage(this.ctx, def, cred)
+          } else return
+          this.usageCache.set(s.id, { source: s.id, fetchedAt, ...u })
+        } catch (error) {
+          const prev = this.usageCache.get(s.id)
+          // 失败保留上次的读数，标上错误
+          this.usageCache.set(s.id, { ...(prev ?? { windows: [] }), source: s.id, fetchedAt: prev?.fetchedAt ?? fetchedAt, error: String((error as Error).message ?? error).slice(0, 200) })
+        }
+      }),
+    )
+  }
+
+  async usage(refresh = false): Promise<SourceUsage[]> {
+    if (refresh) await this.refreshUsage()
+    return [...this.usageCache.values()]
   }
 
   // —— 登录会话 ——
@@ -487,7 +555,10 @@ export class Daemon {
       if (method === 'GET' && path === '/status') {
         return ok({ sources: await this.sources(), keys: await this.keys(), stats: this.statsSnapshot() })
       }
-      if (method === 'GET' && path === '/sources') return ok(await this.sources())
+      if (method === 'GET' && path === '/sources') {
+        if (query.get('refresh') === '1') await this.refreshUsage()
+        return ok(await this.sources())
+      }
       if (seg[0] === 'sources' && seg[1] && method === 'POST') {
         if (seg[2] === 'enable') return ok(await this.enable(seg[1], { acceptRisk: b.acceptRisk === true }))
         if (seg[2] === 'disable') return ok(await this.disable(seg[1]).then(() => ({ enabled: false })))
@@ -511,7 +582,7 @@ export class Daemon {
         if (method === 'POST' && seg[2] === 'rotate') return ok(await this.rotateKey(seg[1]))
       }
       if (method === 'GET' && path === '/stats') return ok(this.statsSnapshot())
-      void query
+      if (method === 'GET' && path === '/usage') return ok(await this.usage(query.get('refresh') === '1'))
       return fail(404, 'not_found', `${method} ${path}`)
     } catch (error) {
       if (isDshModelError(error)) return fail(400, error.code, error.message, error.hint)

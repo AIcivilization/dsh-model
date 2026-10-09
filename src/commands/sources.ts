@@ -13,8 +13,47 @@ import { L } from '../i18n.js'
 import { bold, dim, green, info, isJsonMode, ok, printJson, red, table, warn, yellow } from '../util/output.js'
 import { canPrompt } from '../util/prompt.js'
 
+/** "2 小时 13 分后重置" */
+function untilText(iso: string | undefined): string {
+  if (!iso) return ''
+  const ms = Date.parse(iso) - Date.now()
+  if (!(ms > 0)) return L('即将重置', 'resetting')
+  const m = Math.round(ms / 60000)
+  const d = Math.floor(m / 1440)
+  const h = Math.floor((m % 1440) / 60)
+  const mm = m % 60
+  const t = d ? L(`${d} 天 ${h} 小时`, `${d}d ${h}h`) : h ? L(`${h} 小时 ${mm} 分`, `${h}h ${mm}m`) : L(`${mm} 分`, `${mm}m`)
+  return L(`${t}后重置`, `resets in ${t}`)
+}
+
+function bar(pct: number): string {
+  const n = Math.max(0, Math.min(10, Math.round(pct / 10)))
+  const s = '█'.repeat(n) + '░'.repeat(10 - n)
+  return pct >= 90 ? red(s) : pct >= 70 ? yellow(s) : green(s)
+}
+
+/** 每个来源的用量行（设计 §14.6） */
+export function usageLines(s: SourceState): string[] {
+  const u = s.usage
+  if (!u) return []
+  if (u.unsupported) return [dim(L('    用量：暂不支持', '    usage: not supported yet'))]
+  const out: string[] = []
+  for (const w of u.windows) {
+    const pct = w.usedPercent
+    const amount = w.used !== undefined && w.limit !== undefined ? `  ${w.used}/${w.limit}` : ''
+    out.push(`    ${w.label.padEnd(8)} ${pct !== undefined ? `${bar(pct)} ${Math.round(pct)}%` : ''}${amount}  ${dim(untilText(w.resetAt))}`)
+  }
+  if (u.credits) {
+    const c = u.credits
+    out.push(`    ${L('积分', 'credits')}     ${c.unlimited ? L('不限量', 'unlimited') : L(`剩余 ${c.remaining.toLocaleString()}${c.total ? ` / ${c.total.toLocaleString()}` : ''}`, `${c.remaining.toLocaleString()} left${c.total ? ` of ${c.total.toLocaleString()}` : ''}`)}`)
+  }
+  if (u.plan) out.unshift(dim(`    ${L('套餐', 'plan')}：${u.plan}`))
+  if (u.error) out.push(yellow(L(`    用量暂不可用：${u.error}`, `    usage unavailable: ${u.error}`)))
+  return out
+}
+
 export async function sources(ctx: Ctx): Promise<number> {
-  const list = await control<SourceState[]>(ctx, 'GET', '/sources')
+  const list = await control<SourceState[]>(ctx, 'GET', '/sources?refresh=1')
   if (isJsonMode()) {
     printJson(list)
     return 0
@@ -31,6 +70,14 @@ export async function sources(ctx: Ctx): Promise<number> {
       ]),
     ]),
   )
+  const withUsage = list.filter((s) => s.usage)
+  if (withUsage.length) {
+    info(bold(L('\n订阅用量', '\nSubscription usage')))
+    for (const s of withUsage) {
+      info(`  ${s.label}${s.account ? dim(`  ${s.account}`) : ''}`)
+      for (const line of usageLines(s)) info(line)
+    }
+  }
   info(dim(L('\n打开：dsh-model source enable <来源>   关闭：dsh-model source disable <来源>', '\nTurn on: dsh-model source enable <source>   off: dsh-model source disable <source>')))
   return 0
 }

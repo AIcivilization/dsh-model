@@ -54,7 +54,8 @@ function summarize(recs: Rec[]): WindowStats {
     if (r.f) {
       failures++
       if (r.t > lastFail) lastFail = r.t
-    } else {
+    } else if (r.o > 0) {
+      // 没报 token 数的请求不参与速度计算，免得把平均速度拉低
       okLat += r.l
       outSum += r.o
     }
