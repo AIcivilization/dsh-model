@@ -17,13 +17,16 @@ import { ensureDir } from '../util/fs.js';
 import { bold, info, next, ok, skip, warn } from '../util/output.js';
 import { findFreePort, isPortFree } from '../util/port.js';
 import { detectProxy, normalizeProxyUrl, redactProxy } from '../util/proxy.js';
-import { configureOpencode } from './opencode.js';
+import { askOpencodeKey, configureOpencode } from './opencode.js';
+import { opencodeConfigured } from '../integrations/opencode.js';
 import { ensureDaemon } from '../daemon/service.js';
 import { installDshPlugin } from '../integrations/dshplugin.js';
 import { enableCaddy } from './remote.js';
 import { DEFAULT_PUBLIC_PORT, publicHost } from '../remote/public.js';
 export async function setup(ctx, opts) {
     requireRootInVps(ctx);
+    // 要问的先问完再拿锁：等你输入时不占着锁，dsh 管理页照常能用（实测：卡在问 key 时页面新增 key 报"另一个命令正在运行"）
+    const opencodeKey = opts.skipOpencode || (await opencodeConfigured(ctx)) ? undefined : await askOpencodeKey();
     return withLock(ctx, async () => {
         const all = await loadAll(ctx);
         await ensureDir(ctx.paths.home, { owner: ctx.owner });
@@ -72,7 +75,7 @@ export async function setup(ctx, opts) {
         if (opts.skipOpencode)
             skip(L('已跳过（--skip-opencode）', 'Skipped (--skip-opencode)'));
         else
-            await step('opencode', () => configureOpencode(ctx, all));
+            await step('opencode', () => configureOpencode(ctx, all, opencodeKey !== undefined ? { key: opencodeKey } : {}));
         info('');
         info(bold('WorkBuddy'));
         if (opts.skipWorkbuddy)

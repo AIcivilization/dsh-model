@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json', 'x-dsh-model-token': token },
-        body: JSON.stringify({ method, path, ...(body !== undefined ? { body } : {}) }),
+        body: JSON.stringify({ method, path, lang: isZh() ? 'zh' : 'en', ...(body !== undefined ? { body } : {}) }),
       })
       const j = await r.json().catch(() => ({}))
       if (r.status === 403 && !retried && j?.error?.code === 'refused') {
@@ -327,6 +327,7 @@ window.__ModuleLoader__.load({
         }, (e) => alive && setMsg(e.message))
         return () => { alive = false }
       }, [source.id])
+      if (selfJob) return h(SelfProgress, { job: selfJob, onDone: () => { setSelfJob(null); void load(true) } })
       if (errCode === 'daemon_not_configured' || errCode === 'daemon_unreachable') return h(Onboarding, { code: errCode, onDone: () => void load(true) })
       if (!data) return h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 8 } }, msg || L('加载中…', 'Loading…'))
       const flip = (id) => setSel((x) => { const n = new Set(x); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -549,11 +550,97 @@ window.__ModuleLoader__.load({
             h('pre', { style: { ...S.mono, ...S.card, padding: 10, maxHeight: 260, overflow: 'auto', whiteSpace: 'pre-wrap', margin: 0 } }, res.output || '')) : null))
     }
 
+    const newer = (a, b) => {
+      const pa = String(a || '').split(/[.-]/).map((x) => parseInt(x, 10) || 0)
+      const pb = String(b || '').split(/[.-]/).map((x) => parseInt(x, 10) || 0)
+      for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0)
+      return false
+    }
+
+    /** 版本、更新、卸载 */
+    function AboutCard({ onJob }) {
+      const [info, setInfo] = useState(null)
+      const [confirming, setConfirming] = useState(false)
+      const [keepAuth, setKeepAuth] = useState(false)
+      const [err, setErr] = useState('')
+      useEffect(() => {
+        let alive = true
+        api('GET', '/self').then((r) => alive && setInfo(r), () => {})
+        return () => { alive = false }
+      }, [])
+      if (!info) return null
+      const hasUpdate = info.latest && newer(info.latest, info.version)
+      const start = async (action) => {
+        setErr('')
+        try {
+          await api('POST', `/self/${action}`, action === 'uninstall' ? { keepAuth } : {})
+          onJob({ action, from: info.version, target: info.latest })
+        } catch (e) {
+          setErr(e.message)
+        }
+      }
+      return h('div', { style: S.section },
+        h('div', { style: S.h }, L('关于', 'About')),
+        h('div', { style: { ...S.card, padding: '12px 14px' } },
+          h('div', { style: S.line },
+            h('span', { style: { ...S.label, ...S.grow } }, `dsh-model ${info.version}`,
+              h('span', { style: { ...S.meta, marginLeft: 8 } }, info.latest ? (hasUpdate ? L(`有新版本 ${info.latest}`, `${info.latest} available`) : L('已是最新', 'Up to date')) : L('查不到最新版本', 'Latest version unknown'))),
+            info.canManage && hasUpdate ? h('button', { type: 'button', style: S.btnPrimary, onClick: () => void start('update') }, L(`更新到 ${info.latest}`, `Update to ${info.latest}`)) : null,
+            info.canManage ? h('button', { type: 'button', style: { ...S.btn, color: C.err }, onClick: () => setConfirming(true) }, L('卸载', 'Uninstall')) : null),
+          !info.canManage ? h('div', { style: { marginTop: 8 } },
+            h('div', { style: S.meta }, L('服务器上更新和卸载要 root 权限，请在服务器终端里执行：', 'On the server, update and uninstall need root; run in a server terminal:')),
+            [[L('更新', 'Update'), info.commands.update], [L('卸载', 'Uninstall'), info.commands.uninstall]].map(([t, c]) => h('div', { key: c, style: { ...S.line, minHeight: 30 } },
+              h('span', { style: { ...S.meta, width: 40 } }, t), h('code', { style: { ...S.mono, ...S.grow } }, c), h(CopyButton, { get: c })))) : null,
+          confirming ? h('div', { style: { marginTop: 10, padding: 10, border: `1px solid ${C.err}`, borderRadius: 8 } },
+            h('div', { style: { fontSize: 13, color: C.text, lineHeight: 1.7 } }, L('卸载会：关闭对外访问 → 移除这个管理页 → 把 dsh 里的模型配置还原 → 停止并删除引擎与守护进程 → 删除 ~/.dsh-model（含各家登录、OpenCode key、WorkBuddy 令牌副本）。', 'Uninstall will: turn off remote access → remove this page → restore dsh\'s model config → stop and delete the engine and daemon → delete ~/.dsh-model (including sign-ins, the OpenCode key and WorkBuddy token copies).')),
+            h('label', { style: { ...S.line, fontSize: 13, marginTop: 6, cursor: 'pointer' } },
+              h('input', { type: 'checkbox', checked: keepAuth, onChange: (e) => setKeepAuth(e.target.checked) }),
+              L('先把各家登录凭据备份到主目录（以后重装可以拷回来）', 'Back up provider sign-ins to the home folder first (to reuse after reinstalling)')),
+            h('div', { style: { ...S.line, marginTop: 8 } },
+              h('button', { type: 'button', style: { ...S.btnPrimary, background: C.err }, onClick: () => void start('uninstall') }, L('确认卸载', 'Uninstall')),
+              h('button', { type: 'button', style: S.btn, onClick: () => setConfirming(false) }, L('取消', 'Cancel')))) : null,
+          err ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, err) : null))
+    }
+
+    /** 更新 / 卸载进行中：守护进程会重启或消失，期间不显示别的 */
+    function SelfProgress({ job, onDone }) {
+      const [state, setState] = useState({ phase: 'running', log: '' })
+      useEffect(() => {
+        let stop = false
+        const tick = async () => {
+          if (stop) return
+          try {
+            const r = await api('GET', '/self')
+            if (r.job?.log) setState((s) => ({ ...s, log: r.job.log }))
+            if (job.action === 'update' && r.version !== job.from) { setState({ phase: 'done', log: r.job?.log || '' }); return }
+          } catch (e) {
+            if (job.action === 'uninstall' && e.code === 'daemon_not_configured') { setState((s) => ({ ...s, phase: 'done' })); return }
+          }
+          setTimeout(tick, 2000)
+        }
+        const t = setTimeout(tick, 2000)
+        return () => { stop = true; clearTimeout(t) }
+      }, [])
+      const upd = job.action === 'update'
+      const title = state.phase === 'done'
+        ? (upd ? L('更新完成', 'Update complete') : L('已卸载', 'Uninstalled'))
+        : (upd ? L(`正在更新到 ${job.target}…（服务会重启一下）`, `Updating to ${job.target}… (the service restarts briefly)`) : L('正在卸载…', 'Uninstalling…'))
+      return h('div', { style: { color: C.text, maxWidth: 820 } },
+        h('div', { style: S.section },
+          h('div', { style: S.h }, title),
+          state.phase === 'done' ? h('p', { style: { ...S.note, color: C.text } }, upd
+            ? L('完全退出 dsh 再打开一次，管理页的新代码才会生效。', 'Quit dsh completely and open it again so the management page loads the new code.')
+            : L('dsh 里的 dsh-model 模型已移除。完全退出 dsh 再打开，这一页就会消失。日志在主目录的 dsh-model-uninstall.log。', 'dsh-model\'s models are gone from dsh. Quit dsh completely and reopen it and this page disappears. The log is ~/dsh-model-uninstall.log.')) : null,
+          state.log ? h('pre', { style: { ...S.mono, ...S.card, padding: 10, maxHeight: 300, overflow: 'auto', whiteSpace: 'pre-wrap', margin: 0 } }, state.log) : null,
+          state.phase === 'done' && upd ? h('button', { type: 'button', style: { ...S.btn, marginTop: 10 }, onClick: onDone }, L('返回', 'Back')) : null))
+    }
+
     // —— 整页 ——
     function SettingsSection() {
       const [data, setData] = useState(null)
       const [err, setErr] = useState('')
       const [errCode, setErrCode] = useState('')
+      const [selfJob, setSelfJob] = useState(null)
       const [login, setLogin] = useState(null)
       const [keyDialog, setKeyDialog] = useState(false)
       const alive = useRef(true)
@@ -578,6 +665,7 @@ window.__ModuleLoader__.load({
         h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: () => setKeyDialog(true) }),
         h(KeysCard, { keys: data.keys, reload: () => load(false) }),
         h(ModelsCard, { stats: data.stats }),
+        h(AboutCard, { onJob: setSelfJob }),
         login ? h(LoginDialog, { source: login.source, session: login.session, onDone: () => { setLogin(null); void load(true) }, onClose: () => { setLogin(null); void load(false) } }) : null,
         keyDialog ? h(KeyDialog, { onDone: () => { setKeyDialog(false); void load(true) }, onClose: () => setKeyDialog(false) }) : null)
     }

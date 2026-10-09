@@ -67,7 +67,7 @@ export async function withLock(ctx, fn) {
             throw error;
         const pid = Number((await readFile(ctx.paths.lock, 'utf8').catch(() => '')).trim());
         if (pid && pid !== process.pid && isAlive(pid)) {
-            throw new DshModelError('locked', L(`另一个 dsh-model 命令正在运行（pid ${pid}）`, `Another dsh-model command is running (pid ${pid})`));
+            throw new DshModelError('locked', L(`另一个 dsh-model 命令正在运行（pid ${pid}），等它结束再试`, `Another dsh-model command is running (pid ${pid}); try again when it finishes`), L('如果是终端里的命令停在等你输入，回到终端完成它', 'If a command in a terminal is waiting for your input, finish it there'));
         }
         await rm(ctx.paths.lock, { force: true });
         await acquire();

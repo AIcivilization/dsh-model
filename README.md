@@ -55,6 +55,9 @@ dsh-model setup
 | **选模型** | 每个来源选哪些模型显示在 dsh 里，默认每家推荐 5 个，其余的经统一地址照样可用 |
 | **API key** | OpenAI 格式，每台设备一把。显示 24 小时内的请求数、成功率、延迟和速度，可复制、轮换、吊销 |
 | **模型统计** | 按模型显示成功率、延迟和速度 |
+| **关于** | 当前版本和 npm 上的最新版本；「更新」「卸载」一键完成（VPS 上要 root，这里给出命令） |
+
+还没在这台机器上装好服务时，这一页会说明缺什么，并提供「一键安装」按钮。所以也可以先从 dsh 的插件市场装 dsh-model，再在这一页里点安装。
 
 登录全由 dsh-model 自己完成，服务器上不装各家的 CLI，也不需要浏览器：
 
@@ -94,6 +97,7 @@ dsh-model 只负责转接，不提供额度。
 | `remote enable --via caddy\|ssh\|tailscale` / `remote disable` | 远程访问（VPS 上 setup 已自动开通 caddy） |
 | `engine version\|upgrade\|rollback` | 引擎版本 |
 | `logs [--bridge]` / `repair` | 日志 / 修复 |
+| `update [--to 版本]` | 更新到 npm 上的最新版：程序、dsh 插件和服务一起更新 |
 | `uninstall` | 干净卸载 |
 
 所有命令都支持 `--lang zh|en` 和 `--json`。

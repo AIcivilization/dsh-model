@@ -57,7 +57,7 @@ export async function uninstall(ctx, opts) {
             await disableRemote(ctx, all);
     });
     await step('dsh-plugin', async () => {
-        if (await removeDshPlugin(ctx, all))
+        if (await removeDshPlugin(ctx, all, { force: opts.removePlugin }))
             ok(L('已从 dsh 移除 dsh-model 插件', 'Removed the dsh-model plugin from dsh'));
     });
     await step('workbuddy', async () => {

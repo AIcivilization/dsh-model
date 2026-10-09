@@ -496,3 +496,11 @@ dsh-model 只是转接口，不产出额度：一个来源能不能用，取决�
 统一端点照常提供全部模型；写进 dsh 的只是挑中的那部分，不然几十个选起来太费事。管理页每个已接入的来源有「选模型」，勾选后保存（存在 config.json 的 `dshModels`），「恢复推荐」回到默认。
 
 没勾选过的来源用默认挑选（`src/dsh/pick.ts`）：去掉画图 / 审查 / 自动路由这类非对话模型 → 免费的先放（最多 2 个）→ 各系列（gpt、claude、gemini、grok、kimi、glm、deepseek…）轮流取最新版本，凑满 5 个。勾选过的模型下线了就去掉；全都下线时退回默认，免得整组消失。
+
+### 14.9 页面上的安装、更新、卸载
+
+- **一键安装**：插件就是完整的 dsh-model 包。服务没装时页面给出「一键安装」：宿主端用 dsh 的运行时（桌面版是 Electron，加 `ELECTRON_RUN_AS_NODE=1`）执行包里的 `dsh-model setup --skip-dsh-plugin`。服务文件里也带上这个变量。dsh-vps 上要 root，只给命令。
+- **更新**（`dsh-model update`）：npm 全局装的就 `npm install -g`，从页面一键安装的随插件更新 → `dsh plugin add dsh-model@<版本>`（沿用 profile 原来的 pnpm 仓库，否则报 ERR_PNPM_UNEXPECTED_STORE）→ 用新版本执行 `repair` 重写服务。插件换不成只警告，服务照样重装。
+- **卸载**：`uninstall --yes --remove-plugin`，连用户自己从市场装的插件也移除。
+- 更新和卸载都会重启或移除守护进程本身，所以由守护进程起一个脱离进程组的独立进程来执行（Linux 用 `systemd-run --user`）。页面轮询 `/self` 显示进度。
+- 插件安装改为从 npm 装同一版本（以前用 `link:` 指到 npm 全局目录，VPS 上那个目录归 root，之后从市场装就报 EACCES）。

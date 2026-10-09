@@ -5,6 +5,7 @@
 // 协议细节（凭据解密、客户端身份、刷新、目录）来自移植的 ./workbuddy/*（MIT，见其 LICENSE）。
 
 import { timingSafeEqual } from 'node:crypto'
+import { initLang } from '../i18n.js'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
 import { aggregateSse } from './aggregate.js'
@@ -120,6 +121,9 @@ export function createBridge(options: BridgeOptions): { server: Server; ready: P
           return oaiError(res, 400, 'invalid_json', 'request body is not JSON')
         }
       }
+      // 提示语跟着调用方的语言（dsh 页面 / CLI 的 --lang）；守护进程自己由 launchd 启动时没有 LANG
+      const lang = String(req.headers['x-dsh-model-lang'] ?? '')
+      if (lang === 'zh' || lang === 'en') initLang(lang)
       const r = await options.onControl(req.method ?? 'GET', url.slice('/control'.length), body, fullUrl.searchParams)
       return json(res, r.status, r.body)
     }

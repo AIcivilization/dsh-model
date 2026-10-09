@@ -27,7 +27,7 @@ async function confirm(question: string): Promise<boolean> {
   }
 }
 
-export async function uninstall(ctx: Ctx, opts: { yes?: boolean; keepAuth?: boolean }): Promise<number> {
+export async function uninstall(ctx: Ctx, opts: { yes?: boolean; keepAuth?: boolean; removePlugin?: boolean }): Promise<number> {
   requireRootInVps(ctx)
   if (!(await exists(ctx.paths.home))) {
     info(L('没有安装过 dsh-model（或已卸载）', 'dsh-model is not installed (or already removed)'))
@@ -58,7 +58,7 @@ export async function uninstall(ctx: Ctx, opts: { yes?: boolean; keepAuth?: bool
     if (all.state.remote && all.state.remote.mode !== 'off') await disableRemote(ctx, all)
   })
   await step('dsh-plugin', async () => {
-    if (await removeDshPlugin(ctx, all)) ok(L('已从 dsh 移除 dsh-model 插件', 'Removed the dsh-model plugin from dsh'))
+    if (await removeDshPlugin(ctx, all, { force: opts.removePlugin })) ok(L('已从 dsh 移除 dsh-model 插件', 'Removed the dsh-model plugin from dsh'))
   })
   await step('workbuddy', async () => {
     if (await removeWorkbuddyPlugin(ctx, all)) ok(L('已移除上一版安装的 WorkBuddy 插件', 'Removed the WorkBuddy plugin installed by a previous version'))

@@ -45,10 +45,28 @@ function wrap(ctx, bin, args, proxy) {
     }
     return { cmd: bin, args };
 }
+/**
+ * 这个 profile 的 node_modules 当初链接的 pnpm 仓库：沿用它。
+ * 从终端调 dsh 和 dsh 桌面版自己用的仓库位置可能不同，不沿用就报 ERR_PNPM_UNEXPECTED_STORE（Mac 上实测）
+ */
+async function profileStoreDir(ctx, profile) {
+    try {
+        const text = await readFile(join(ctx.dshHome, 'profiles', profile, 'node_modules', '.modules.yaml'), 'utf8');
+        const dir = /"?storeDir"?\s*:\s*"?([^"\n,]+)"?/.exec(text)?.[1]?.trim();
+        if (!dir)
+            return null;
+        // 记录的是带版本的子目录（…/store/v11），store-dir 要它的上一级
+        return dir.replace(/\/v\d+$/, '');
+    }
+    catch {
+        return null;
+    }
+}
 /** dsh plugin --profile <p> <pnpm-args...>，输出直接给用户看（pnpm 进度） */
 export async function dshPlugin(ctx, profile, pnpmArgs, proxy) {
     const bin = await locateDshCli(ctx);
-    const w = wrap(ctx, bin, ['plugin', '--profile', profile, ...pnpmArgs], proxy);
+    const store = await profileStoreDir(ctx, profile);
+    const w = wrap(ctx, bin, ['plugin', '--profile', profile, ...pnpmArgs, ...(store ? [`--config.store-dir=${store}`] : [])], proxy);
     return runInherit(w.cmd, w.args, { env: dshEnv(ctx, proxy) });
 }
 /** profile 的 package.json 里有没有这个依赖（有就是用户或 dsh 已经装了） */

@@ -1,7 +1,7 @@
 // daemon/client.ts — 调守护进程 /control/*（CLI 用；dsh 插件宿主端也照这个格式调）
 import { loadBridgeConfig } from '../bridge/runtime.js';
 import { DshModelError } from '../errors.js';
-import { L } from '../i18n.js';
+import { L, lang } from '../i18n.js';
 export async function control(ctx, method, path, body, timeoutMs = 60_000) {
     const cfg = await loadBridgeConfig(ctx.paths.home);
     if (!cfg)
@@ -10,7 +10,7 @@ export async function control(ctx, method, path, body, timeoutMs = 60_000) {
     try {
         res = await fetch(`http://127.0.0.1:${cfg.port}/control${path}`, {
             method,
-            headers: { Authorization: `Bearer ${cfg.secret}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+            headers: { Authorization: `Bearer ${cfg.secret}`, 'x-dsh-model-lang': lang(), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
             body: body !== undefined ? JSON.stringify(body) : undefined,
             signal: AbortSignal.timeout(timeoutMs),
         });

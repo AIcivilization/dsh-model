@@ -35,6 +35,8 @@ const ALLOWED = [
   ['POST', /^\/keys\/[A-Za-z0-9._-]{1,40}\/rotate$/],
   ['POST', /^\/keys\/[A-Za-z0-9._-]{1,40}\/reveal$/],
   ['GET', /^\/endpoints$/],
+  ['GET', /^\/self$/],
+  ['POST', /^\/self\/(update|uninstall)$/],
   ['GET', /^\/sources\/[a-z-]{2,20}\/models$/],
   ['POST', /^\/sources\/[a-z-]{2,20}\/models$/],
   ['POST', /^\/sources\/[a-z-]{2,20}\/(enable|disable|logout)$/],
@@ -151,7 +153,7 @@ export function apply(ctx) {
           try {
             const r = await fetch(`http://127.0.0.1:${cfg.port}/control${path}`, {
               method,
-              headers: { Authorization: `Bearer ${cfg.secret}`, ...(call.body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+              headers: { Authorization: `Bearer ${cfg.secret}`, 'x-dsh-model-lang': call.lang === 'en' ? 'en' : 'zh', ...(call.body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
               body: call.body !== undefined && method !== 'GET' ? JSON.stringify(call.body) : undefined,
               signal: AbortSignal.timeout(90_000),
             })

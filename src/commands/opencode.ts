@@ -23,6 +23,15 @@ export interface OpencodeKeyOptions {
   skipVerify?: boolean
   /** opencode key：已配置时换成新 key（拿到并验证新 key 后才替换） */
   replace?: boolean
+  /** 已经问过的 key（setup 在拿锁之前先问，免得等输入时一直占着锁）；'' = 用户跳过 */
+  key?: string
+}
+
+/** 交互地问 OpenCode key（回车跳过 → ''；不能交互 → undefined） */
+export async function askOpencodeKey(): Promise<string | undefined> {
+  if (!canPrompt()) return undefined
+  info(L(`OpenCode Zen 的 API key（${OPENCODE_KEY_PAGE}，要先充值；没有就直接回车跳过，以后在 dsh 的管理页填）。输入不会显示。`, `Your OpenCode Zen API key (${OPENCODE_KEY_PAGE}; needs a top-up. Press Enter to skip and add it later in dsh's management page). Input is hidden.`))
+  return promptSecret('OpenCode Zen API key: ')
 }
 
 /** 拿 key → 实测 → 存进 secrets.json → 拉模型目录。返回是否有变化（调用方随后 syncAll） */
@@ -36,9 +45,8 @@ export async function configureOpencode(ctx: Ctx, all: All, opts: OpencodeKeyOpt
   let key: string
   if (opts.stdin) {
     key = await readStdin()
-  } else if (canPrompt()) {
-    info(L(`需要你的 OpenCode Zen API key（免费注册：${OPENCODE_KEY_PAGE}）。输入不会显示，直接回车跳过。`, `Needs your OpenCode Zen API key (free sign-up: ${OPENCODE_KEY_PAGE}). Input is hidden; press Enter to skip.`))
-    key = await promptSecret('OpenCode Zen API key: ')
+  } else if (opts.key !== undefined || canPrompt()) {
+    key = opts.key ?? (await askOpencodeKey()) ?? ''
     if (!key) {
       skip(L('已跳过；之后可执行 dsh-model opencode key', 'Skipped; later run dsh-model opencode key'))
       return false

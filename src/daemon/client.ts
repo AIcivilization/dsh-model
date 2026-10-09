@@ -3,7 +3,7 @@
 import { loadBridgeConfig } from '../bridge/runtime.js'
 import type { Ctx } from '../context.js'
 import { DshModelError } from '../errors.js'
-import { L } from '../i18n.js'
+import { L, lang } from '../i18n.js'
 
 export async function control<T>(ctx: Ctx, method: string, path: string, body?: unknown, timeoutMs = 60_000): Promise<T> {
   const cfg = await loadBridgeConfig(ctx.paths.home)
@@ -12,7 +12,7 @@ export async function control<T>(ctx: Ctx, method: string, path: string, body?: 
   try {
     res = await fetch(`http://127.0.0.1:${cfg.port}/control${path}`, {
       method,
-      headers: { Authorization: `Bearer ${cfg.secret}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      headers: { Authorization: `Bearer ${cfg.secret}`, 'x-dsh-model-lang': lang(), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(timeoutMs),
     })

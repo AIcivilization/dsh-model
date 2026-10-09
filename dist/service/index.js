@@ -25,6 +25,8 @@ function bridgeProgram() {
 export function bridgeEnv(ctx, proxy) {
     return {
         DSH_MODEL_HOME: ctx.paths.home,
+        // 从 dsh 桌面版的管理页一键安装时，process.execPath 是 DeepSeek Harness（Electron）：服务里也要让它当 Node 跑
+        ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
         ...(proxy ? { NODE_USE_ENV_PROXY: '1', HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NO_PROXY: '127.0.0.1,localhost,::1,.tencent.com,.codebuddy.cn,.workbuddy.cn,.qq.com' } : {}),
     };
 }

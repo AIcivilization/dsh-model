@@ -81,3 +81,13 @@ describe('proxy', () => {
     expect(YAML.parse(renderEngineConfig(ctx, { ...defaultConfig(), proxy: null }, keys)).requests).toBeUndefined()
   })
 })
+
+describe('self-update version compare', () => {
+  it('compares major.minor.patch', async () => {
+    const { isNewer } = await import('../../src/commands/self.js')
+    expect(isNewer('0.14.1', '0.14.0')).toBe(true)
+    expect(isNewer('0.14.0', '0.14.1')).toBe(false)
+    expect(isNewer('1.0.0', '0.99.9')).toBe(true)
+    expect(isNewer('0.14.0', '0.14.0')).toBe(false)
+  })
+})

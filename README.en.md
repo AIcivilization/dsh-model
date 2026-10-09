@@ -55,6 +55,9 @@ On a dsh-vps server, use `sudo dsh-model setup`.
 | **Models** | Pick which models of each source appear in dsh (5 suggested per source by default); the rest stay available through the endpoint |
 | **API keys** | OpenAI-style, one per device. Requests, success rate, latency and speed over 24 hours; copy, rotate, revoke |
 | **Model stats** | Success rate, latency and speed per model |
+| **About** | Current and latest npm version; one-click Update and Uninstall (on a VPS these need root, so the commands are shown instead) |
+
+If the service is not set up on this machine yet, the page says what is missing and offers a "Set up now" button, so you can also start by installing dsh-model from the dsh plugin marketplace and finish from this page.
 
 dsh-model does every sign-in itself. No provider CLI is installed and the server needs no browser:
 
@@ -94,6 +97,7 @@ dsh-model only connects; it provides no quota of its own.
 | `remote enable --via caddy\|ssh\|tailscale` / `remote disable` | Remote access (on a VPS, setup already enables caddy) |
 | `engine version\|upgrade\|rollback` | Engine version |
 | `logs [--bridge]` / `repair` | Logs / repair |
+| `update [--to ver]` | Update to the latest npm version: program, dsh plugin and services together |
 | `uninstall` | Clean uninstall |
 
 Every command accepts `--lang zh|en` and `--json`.

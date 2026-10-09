@@ -9,6 +9,7 @@ import { repair, service } from './commands/service.js';
 import { setup } from './commands/setup.js';
 import { doctor, status } from './commands/status.js';
 import { uninstall } from './commands/uninstall.js';
+import { selfUpdate } from './commands/self.js';
 import { opencode } from './commands/opencode.js';
 import { workbuddy } from './commands/workbuddy.js';
 import { bridge } from './commands/bridge.js';
@@ -46,6 +47,8 @@ const OPTIONS = {
     'skip-dsh-plugin': { type: 'boolean' },
     stdin: { type: 'boolean' },
     'skip-verify': { type: 'boolean' },
+    to: { type: 'string' },
+    'remove-plugin': { type: 'boolean' },
 };
 function help() {
     const ups = UPSTREAMS.map((u) => u.id).join('|');
@@ -76,6 +79,7 @@ function help() {
   service status|install|start|stop|restart|uninstall
   repair                               按台账修复配置、服务与接线
   logs [--lines N] [--bridge]          引擎 / bridge 日志
+  update [--to 版本]                   更新到 npm 上的最新版（程序、dsh 插件、服务一起）
   uninstall [--yes] [--keep-auth]      干净卸载
 
 通用选项：--lang zh|en  --json  --help  --version
@@ -106,6 +110,7 @@ Usage: dsh-model <command> [options]
   service status|install|start|stop|restart|uninstall
   repair                               Repair config, service and wiring from the ledger
   logs [--lines N] [--bridge]          Engine / bridge logs
+  update [--to ver]                    Update to the latest npm version (program, dsh plugin and services)
   uninstall [--yes] [--keep-auth]      Clean uninstall
 
 Global: --lang zh|en  --json  --help  --version
@@ -184,7 +189,10 @@ export async function main(argv) {
             case 'logs':
                 return await logs(ctx, o.lines ? Number(o.lines) : undefined, o.bridge ? 'bridge' : 'engine');
             case 'uninstall':
-                return await uninstall(ctx, { yes: o.yes, keepAuth: o['keep-auth'] });
+                return await uninstall(ctx, { yes: o.yes, keepAuth: o['keep-auth'], removePlugin: o['remove-plugin'] });
+            case 'self-update':
+            case 'update':
+                return await selfUpdate(ctx, { to: o.to });
             default:
                 fail(L(`未知命令：${cmd}`, `Unknown command: ${cmd}`));
                 console.log(dim(L('查看帮助：dsh-model --help', 'See: dsh-model --help')));

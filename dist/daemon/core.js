@@ -5,6 +5,14 @@
 // 职责：来源状态与开关、登录会话（引擎 OAuth / WorkBuddy 自有登录 / OpenCode key）、key 管理、用量统计。
 // CLI 与 dsh 插件都只通过 /control/* 调这里，逻辑只有一份。
 import { spawn } from 'node:child_process';
+import { closeSync, openSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { latestVersion } from '../commands/self.js';
+import { lang } from '../i18n.js';
+import { which } from '../util/exec.js';
+import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
 import { randomBytes } from 'node:crypto';
 import { currentBinary } from '../engine/install.js';
 import { buildRuntime, availableVariants, refreshCatalog, loadCatalogs } from '../bridge/runtime.js';
@@ -37,6 +45,7 @@ const RESYNC_RETRY_MS = 60_000;
 const USAGE_REFRESH_MS = 5 * 60 * 1000;
 /** 查不了用量的来源多久重新实测一次 */
 const PROBE_MS = 6 * 60 * 60 * 1000;
+const log_ = (m) => log(m);
 const log = (m) => console.error(`[${new Date().toISOString()}] ${m}`);
 export class Daemon {
     ctx;
@@ -622,6 +631,51 @@ export class Daemon {
             .filter((k) => !k.revokedAt)
             .map((k) => ({ name: k.name, key: redactKey(k.key), createdAt: k.createdAt, ...(snap.byKey[k.name] ? { stats: snap.byKey[k.name] } : {}) }));
     }
+    // —— 更新 / 卸载（管理页的按钮）——
+    selfJob;
+    /** 版本与能不能在页面上自管理（VPS 上要 root，只给命令） */
+    async selfInfo() {
+        const vps = this.ctx.mode === 'vps';
+        let log = '';
+        if (this.selfJob)
+            log = await readFile(this.selfJob.log, 'utf8').catch(() => '');
+        return {
+            version: pkgVersion(),
+            latest: await latestVersion(),
+            canManage: !vps,
+            ...(this.selfJob ? { job: { action: this.selfJob.action, startedAt: this.selfJob.startedAt, log: log.replace(/\x1b\[[0-9;]*m/g, '').slice(-6000) } } : {}),
+            commands: vps
+                ? { update: 'sudo npm install -g dsh-model@latest && sudo dsh-model setup', uninstall: 'sudo dsh-model uninstall' }
+                : { update: 'dsh-model update', uninstall: 'dsh-model uninstall' },
+        };
+    }
+    /**
+     * 在独立进程里跑 update / uninstall：两者都会重启或移除守护进程本身，所以不能在守护进程里做。
+     * 用 detached 让它脱离守护进程的进程组（launchd 重启服务时不会被一起杀掉）。
+     */
+    async startSelfJob(action, opts = {}) {
+        if (this.ctx.mode === 'vps')
+            throw new DshModelError('needs_root', L('服务器上要 root 权限，请在终端里执行命令', 'On the server this needs root; run the command in a terminal'));
+        // 卸载会删掉 home，日志放在外面
+        const log = action === 'uninstall' ? join(homedir(), 'dsh-model-uninstall.log') : join(this.ctx.paths.home, 'update.log');
+        const args = action === 'update' ? ['update'] : ['uninstall', '--yes', '--remove-plugin', ...(opts.keepAuth ? ['--keep-auth'] : [])];
+        const out = openSync(log, 'w', 0o600);
+        const cmd = [process.execPath, join(PKG_ROOT, 'bin', 'dsh-model.js'), ...args, '--lang', lang()];
+        // Linux 的 systemd --user 重启服务会杀掉整个 cgroup：交给 systemd-run 另起一个
+        const useSystemdRun = this.ctx.platform === 'linux' && (await which('systemd-run'));
+        const keepEnv = ['PATH', 'HOME', 'LANG', 'DSH_HOME', 'DSH_MODEL_HOME', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'].filter((k) => process.env[k]).map((k) => `--setenv=${k}=${process.env[k]}`);
+        const viaSystemd = ['--user', '--collect', '--quiet', ...keepEnv, '--setenv=NO_COLOR=1', '/bin/sh', '-c', 'log="$1"; shift; exec "$@" >"$log" 2>&1', 'sh', log, ...cmd];
+        const child = spawn(useSystemdRun ? 'systemd-run' : cmd[0], useSystemdRun ? viaSystemd : cmd.slice(1), {
+            detached: true,
+            stdio: ['ignore', out, out],
+            env: { ...process.env, NO_COLOR: '1', NODE_NO_WARNINGS: '1', ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
+        });
+        child.unref();
+        closeSync(out);
+        this.selfJob = { action, startedAt: new Date().toISOString(), log };
+        log_(`daemon: started ${action} (pid ${child.pid})`);
+        return { started: true, log };
+    }
     /** 这个来源的全部模型，以及哪些显示在 dsh 里 */
     async sourceModels(id) {
         const def = mustSource(id);
@@ -758,6 +812,12 @@ export class Daemon {
                 return ok(this.statsSnapshot());
             if (method === 'GET' && path === '/endpoints')
                 return ok(await this.endpoints());
+            if (method === 'GET' && path === '/self')
+                return ok(await this.selfInfo());
+            if (method === 'POST' && path === '/self/update')
+                return ok(await this.startSelfJob('update'));
+            if (method === 'POST' && path === '/self/uninstall')
+                return ok(await this.startSelfJob('uninstall', { keepAuth: b.keepAuth === true }));
             if (method === 'GET' && path === '/usage')
                 return ok(await this.usage(query.get('refresh') === '1'));
             return fail(404, 'not_found', `${method} ${path}`);

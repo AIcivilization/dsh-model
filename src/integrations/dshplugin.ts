@@ -4,7 +4,7 @@
 // 早先用 link: 指到 npm 全局目录：VPS 上那个目录归 root，之后从插件市场装就会 EACCES（实测），所以改掉。
 // 用户自己从市场 / GitHub 装的（依赖写法不是我们的）就不动它。卸载时只移除 dsh-model 装的那份。
 
-import { lstat, unlink } from 'node:fs/promises'
+import { lstat, realpath, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Ctx } from '../context.js'
 import { dshPlugin, profileHasDependency } from '../dsh/cli.js'
@@ -16,6 +16,15 @@ import { pkgVersion } from '../util/pkg.js'
 import { ok, skip } from '../util/output.js'
 
 export const PLUGIN_NAME = 'dsh-model'
+
+/** 插件在 profile 里的实际目录（pnpm 的真实路径） */
+export async function pluginRoot(ctx: Ctx, profile: string | null): Promise<string | null> {
+  try {
+    return await realpath(join(ctx.dshHome, 'profiles', await resolveProfile(ctx, profile), 'node_modules', PLUGIN_NAME))
+  } catch {
+    return null
+  }
+}
 const NPM_PACKAGE_URL = `https://registry.npmjs.org/${PLUGIN_NAME}`
 const GITHUB_SPEC = 'https://github.com/AIcivilization/dsh-model/archive/refs/heads/main.tar.gz'
 
@@ -36,15 +45,18 @@ async function desiredSpec(): Promise<{ spec: string; install: string }> {
   return { spec: GITHUB_SPEC, install: GITHUB_SPEC }
 }
 
-export async function installDshPlugin(ctx: Ctx, all: All): Promise<void> {
+/**
+ * opts.version：装这个 npm 版本（更新时用）；opts.replaceUser：用户自己从市场装的也换成它（管理页点「更新」时）
+ */
+export async function installDshPlugin(ctx: Ctx, all: All, opts: { version?: string; replaceUser?: boolean } = {}): Promise<void> {
   const profile = await resolveProfile(ctx, all.config.dsh.profile)
   const existing = await profileHasDependency(ctx, profile, PLUGIN_NAME)
-  if (existing && !isOurSpec(existing)) {
+  if (existing && !isOurSpec(existing) && !opts.replaceUser) {
     skip(L(`dsh 插件已由你自己安装（${existing}），不改动`, `dsh plugin was installed by you (${existing}); left as is`))
     all.state.plugins = [...(all.state.plugins ?? []).filter((p) => p.name !== PLUGIN_NAME), { name: PLUGIN_NAME, version: existing, installedByUs: false, installedAt: new Date().toISOString() }]
     return
   }
-  const want = await desiredSpec()
+  const want = opts.version ? { spec: opts.version, install: `${PLUGIN_NAME}@${opts.version}` } : await desiredSpec()
   if (existing === want.spec) {
     skip(L(`dsh 插件已安装（${existing}）`, `dsh plugin already installed (${existing})`))
     return
@@ -65,9 +77,10 @@ export async function installDshPlugin(ctx: Ctx, all: All): Promise<void> {
   ok(L(`dsh 插件已安装（${installed}）：重启一次 dsh，在「设置 → dsh-model」里管理来源、用量和 key`, `dsh plugin installed (${installed}): restart dsh once, then manage sources, usage and keys in Settings → dsh-model`))
 }
 
-export async function removeDshPlugin(ctx: Ctx, all: All): Promise<boolean> {
+/** 只移除我们装的那份；force（管理页点「卸载」）时用户自己从市场装的也移除 */
+export async function removeDshPlugin(ctx: Ctx, all: All, opts: { force?: boolean } = {}): Promise<boolean> {
   const rec = all.state.plugins?.find((p) => p.name === PLUGIN_NAME)
-  if (!rec?.installedByUs) return false
+  if (!rec?.installedByUs && !opts.force) return false
   const profile = await resolveProfile(ctx, all.config.dsh.profile)
   if (await profileHasDependency(ctx, profile, PLUGIN_NAME)) {
     const code = await dshPlugin(ctx, profile, ['remove', PLUGIN_NAME], all.config.proxy)
