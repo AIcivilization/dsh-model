@@ -27,6 +27,8 @@ const ALLOWED = [
   ['POST', /^\/keys$/],
   ['DELETE', /^\/keys\/[A-Za-z0-9._-]{1,40}$/],
   ['POST', /^\/keys\/[A-Za-z0-9._-]{1,40}\/rotate$/],
+  ['POST', /^\/keys\/[A-Za-z0-9._-]{1,40}\/reveal$/],
+  ['GET', /^\/endpoints$/],
   ['POST', /^\/sources\/[a-z-]{2,20}\/(enable|disable|logout)$/],
   ['POST', /^\/opencode\/key$/],
   ['GET', /^\/login\/[A-Za-z0-9._-]{1,120}$/],

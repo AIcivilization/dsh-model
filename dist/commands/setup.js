@@ -20,6 +20,8 @@ import { detectProxy, normalizeProxyUrl, redactProxy } from '../util/proxy.js';
 import { configureOpencode } from './opencode.js';
 import { ensureDaemon } from '../daemon/service.js';
 import { installDshPlugin } from '../integrations/dshplugin.js';
+import { enableCaddy } from './remote.js';
+import { DEFAULT_PUBLIC_PORT, publicHost } from '../remote/public.js';
 export async function setup(ctx, opts) {
     requireRootInVps(ctx);
     return withLock(ctx, async () => {
@@ -86,6 +88,22 @@ export async function setup(ctx, opts) {
             skip(L('已跳过（--skip-dsh-plugin）', 'Skipped (--skip-dsh-plugin)'));
         else
             await step('dsh-plugin', () => installDshPlugin(ctx, all));
+        // vps：自动在 dsh 的域名上开对外端点（没有域名就用 IP），自己的其他设备直接能用
+        if (ctx.mode === 'vps') {
+            info('');
+            info(bold(L('对外端点', 'Public endpoint')));
+            if (all.state.remote?.mode && all.state.remote.mode !== 'off' && all.state.remote.mode !== 'caddy')
+                skip(L(`已用 ${all.state.remote.mode} 方式开放，保持不变`, `Already exposed via ${all.state.remote.mode}; unchanged`));
+            else
+                await step('public-endpoint', async () => {
+                    const host = await publicHost(all.config.remote.domain);
+                    const port = all.config.remote.publicPort ?? DEFAULT_PUBLIC_PORT;
+                    await enableCaddy(ctx, all, host, port);
+                    all.config.remote.domain = host;
+                    all.config.remote.publicPort = port;
+                    ok(`https://${host}:${port}/v1`);
+                });
+        }
         info('');
         info(bold(L('同步到 dsh', 'Sync to dsh')));
         let ids = [];
@@ -108,7 +126,8 @@ export async function setup(ctx, opts) {
         info('');
         if (failures.length)
             warn(L(`有 ${failures.length} 项没完成：${failures.join('、')}。修好后重新执行 dsh-model setup 即可`, `${failures.length} item(s) not done: ${failures.join(', ')}. Fix them and re-run dsh-model setup`));
-        next(L(`在 dsh 的模型列表里选 dsh-model 下的模型。其他软件：Base URL http://127.0.0.1:${all.config.port}/v1，key 用 dsh-model key add <名称> 领取`, `Pick a dsh-model model in dsh. Other software: Base URL http://127.0.0.1:${all.config.port}/v1, get a key with dsh-model key add <name>`));
+        const base = all.state.remote?.mode === 'caddy' && all.state.remote.publicUrl ? all.state.remote.publicUrl : `http://127.0.0.1:${all.config.port}/v1`;
+        next(L(`在 dsh 的模型列表里选 dsh-model 下的模型。其他软件：Base URL ${base}，key 用 dsh-model key add <名称> 领取`, `Pick a dsh-model model in dsh. Other software: Base URL ${base}, get a key with dsh-model key add <name>`));
         info(L('  订阅上游（codex 等）：dsh-model login <上游>', '  Subscription upstreams (codex etc.): dsh-model login <upstream>'));
         return failures.length ? 1 : 0;
     });

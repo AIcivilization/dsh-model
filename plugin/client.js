@@ -167,8 +167,60 @@ window.__ModuleLoader__.load({
         children))
     }
 
-    function copy(text) {
-      try { navigator.clipboard?.writeText(text) } catch { /* ignore */ }
+    async function copy(text) {
+      try {
+        await navigator.clipboard.writeText(text)
+        return true
+      } catch {
+        // 非安全上下文（http 访问）没有 clipboard API：退回老办法
+        try {
+          const t = document.createElement('textarea')
+          t.value = text
+          t.style.position = 'fixed'
+          t.style.opacity = '0'
+          document.body.appendChild(t)
+          t.select()
+          const done = document.execCommand('copy')
+          t.remove()
+          return done
+        } catch {
+          return false
+        }
+      }
+    }
+
+    /** 复制按钮：get 可以是异步取值（例如取完整 key）；点完显示"已复制" */
+    function CopyButton({ get, label, style }) {
+      const [state, setState] = useState('')
+      const timer = useRef(null)
+      useEffect(() => () => clearTimeout(timer.current), [])
+      const onClick = async () => {
+        let done = false
+        try { done = await copy(typeof get === 'function' ? await get() : get) } catch { done = false }
+        setState(done ? 'ok' : 'fail')
+        clearTimeout(timer.current)
+        timer.current = setTimeout(() => setState(''), 1500)
+      }
+      return h('button', { type: 'button', style: { ...S.btn, ...(style || {}), ...(state === 'ok' ? { color: C.ok } : state === 'fail' ? { color: C.err } : {}) }, onClick },
+        state === 'ok' ? L('已复制', 'Copied') : state === 'fail' ? L('复制失败', 'Copy failed') : (label || L('复制', 'Copy')))
+    }
+
+    // —— 访问地址 ——
+    function EndpointCard({ endpoints }) {
+      if (!endpoints) return null
+      const rows = [
+        ...(endpoints.public ? [{ id: 'public', name: L('外网地址', 'Public'), url: endpoints.public, note: L('你的电脑、手机或其他软件用这个', 'Use this from your computer, phone or other tools') }] : []),
+        { id: 'local', name: L('本机地址', 'Local'), url: endpoints.local, note: endpoints.public ? L('只在这台服务器上能用（dsh 自己用的就是它）', 'Only works on this server (dsh itself uses it)') : L('只在本机能用；要从别的设备访问，在服务器上执行 dsh-model remote enable', 'Only works on this machine; to reach it from other devices run dsh-model remote enable') },
+      ]
+      return h('div', { style: S.section },
+        h('div', { style: S.h }, L('访问地址', 'Endpoint')),
+        h('p', { style: S.note }, L('所有模型都经同一个 OpenAI 兼容端点提供：Base URL 填下面的地址，API key 用下方任意一把。', 'Every model is served from one OpenAI-compatible endpoint: use the address below as Base URL and any key below as the API key.')),
+        h('div', { style: S.card }, rows.map((r, i) => h('div', { key: r.id, style: i ? S.row : S.rowFirst },
+          h('div', { style: S.line },
+            h('span', { style: { ...S.label, width: 72, flex: 'none' } }, r.name),
+            h('code', { style: { ...S.mono, ...S.grow, wordBreak: 'break-all' } }, r.url),
+            h(CopyButton, { get: r.url })),
+          h('div', { style: { ...S.meta, paddingLeft: 82 } }, r.note)))))
     }
 
     function LoginDialog({ source, session, onDone, onClose }) {
@@ -282,7 +334,7 @@ window.__ModuleLoader__.load({
           h('label', { style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' } },
             h('input', { type: 'checkbox', checked: showRisky, onChange: (e) => toggleRisky(e.target.checked) }),
             L(`显示高风险来源${!showRisky && hidden ? `（${hidden}）` : ''}`, `Show high-risk sources${!showRisky && hidden ? ` (${hidden})` : ''}`))),
-        h('p', { style: S.note }, L('打开就接入，没登录会弹出登录；关闭只停用，登录保留。所有模型都经同一个端点 http://127.0.0.1:8317/v1 提供。', 'Turn on to connect (signs in if needed); turning off keeps the sign-in. All models are served from one endpoint, http://127.0.0.1:8317/v1.')),
+        h('p', { style: S.note }, L('打开就接入，没登录会弹出登录；关闭只停用，登录保留。', 'Turn on to connect (signs in if needed); turning off keeps the sign-in.')),
         err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
         showRisky ? h('p', { style: { ...S.note, color: C.warn } }, L('高风险来源（Claude、Antigravity）：服务商有封禁第三方使用订阅的先例，账号可能被封。仅在你清楚风险时使用。', 'High-risk sources (Claude, Antigravity): the providers have banned third-party use of subscriptions before; your account may be suspended. Use only if you accept the risk.')) : null,
         h('div', { style: S.card }, visible.map((s, i) => h('div', { key: s.id, style: i ? S.row : S.rowFirst },
@@ -319,11 +371,11 @@ window.__ModuleLoader__.load({
       }
       return h('div', { style: S.section },
         h('div', { style: S.h }, 'API key'),
-        h('p', { style: S.note }, L('OpenAI 格式。dsh 用名为 dsh 的那把（自动配置）；其他设备或软件各领一把，丢了就吊销。下面是最近 24 小时的状态。', 'OpenAI-style. dsh uses the "dsh" key (configured automatically); give each other device or tool its own key and revoke it if lost. Stats cover the last 24 hours.')),
+        h('p', { style: S.note }, L('OpenAI 格式，点「复制」拿完整 key。dsh 用名为 dsh 的那把（自动配置）；其他设备或软件各领一把，丢了就吊销。下面是最近 24 小时的状态。', 'OpenAI-style; click Copy to get the full key. dsh uses the "dsh" key (configured automatically); give each other device or tool its own key and revoke it if lost. Stats cover the last 24 hours.')),
         err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
         fresh ? h('div', { style: { ...S.card, padding: 12, marginBottom: 10 } },
           h('div', { style: S.meta }, L(`新 key「${fresh.name}」只显示这一次：`, `New key "${fresh.name}" is shown only once:`)),
-          h('div', { style: { ...S.line, marginTop: 6 } }, h('code', { style: { ...S.mono, ...S.grow, wordBreak: 'break-all' } }, fresh.key), h('button', { type: 'button', style: S.btn, onClick: () => copy(fresh.key) }, L('复制', 'Copy')), h('button', { type: 'button', style: S.btn, onClick: () => setFresh(null) }, L('我已保存', 'Saved')))) : null,
+          h('div', { style: { ...S.line, marginTop: 6 } }, h('code', { style: { ...S.mono, ...S.grow, wordBreak: 'break-all' } }, fresh.key), h(CopyButton, { get: fresh.key }), h('button', { type: 'button', style: S.btn, onClick: () => setFresh(null) }, L('我已保存', 'Saved')))) : null,
         h('div', { style: S.card },
           h('table', { style: S.table },
             h('thead', null, h('tr', null, [L('名称', 'Name'), 'Key', L('请求', 'Requests'), L('成功率', 'Success'), L('平均延迟', 'Latency'), 'tokens/s', L('最后使用', 'Last used'), ''].map((t, i) => h('th', { key: i, style: S.th }, t)))),
@@ -337,7 +389,8 @@ window.__ModuleLoader__.load({
                 h('td', { style: S.td }, ms(st?.avgLatencyMs)),
                 h('td', { style: S.td }, st?.tokensPerSec ?? '-'),
                 h('td', { style: S.td }, ago(st?.lastUsedAt)),
-                h('td', { style: { ...S.td, textAlign: 'right' } },
+                h('td', { style: { ...S.td, textAlign: 'right', whiteSpace: 'nowrap' } },
+                  h(CopyButton, { get: async () => (await api('POST', `/keys/${encodeURIComponent(k.name)}/reveal`)).key, style: { marginRight: 6 } }),
                   h('button', { type: 'button', style: S.btn, onClick: () => rotate(k) }, L('轮换', 'Rotate')),
                   k.name !== 'dsh' ? h('button', { type: 'button', style: { ...S.btn, marginLeft: 6, color: C.err }, onClick: () => revoke(k) }, L('吊销', 'Revoke')) : null))
             })))),
@@ -372,8 +425,8 @@ window.__ModuleLoader__.load({
       const alive = useRef(true)
       const load = useCallback(async (refresh) => {
         try {
-          const [sources, keys, stats] = await Promise.all([api('GET', refresh ? '/sources?refresh=1' : '/sources'), api('GET', '/keys'), api('GET', '/stats')])
-          if (alive.current) { setData({ sources, keys, stats }); setErr('') }
+          const [sources, keys, stats, endpoints] = await Promise.all([api('GET', refresh ? '/sources?refresh=1' : '/sources'), api('GET', '/keys'), api('GET', '/stats'), api('GET', '/endpoints').catch(() => null)])
+          if (alive.current) { setData({ sources, keys, stats, endpoints }); setErr('') }
         } catch (e) {
           if (alive.current) setErr(e.hint ? `${e.message}（${e.hint}）` : e.message)
         }
@@ -387,6 +440,7 @@ window.__ModuleLoader__.load({
       if (!data) return h('div', { style: { fontSize: 13, color: err ? C.err : C.sub, padding: '8px 0' } }, err || L('加载中…', 'Loading…'))
       return h('div', { style: { color: C.text, maxWidth: 820 } },
         err ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 12 } }, err) : null,
+        h(EndpointCard, { endpoints: data.endpoints }),
         h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: () => setKeyDialog(true) }),
         h(KeysCard, { keys: data.keys, reload: () => load(false) }),
         h(ModelsCard, { stats: data.stats }),

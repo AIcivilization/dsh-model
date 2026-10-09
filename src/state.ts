@@ -18,7 +18,7 @@ export interface Config {
   engine: { version: string | null }
   dsh: { profile: string | null; providerId: string }
   upstreams: Record<string, { riskAcceptedAt?: string }>
-  remote: { mode: RemoteMode; domain?: string }
+  remote: { mode: RemoteMode; domain?: string; publicPort?: number }
   /** 出站代理：undefined = 还没定（setup 自动检测），null = 明确不用 */
   proxy?: string | null
   /** 关掉的来源（workbuddy / workbuddy-ai / opencode；引擎来源的开关存在凭据的 disabled 上） */
@@ -68,6 +68,9 @@ export interface State {
     caddyImportLine?: string
     caddyfile?: string
     tailscaleHttpsPort?: number
+    /** caddy：对外地址与放行的防火墙端口 */
+    publicUrl?: string
+    firewallPort?: number
   }
   engine: { versions: string[]; previous?: string }
 }

@@ -510,6 +510,19 @@ export class Daemon {
             .filter((k) => !k.revokedAt)
             .map((k) => ({ name: k.name, key: redactKey(k.key), createdAt: k.createdAt, ...(snap.byKey[k.name] ? { stats: snap.byKey[k.name] } : {}) }));
     }
+    /** 管理页"复制"用：取一把未吊销 key 的完整值（只经同源、带页面 token 的插件路由转发） */
+    async revealKey(name) {
+        const entry = (await loadKeys(this.ctx)).keys.find((k) => k.name === name && !k.revokedAt);
+        if (!entry)
+            throw new DshModelError('no_key', L(`没有这把 key：${name}`, `No such key: ${name}`));
+        return { name: entry.name, key: entry.key };
+    }
+    /** 访问地址：本机地址总有；vps 开了对外端点时还有公网地址 */
+    async endpoints() {
+        const all = await loadAll(this.ctx);
+        const pub = all.state.remote?.mode === 'caddy' ? all.state.remote.publicUrl : undefined;
+        return { local: `http://127.0.0.1:${all.config.port}/v1`, ...(pub ? { public: pub } : {}) };
+    }
     /** 新增：返回完整 key（只这一次） */
     async addKey(name) {
         return withLock(this.ctx, async () => {
@@ -553,7 +566,7 @@ export class Daemon {
         const seg = path.split('/').filter(Boolean);
         try {
             if (method === 'GET' && path === '/status') {
-                return ok({ sources: await this.sources(), keys: await this.keys(), stats: this.statsSnapshot() });
+                return ok({ sources: await this.sources(), keys: await this.keys(), stats: this.statsSnapshot(), endpoints: await this.endpoints() });
             }
             if (method === 'GET' && path === '/sources') {
                 if (query.get('refresh') === '1')
@@ -590,9 +603,13 @@ export class Daemon {
                     return ok(await this.revokeKey(seg[1]).then(() => ({ revoked: true })));
                 if (method === 'POST' && seg[2] === 'rotate')
                     return ok(await this.rotateKey(seg[1]));
+                if (method === 'POST' && seg[2] === 'reveal')
+                    return ok(await this.revealKey(seg[1]));
             }
             if (method === 'GET' && path === '/stats')
                 return ok(this.statsSnapshot());
+            if (method === 'GET' && path === '/endpoints')
+                return ok(await this.endpoints());
             if (method === 'GET' && path === '/usage')
                 return ok(await this.usage(query.get('refresh') === '1'));
             return fail(404, 'not_found', `${method} ${path}`);
