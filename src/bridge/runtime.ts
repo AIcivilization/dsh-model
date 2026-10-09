@@ -156,7 +156,9 @@ export async function refreshCatalog(home: string, rt: Runtime, owner?: Owner): 
     rt.wbCatalog.setVisible(false)
     file.error = String((error as Error).message ?? error).slice(0, 300)
   }
-  const sig = (c: CatalogFile | null) => JSON.stringify(c ? { s: c.signedIn, m: c.models.map((m) => [m.id, m.name, m.contextWindow, m.maxTokens, m.supportsImages]) } : null)
+  // 倍率与优惠（限时免费、夜间折扣）会随时间变：也算变化，让 dsh 里的名字跟着更新
+  const sig = (c: CatalogFile | null) =>
+    JSON.stringify(c ? { s: c.signedIn, m: c.models.map((m) => [m.id, m.name, m.contextWindow, m.maxTokens, m.supportsImages, (m as { billing?: unknown }).billing ?? null]) } : null)
   const changed = sig(before) !== sig(file)
   await atomicWrite(catalogPath(home, rt.key), JSON.stringify(file, null, 2) + '\n', { owner })
   return changed

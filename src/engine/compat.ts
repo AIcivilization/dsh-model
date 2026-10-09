@@ -21,6 +21,11 @@ export interface CompatModel {
   contextWindow?: number
   maxTokens?: number
   image?: boolean
+  /** dsh 里显示的名字：名字 · 倍率 · 优惠（如 "Hy3 · x0.00 · Free now"） */
+  dshName?: string
+  /** dsh 里的分组（一个分组对应一个 provider）：workbuddy / workbuddy-ai / opencode */
+  group?: string
+  groupLabel?: string
 }
 
 export interface CompatUpstream {
@@ -46,7 +51,14 @@ export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
   const secrets = await loadSecrets(ctx)
   if (secrets.opencode?.key) {
     const list = await readJson<OpencodeModelsFile>(opencodeModelsPath(ctx))
-    const models = (list?.models ?? []).map((m) => ({ name: m.id, alias: `${OPENCODE_PREFIX}/${m.id}`, displayName: `OpenCode · ${m.id}` }))
+    const models = (list?.models ?? []).map((m) => ({
+      name: m.id,
+      alias: `${OPENCODE_PREFIX}/${m.id}`,
+      displayName: `OpenCode · ${m.id}`,
+      dshName: /-free$|^big-pickle$/.test(m.id) ? `${m.id} · Free` : m.id,
+      group: 'opencode',
+      groupLabel: 'OpenCode Zen',
+    }))
     if (models.length) out.push({ name: 'opencode', label: 'OpenCode Zen', baseUrl: OPENCODE_BASE, apiKey: secrets.opencode.key, models })
   }
   const bridge = await readJson<BridgeConfig>(bridgeConfigPath(ctx.paths.home))
@@ -59,14 +71,29 @@ export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
         baseUrl: `http://127.0.0.1:${bridge.port}/${c.key}/v1`,
         apiKey: bridge.secret,
         direct: true,
-        models: c.models.map((m) => ({
-          name: m.id,
-          alias: `${c.prefix}/${m.id}`,
-          displayName: `${c.label} · ${m.name || m.id}`,
-          contextWindow: m.contextWindow,
-          maxTokens: m.maxTokens,
-          image: m.supportsImages,
-        })),
+        models: (() => {
+          // 同组里重名（如 hy3 与 hy3-x 都叫 Hy3）就在名字后加上 id 区分
+          const count = new Map<string, number>()
+          for (const m of c.models) count.set(m.name || m.id, (count.get(m.name || m.id) ?? 0) + 1)
+          return c.models.map((m) => {
+            const base = m.name || m.id
+            const name = (count.get(base) ?? 0) > 1 ? `${base} (${m.id})` : base
+            const billing = (m as { billing?: { credits?: string; badges?: readonly string[] } }).billing
+            const rate = billing?.credits?.replace(/\s*credits?$/i, '').trim()
+            const tags = [rate, ...(billing?.badges ?? [])].filter((x): x is string => Boolean(x))
+            return {
+              name: m.id,
+              alias: `${c.prefix}/${m.id}`,
+              displayName: `${c.label} · ${base}`,
+              dshName: [name, ...tags].join(' · '),
+              group: c.prefix,
+              groupLabel: c.label,
+              contextWindow: m.contextWindow,
+              maxTokens: m.maxTokens,
+              image: m.supportsImages,
+            }
+          })
+        })(),
       })
     }
   }

@@ -240,6 +240,43 @@ export async function connectDsh(ctx: Ctx, state: State, keys: KeyStore, input: 
   return { ...r, providerWritten }
 }
 
+// —— 按来源分组：一个分组一个 provider，dsh 的模型选择器按 provider 分组显示 ——
+
+export interface DshGroup {
+  providerId: string
+  displayName: string
+  models: DshModel[]
+}
+
+/**
+ * 写入一组 provider（都指向统一端点、同一把 key）；以前写过、这次不再出现的 dsh-model* provider 一并移除。
+ */
+export async function connectDshGroups(
+  ctx: Ctx,
+  state: State,
+  keys: KeyStore,
+  input: { port: number; key: string; groups: DshGroup[]; profile: string | null; force?: boolean; dryRun?: boolean },
+): Promise<ApplyResult & { providers: string[] }> {
+  const providers: Record<string, Record<string, unknown> | null> = {}
+  const live = input.groups.filter((g) => g.models.length)
+  for (const g of live) providers[g.providerId] = { ...providerSpec(input.port, g.models), displayName: g.displayName }
+  for (const id of state.dsh?.ownedProviders ?? []) if (id.startsWith('dsh-model') && !(id in providers)) providers[id] = null
+  const r = await applyDsh(ctx, state, { refs: { [KEY_REF]: input.key }, providers }, {
+    profile: input.profile,
+    force: input.force,
+    dryRun: input.dryRun,
+    isOwnRef: (name, value) => name === KEY_REF && keys.keys.some((k) => k.key === value),
+  })
+  return { ...r, providers: live.map((g) => g.providerId) }
+}
+
+/** dsh 里有没有 dsh-model 写的任何 provider */
+export async function anyProviderPresent(state: State): Promise<boolean> {
+  if (!state.dsh) return false
+  const text = await readText(state.dsh.patchFile)
+  return (state.dsh.ownedProviders ?? []).filter((id) => id.startsWith('dsh-model')).some((id) => readProvider(text, id) != null)
+}
+
 // —— 全部还原 ——
 
 export interface DisconnectResult {

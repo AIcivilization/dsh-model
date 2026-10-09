@@ -1,10 +1,9 @@
 // ops.ts — 各命令共用的流程：读全部状态、应用引擎配置、同步模型到 dsh
 
 import type { Ctx } from './context.js'
-import { connectDsh } from './dsh/connect.js'
+import { connectDshGroups, type DshGroup } from './dsh/connect.js'
 import { listModels, waitHealthy, waitModelsChange, type ModelEntry } from './engine/client.js'
 import { compatModelIndex, loadCompatUpstreams } from './engine/compat.js'
-import type { DshModel } from './dsh/patch.js'
 import { writeEngineConfig } from './engine/config.js'
 import { DshModelError, isDshModelError } from './errors.js'
 import { L } from './i18n.js'
@@ -68,31 +67,42 @@ export async function syncModels(ctx: Ctx, all: All, opts: { before?: string[]; 
   const models = opts.before ? await waitModelsChange(all.config.port, key, opts.before) : await listModels(all.config.port, key)
   const ids = models.map((m) => m.id)
   const meta = compatModelIndex(await loadCompatUpstreams(ctx))
-  const entries: DshModel[] = ids.map((id) => {
+  // 按来源分组：WorkBuddy / WorkBuddy AI / OpenCode Zen 各一个 provider，订阅模型放在 dsh-model 里
+  const groups = new Map<string, DshGroup>()
+  for (const id of ids) {
     const m = meta.get(id)
-    if (!m) return { id, name: id }
-    return {
-      id,
-      name: m.displayName ?? id,
-      ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
-      ...(m.maxTokens ? { maxTokens: m.maxTokens } : {}),
-      input: m.image ? ['text', 'image'] : ['text'],
+    const gid = m?.group ? `dsh-model-${m.group}` : all.config.dsh.providerId
+    let g = groups.get(gid)
+    if (!g) {
+      g = { providerId: gid, displayName: m?.groupLabel ?? L('订阅（dsh-model）', 'Subscriptions (dsh-model)'), models: [] }
+      groups.set(gid, g)
     }
-  })
+    g.models.push(
+      m
+        ? {
+            id,
+            name: m.dshName ?? m.displayName ?? id,
+            ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+            ...(m.maxTokens ? { maxTokens: m.maxTokens } : {}),
+            input: m.image ? ['text', 'image'] : ['text'],
+          }
+        : { id, name: id },
+    )
+  }
   try {
-    const r = await connectDsh(ctx, all.state, all.keys, {
-      providerId: all.config.dsh.providerId,
+    const r = await connectDshGroups(ctx, all.state, all.keys, {
       port: all.config.port,
       key,
-      models: entries,
+      groups: [...groups.values()],
       profile: opts.profile ?? all.config.dsh.profile,
       force: opts.force,
     })
     all.config.dsh.profile = r.location.profile
     r.warnings.forEach((w) => warn(w))
     if (!opts.quiet) {
-      if (r.providerWritten) {
-        ;(r.changed ? ok : skip)(L(`dsh（${r.location.profile}）已接入 ${ids.length} 个模型`, `dsh (${r.location.profile}) has ${ids.length} models connected`))
+      if (r.providers.length) {
+        const summary = [...groups.values()].map((g) => `${g.displayName} ${g.models.length}`).join(' · ')
+        ;(r.changed ? ok : skip)(L(`dsh（${r.location.profile}）已接入 ${ids.length} 个模型：${summary}`, `dsh (${r.location.profile}) has ${ids.length} models: ${summary}`))
       } else {
         skip(L('还没有登录任何上游，dsh 里暂时没有 dsh-model 的模型', 'No upstream logged in yet, so dsh has no dsh-model models for now'))
       }

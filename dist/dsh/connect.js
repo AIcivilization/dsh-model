@@ -166,6 +166,32 @@ export async function connectDsh(ctx, state, keys, input) {
     }, { profile: input.profile, force: input.force, dryRun: input.dryRun, isOwnRef: (name, value) => name === KEY_REF && keys.keys.some((k) => k.key === value) });
     return { ...r, providerWritten };
 }
+/**
+ * 写入一组 provider（都指向统一端点、同一把 key）；以前写过、这次不再出现的 dsh-model* provider 一并移除。
+ */
+export async function connectDshGroups(ctx, state, keys, input) {
+    const providers = {};
+    const live = input.groups.filter((g) => g.models.length);
+    for (const g of live)
+        providers[g.providerId] = { ...providerSpec(input.port, g.models), displayName: g.displayName };
+    for (const id of state.dsh?.ownedProviders ?? [])
+        if (id.startsWith('dsh-model') && !(id in providers))
+            providers[id] = null;
+    const r = await applyDsh(ctx, state, { refs: { [KEY_REF]: input.key }, providers }, {
+        profile: input.profile,
+        force: input.force,
+        dryRun: input.dryRun,
+        isOwnRef: (name, value) => name === KEY_REF && keys.keys.some((k) => k.key === value),
+    });
+    return { ...r, providers: live.map((g) => g.providerId) };
+}
+/** dsh 里有没有 dsh-model 写的任何 provider */
+export async function anyProviderPresent(state) {
+    if (!state.dsh)
+        return false;
+    const text = await readText(state.dsh.patchFile);
+    return (state.dsh.ownedProviders ?? []).filter((id) => id.startsWith('dsh-model')).some((id) => readProvider(text, id) != null);
+}
 export async function disconnectDsh(ctx, state) {
     const dsh = state.dsh;
     if (!dsh)

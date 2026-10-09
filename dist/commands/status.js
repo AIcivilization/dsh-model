@@ -1,7 +1,7 @@
 // commands/status.ts — status（一屏总览）与 doctor（逐项检查，--e2e 实测每个模型）
 import { join } from 'node:path';
 import { availableVariants, bridgeConfigPath, loadBridgeConfig, loadCatalogs } from '../bridge/runtime.js';
-import { providerPresent } from '../dsh/connect.js';
+import { anyProviderPresent } from '../dsh/connect.js';
 import { KEY_REF, readRef } from '../dsh/credentials.js';
 import { listAuthFiles, summarize } from '../engine/auth.js';
 import { healthy, listModels, probeStream, probeToolCall, unauthStatus } from '../engine/client.js';
@@ -35,7 +35,7 @@ export async function status(ctx) {
     const models = up && key ? await listModels(all.config.port, key).catch(() => []) : [];
     const groups = groupCounts(models);
     const { byUpstream } = summarize(await listAuthFiles(ctx));
-    const dshOk = await providerPresent(all.state, all.config.dsh.providerId).catch(() => false);
+    const dshOk = await anyProviderPresent(all.state).catch(() => false);
     const oc = await opencodeConfigured(ctx);
     const bridgeCfg = await loadBridgeConfig(ctx.paths.home);
     const bridgeUp = bridgeCfg ? await bridgeHealthy(bridgeCfg.port, bridgeCfg.secret) : false;
@@ -163,7 +163,7 @@ export async function doctor(ctx, opts) {
     // —— dsh 接线 ——
     if (all.state.dsh) {
         const d = all.state.dsh;
-        const present = await providerPresent(all.state, all.config.dsh.providerId).catch(() => false);
+        const present = await anyProviderPresent(all.state).catch(() => false);
         add('dsh-provider', present ? 'ok' : models.length ? 'fail' : 'warn', present ? L(`dsh（${d.profile}）里有 dsh-model`, `dsh-model present in dsh (${d.profile})`) : models.length ? L('dsh 里没有 dsh-model（dsh-model repair）', 'dsh-model missing in dsh (dsh-model repair)') : L('dsh 里还没有 dsh-model：引擎里还没有模型', 'dsh-model not in dsh yet: the engine has no models'));
         const credText = await readText(d.credFile);
         add('dsh-key', readRef(credText) === key ? 'ok' : 'fail', readRef(credText) === key ? L(`${KEY_REF} 与 key 一致`, `${KEY_REF} matches`) : L(`${KEY_REF} 与 key 不一致（dsh-model repair）`, `${KEY_REF} does not match (dsh-model repair)`));

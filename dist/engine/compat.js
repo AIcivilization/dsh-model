@@ -16,7 +16,14 @@ export async function loadCompatUpstreams(ctx) {
     const secrets = await loadSecrets(ctx);
     if (secrets.opencode?.key) {
         const list = await readJson(opencodeModelsPath(ctx));
-        const models = (list?.models ?? []).map((m) => ({ name: m.id, alias: `${OPENCODE_PREFIX}/${m.id}`, displayName: `OpenCode · ${m.id}` }));
+        const models = (list?.models ?? []).map((m) => ({
+            name: m.id,
+            alias: `${OPENCODE_PREFIX}/${m.id}`,
+            displayName: `OpenCode · ${m.id}`,
+            dshName: /-free$|^big-pickle$/.test(m.id) ? `${m.id} · Free` : m.id,
+            group: 'opencode',
+            groupLabel: 'OpenCode Zen',
+        }));
         if (models.length)
             out.push({ name: 'opencode', label: 'OpenCode Zen', baseUrl: OPENCODE_BASE, apiKey: secrets.opencode.key, models });
     }
@@ -31,14 +38,30 @@ export async function loadCompatUpstreams(ctx) {
                 baseUrl: `http://127.0.0.1:${bridge.port}/${c.key}/v1`,
                 apiKey: bridge.secret,
                 direct: true,
-                models: c.models.map((m) => ({
-                    name: m.id,
-                    alias: `${c.prefix}/${m.id}`,
-                    displayName: `${c.label} · ${m.name || m.id}`,
-                    contextWindow: m.contextWindow,
-                    maxTokens: m.maxTokens,
-                    image: m.supportsImages,
-                })),
+                models: (() => {
+                    // 同组里重名（如 hy3 与 hy3-x 都叫 Hy3）就在名字后加上 id 区分
+                    const count = new Map();
+                    for (const m of c.models)
+                        count.set(m.name || m.id, (count.get(m.name || m.id) ?? 0) + 1);
+                    return c.models.map((m) => {
+                        const base = m.name || m.id;
+                        const name = (count.get(base) ?? 0) > 1 ? `${base} (${m.id})` : base;
+                        const billing = m.billing;
+                        const rate = billing?.credits?.replace(/\s*credits?$/i, '').trim();
+                        const tags = [rate, ...(billing?.badges ?? [])].filter((x) => Boolean(x));
+                        return {
+                            name: m.id,
+                            alias: `${c.prefix}/${m.id}`,
+                            displayName: `${c.label} · ${base}`,
+                            dshName: [name, ...tags].join(' · '),
+                            group: c.prefix,
+                            groupLabel: c.label,
+                            contextWindow: m.contextWindow,
+                            maxTokens: m.maxTokens,
+                            image: m.supportsImages,
+                        };
+                    });
+                })(),
             });
         }
     }
