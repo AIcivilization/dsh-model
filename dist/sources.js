@@ -20,3 +20,17 @@ export function findSource(id) {
     const k = ALIASES[id.toLowerCase()] ?? id.toLowerCase();
     return SOURCES.find((s) => s.id === k);
 }
+/** 凭据属于哪个来源：优先看 provider / type 字段，否则看文件名前缀 */
+export function credsFor(creds, def) {
+    return creds.filter((c) => {
+        const p = String(c.provider ?? c.type ?? '').toLowerCase();
+        if (p)
+            return p === def.engineProvider;
+        return Boolean(def.filePrefix && c.name.startsWith(def.filePrefix));
+    });
+}
+/** 引擎因 403 payment_required 把这个凭据冷却了（实测：Kimi 没有 Kimi Code 订阅时如此）*/
+export function paymentRequired(cred) {
+    const cooldowns = cred.cooldowns;
+    return Array.isArray(cooldowns) && cooldowns.some((c) => c?.reason === 'payment_required');
+}

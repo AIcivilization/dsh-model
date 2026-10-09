@@ -129,7 +129,8 @@ window.__ModuleLoader__.load({
 
     function Usage({ usage }) {
       if (!usage) return null
-      if (usage.unsupported) return h('div', { style: { ...S.meta, marginTop: 6 } }, L('用量：暂不支持', 'Usage: not supported yet'))
+      if (usage.unsupported) return h('div', { style: { ...S.meta, marginTop: 6, paddingLeft: 46 } }, L('用量：暂不支持', 'Usage: not supported yet'))
+      if (usage.noAccess) return h('div', { style: { fontSize: 12, color: C.warn, marginTop: 6, paddingLeft: 46, lineHeight: 1.6 } }, L('当前账号没有可用订阅，调用会被拒绝（不会扣费），所以它的模型已在 dsh 中隐藏。开通套餐后把开关关掉再打开即可恢复。', 'This account has no usable subscription — calls are refused (no charge), so its models are hidden in dsh. After subscribing, turn the switch off and on again.'))
       const lines = []
       if (usage.plan) lines.push(h('div', { key: 'plan', style: { ...S.meta, marginTop: 6 } }, `${L('套餐', 'Plan')}：${usage.plan}`))
       for (const w of usage.windows || []) {
@@ -204,10 +205,11 @@ window.__ModuleLoader__.load({
           h('span', { style: { ...S.mono, fontSize: 18, fontWeight: 600, letterSpacing: 2 } }, s.userCode),
           h('button', { type: 'button', style: S.btn, onClick: () => copy(s.userCode) }, L('复制', 'Copy'))) : null,
         s.needsPaste ? h('div', { style: { marginBottom: 10 } },
-          h('p', { style: S.note }, L('授权后浏览器会跳到一个打不开的 localhost 地址——把地址栏里的完整地址粘贴到这里。', 'After approving, the browser lands on a localhost address that will not load — paste that full address here.')),
+          h('p', { style: { ...S.note, color: C.text } }, L('授权后，浏览器会跳到一个显示「无法访问此网站 / localhost 拒绝了连接」的页面——这是正常的。把那个页面地址栏里的完整地址（以 http://localhost 开头）复制下来，粘贴到这里：', 'After approving, the browser shows "This site can\'t be reached / localhost refused to connect" — that is expected. Copy the full address from that page\'s address bar (it starts with http://localhost) and paste it here:')),
           h('div', { style: S.line },
             h('input', { style: { ...S.input, ...S.grow }, placeholder: 'http://localhost:…/callback?code=…', value: paste, onChange: (e) => setPaste(e.target.value) }),
             h('button', { type: 'button', style: S.btnPrimary, onClick: submit }, L('提交', 'Submit')))) : null,
+        h('p', { style: { ...S.note, marginTop: 4 } }, L('授权页本身报错（例如 Operation timed out、糟糕出错了）多半是你的浏览器访问该网站的网络问题：换个代理节点，在那个页面点「重试」。', 'If the authorization page itself errors (e.g. "Operation timed out"), it is usually your browser\'s network path to that site: switch proxy nodes and press Retry on that page.')),
         h('div', { style: { fontSize: 12, color: s.status === 'error' ? C.err : C.sub } },
           s.status === 'pending' ? (msg || L('等待授权中…', 'Waiting for approval…')) : s.status === 'ok' ? L('已登录', 'Signed in') : `${L('登录没有完成', 'Login did not complete')}：${s.error || s.status}`))
     }

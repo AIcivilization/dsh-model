@@ -136,6 +136,11 @@ export class Mgmt {
     return r.files ?? []
   }
 
+  async credentialModels(name: string): Promise<{ id: string; display_name?: string; owned_by?: string }[]> {
+    const r = await this.call<{ models?: { id: string; display_name?: string; owned_by?: string }[] }>('GET', `/credentials/models?name=${encodeURIComponent(name)}`)
+    return r.models ?? []
+  }
+
   setDisabled(name: string, disabled: boolean): Promise<unknown> {
     return this.call('PATCH', '/credentials/status', { name, disabled })
   }

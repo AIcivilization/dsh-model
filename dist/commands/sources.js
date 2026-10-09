@@ -34,6 +34,8 @@ export function usageLines(s) {
         return [];
     if (u.unsupported)
         return [dim(L('    用量：暂不支持', '    usage: not supported yet'))];
+    if (u.noAccess)
+        return [yellow(L('    当前账号没有可用订阅（调用会被拒绝、不扣费），模型已在 dsh 中隐藏', '    No usable subscription on this account (calls refused, no charge); its models are hidden in dsh'))];
     const out = [];
     for (const w of u.windows) {
         const pct = w.usedPercent;

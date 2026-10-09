@@ -19,13 +19,14 @@ import { riskNotice as workbuddyRiskNotice } from '../integrations/workbuddy.js'
 import { DSH_KEY_NAME, addKey, loadKeys, revokeKey, rotateKey, saveKeys } from '../keys.js'
 import { applyEngineConfig, loadAll, saveAll, syncAll } from '../ops.js'
 import { loadSecrets } from '../secrets.js'
-import { SOURCES, findSource, type SourceDef } from '../sources.js'
+import { SOURCES, credsFor, findSource, paymentRequired, type SourceDef } from '../sources.js'
 import { withLock } from '../state.js'
 import { riskNotice as upstreamRiskNotice } from '../upstreams.js'
 import { getUpstream } from '../upstreams.js'
 import { redactKey } from '../util/redact.js'
 import { Stats, type StatsSnapshot } from './stats.js'
-import { USAGE_UNSUPPORTED, fetchEngineUsage, fetchWorkbuddyUsage, type SourceUsage } from './usage.js'
+import { USAGE_UNSUPPORTED, fetchEngineUsage, fetchWorkbuddyUsage, usageFilePath, type SourceUsage } from './usage.js'
+import { writeJson } from '../util/fs.js'
 
 const LOGIN_POLL_MS = 2000
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000
@@ -197,6 +198,7 @@ export class Daemon {
           enabled: active.length > 0,
           ...(first ? { account: accountOf(first) } : {}),
           ...(first?.status_message ? { detail: String(first.status_message) } : {}),
+          ...(active.length && active.every(paymentRequired) ? { detail: L('引擎收到 403 payment_required：当前账号没有可用订阅', 'Engine got 403 payment_required: this account has no usable subscription') } : {}),
           models: 0,
         }
       }
@@ -305,6 +307,15 @@ export class Daemon {
   }
 
   private async doRefreshUsage(): Promise<void> {
+    const before = [...this.usageCache.values()].filter((u) => u.noAccess).map((u) => u.source).sort().join(',')
+    await this.doRefreshUsageInner()
+    await writeJson(usageFilePath(this.ctx.paths.home), [...this.usageCache.values()], { owner: this.ctx.owner }).catch(() => {})
+    const after = [...this.usageCache.values()].filter((u) => u.noAccess).map((u) => u.source).sort().join(',')
+    // 某个来源"有没有可用订阅"变了：重新同步，dsh 里相应地隐藏 / 恢复它的模型
+    if (before !== after) void this.resync()
+  }
+
+  private async doRefreshUsageInner(): Promise<void> {
     const states = await this.sourcesRaw().catch(() => [] as SourceState[])
     let creds: CredentialEntry[] = []
     try {
@@ -603,15 +614,6 @@ function mustSource(id: string): SourceDef {
   const def = findSource(id)
   if (!def) throw new DshModelError('unknown_source', L(`不认识的来源：${id}`, `Unknown source: ${id}`), SOURCES.map((s) => s.id).join(', '))
   return def
-}
-
-/** 凭据属于哪个来源：优先看 provider / type 字段，否则看文件名前缀 */
-function credsFor(creds: CredentialEntry[], def: SourceDef): CredentialEntry[] {
-  return creds.filter((c) => {
-    const p = String(c.provider ?? c.type ?? '').toLowerCase()
-    if (p) return p === def.engineProvider
-    return Boolean(def.filePrefix && c.name.startsWith(def.filePrefix))
-  })
 }
 
 function accountOf(c: CredentialEntry): string {

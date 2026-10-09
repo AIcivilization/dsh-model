@@ -2,6 +2,7 @@
 import { connectDshGroups } from './dsh/connect.js';
 import { listModels, waitHealthy, waitModelsChange } from './engine/client.js';
 import { compatModelIndex, loadCompatUpstreams } from './engine/compat.js';
+import { subscriptionMap } from './engine/sourcemap.js';
 import { writeEngineConfig } from './engine/config.js';
 import { DshModelError, isDshModelError } from './errors.js';
 import { L } from './i18n.js';
@@ -56,25 +57,35 @@ export async function syncModels(ctx, all, opts = {}) {
     const models = opts.before ? await waitModelsChange(all.config.port, key, opts.before) : await listModels(all.config.port, key);
     const ids = models.map((m) => m.id);
     const meta = compatModelIndex(await loadCompatUpstreams(ctx));
-    // 按来源分组：WorkBuddy / WorkBuddy AI / OpenCode Zen 各一个 provider，订阅模型放在 dsh-model 里
+    const subs = await subscriptionMap(ctx, all.config.port);
+    // 按来源分组，一个来源一个 provider：WorkBuddy / WorkBuddy AI / OpenCode Zen / Kimi / Codex …
+    // 订阅模型名后缀"· 订阅"；已登录但没有可用订阅的来源（如 Kimi 没有 Kimi Code 套餐）不写进 dsh，免得选了就报错
     const groups = new Map();
+    const push = (gid, label, model) => {
+        let g = groups.get(gid);
+        if (!g)
+            groups.set(gid, (g = { providerId: gid, displayName: label, models: [] }));
+        g.models.push(model);
+    };
     for (const id of ids) {
         const m = meta.get(id);
-        const gid = m?.group ? `dsh-model-${m.group}` : all.config.dsh.providerId;
-        let g = groups.get(gid);
-        if (!g) {
-            g = { providerId: gid, displayName: m?.groupLabel ?? L('订阅（dsh-model）', 'Subscriptions (dsh-model)'), models: [] };
-            groups.set(gid, g);
-        }
-        g.models.push(m
-            ? {
+        if (m?.group) {
+            push(`dsh-model-${m.group}`, m.groupLabel ?? m.group, {
                 id,
                 name: m.dshName ?? m.displayName ?? id,
                 ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
                 ...(m.maxTokens ? { maxTokens: m.maxTokens } : {}),
                 input: m.image ? ['text', 'image'] : ['text'],
-            }
-            : { id, name: id });
+            });
+            continue;
+        }
+        const s = subs.models.get(id);
+        if (s && subs.noAccess.has(s.source))
+            continue;
+        if (s)
+            push(`dsh-model-${s.source}`, s.label, { id, name: `${s.displayName ?? id} · ${L('订阅', 'subscription')}` });
+        else
+            push(all.config.dsh.providerId, L('订阅（dsh-model）', 'Subscriptions (dsh-model)'), { id, name: id });
     }
     try {
         const r = await connectDshGroups(ctx, all.state, all.keys, {

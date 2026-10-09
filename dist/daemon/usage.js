@@ -151,7 +151,9 @@ export async function fetchEngineUsage(ctx, def, cred) {
         return parseClaudeUsage(body);
     }
     if (def.id === 'kimi') {
-        return parseKimiUsage(await getJson('https://api.kimi.com/coding/v1/usages', { Authorization: `Bearer ${token}` }));
+        const r = parseKimiUsage(await getJson('https://api.kimi.com/coding/v1/usages', { Authorization: `Bearer ${token}` }));
+        // 没有 Kimi Code 订阅时接口返回 {}（实测；同一账号调模型得到 403 access_terminated）
+        return r.windows.length ? r : { windows: [], noAccess: true, plan: 'none' };
     }
     if (def.id === 'xai') {
         return parseGrokBilling(await getJson('https://cli-chat-proxy.grok.com/v1/billing?format=credits', { Authorization: `Bearer ${token}` }));
@@ -176,4 +178,8 @@ export function packageSummary(names) {
         if (n)
             counts.set(n, (counts.get(n) ?? 0) + 1);
     return [...counts].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n)).join(' + ');
+}
+/** 守护进程把用量写到这里，同步模型时（任何进程）据此隐藏没有订阅的来源 */
+export function usageFilePath(home) {
+    return join(home, 'usage.json');
 }

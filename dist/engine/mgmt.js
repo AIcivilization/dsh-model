@@ -82,6 +82,10 @@ export class Mgmt {
         const r = await this.call('GET', '/credentials');
         return r.files ?? [];
     }
+    async credentialModels(name) {
+        const r = await this.call('GET', `/credentials/models?name=${encodeURIComponent(name)}`);
+        return r.models ?? [];
+    }
     setDisabled(name, disabled) {
         return this.call('PATCH', '/credentials/status', { name, disabled });
     }
