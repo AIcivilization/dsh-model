@@ -23,7 +23,22 @@ setup does the following, in order, and is safe to re-run:
    - on a server, or without the app, run `dsh-model workbuddy login` (add `ai` for the international product). It prints a link; open it in a browser on any device and approve. No browser is needed on the server.
 4. **dsh**: adds a single provider, `dsh-model`, that carries all of the models above.
 
-Other software uses `http://127.0.0.1:8317/v1` with a key from `dsh-model key add <name>`. Log in to subscription upstreams with `dsh-model login codex` and so on.
+Other software uses `http://127.0.0.1:8317/v1` with a key from `dsh-model key add <name>`.
+
+## Management page in dsh: Settings → dsh-model
+
+setup installs dsh-model into dsh as a plugin. In dsh's Settings → dsh-model you can manage three things:
+
+- **Sources**: WorkBuddy, WorkBuddy AI, Codex, Claude, Kimi, Grok, Muse, Antigravity, Devin, OpenCode Zen, each with its own switch.
+  - Turning one on connects it. If you are not signed in, a dialog opens with the authorization link, the code to enter, and a paste field for sources that need one. No browser and no provider CLIs are needed on the server.
+  - Turning one off only disables it; the sign-in is kept.
+  - Each row shows subscription usage: 5-hour and weekly windows with reset countdowns, or credits left.
+- **API keys**: OpenAI-style. Each key shows its requests, success rate, average latency, tokens/s and last use over the past 24 hours. You can add, rotate and revoke keys.
+- **Models**: success rate, latency and speed per model, to help you pick one.
+
+The CLI does the same: `dsh-model sources`, `dsh-model source enable|disable|logout <source>`, `dsh-model stats`.
+
+> After updating dsh-model, **restart dsh once** for the plugin page code to take effect. dsh hot-reloads config, not plugin code. Model and switch changes need no restart.
 
 ## Commands
 

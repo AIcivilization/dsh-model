@@ -23,7 +23,22 @@ setup 依次完成下面几件事，可重复执行：
    - 服务器上或者没装 App 时，执行 `dsh-model workbuddy login`（国际版加 `ai`）。它会打印一个链接，你在任意设备的浏览器里打开并授权即可，服务器上不需要浏览器。
 4. **接进 dsh**：dsh 里只多出一个 provider `dsh-model`，上面所有模型都在这里。
 
-其他软件填 `http://127.0.0.1:8317/v1`，key 用 `dsh-model key add <名称>` 领取。订阅上游另外用 `dsh-model login codex` 等命令登录。
+其他软件填 `http://127.0.0.1:8317/v1`，key 用 `dsh-model key add <名称>` 领取。
+
+## dsh 里的管理页：设置 → dsh-model
+
+setup 会把 dsh-model 自己装进 dsh 当插件。在 dsh 的「设置 → dsh-model」里可以管理三块内容：
+
+- **来源**：WorkBuddy、WorkBuddy AI、Codex、Claude、Kimi、Grok、Muse、Antigravity、Devin、OpenCode Zen，每个一个开关。
+  - 打开就接入；没登录会弹出登录框，显示授权链接、要输入的码，需要粘贴的来源还有输入框。服务器上不需要浏览器，也不用装各家的 CLI。
+  - 关闭只停用，登录保留。
+  - 每行下面显示订阅用量：5 小时 / 每周窗口和重置倒计时，或剩余积分。
+- **API key**：OpenAI 格式。每把 key 显示 24 小时内的请求数、成功率、平均延迟、tokens/s 和最后使用时间；可以新增、轮换、吊销。
+- **模型统计**：按模型显示成功率、延迟和速度，方便挑选模型。
+
+命令行能做同样的事：`dsh-model sources`、`dsh-model source enable|disable|logout <来源>`、`dsh-model stats`。
+
+> 更新 dsh-model 之后，插件页的代码要**重启一次 dsh** 才会生效。dsh 的热加载只覆盖配置，不覆盖插件代码。模型和开关的变化不需要重启。
 
 ## 命令
 
