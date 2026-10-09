@@ -1,85 +1,121 @@
+<div align="center">
+
 # dsh-model
+
+**Many model sources behind one OpenAI-compatible endpoint — for dsh and every other tool you use.**
+
+<p>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/AIcivilization/dsh-model" alt="MIT license"></a>
+  <a href="https://www.npmjs.com/package/dsh-model"><img src="https://img.shields.io/npm/v/dsh-model?color=cb3837&logo=npm" alt="npm version"></a>
+  <img src="https://img.shields.io/badge/DeepSeek%20Harness-%E2%89%A5%200.2.0--rc.2-4176E6" alt="DeepSeek Harness ≥ 0.2.0-rc.2">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue" alt="Platform: macOS / Linux">
+  <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-339933?logo=node.js&logoColor=white" alt="Node ≥ 20">
+  <a href="https://github.com/router-for-me/CLIProxyAPI"><img src="https://img.shields.io/badge/engine-CLIProxyAPI%208.0.13-555" alt="Engine: CLIProxyAPI 8.0.13"></a>
+</p>
 
 English · [中文](README.md)
 
-One local endpoint that brings together models from **OpenCode Zen**, **WorkBuddy**, and your own CLI subscriptions (Codex and others). dsh uses it, and so can your editors and scripts. Auth is on by default and it uninstalls cleanly. On a VPS it pairs with [dsh-vps](https://github.com/AIcivilization/dsh-vps) for self-hosting.
+</div>
 
-> A personal tool: no multi-account, no serving other people.
+## What it is
+
+You may have several model sources at once: free WorkBuddy credits, an OpenCode Zen key, paid Codex or Kimi subscriptions. Each has its own API and sign-in, and every tool needs its own setup.
+
+dsh-model turns them into **one address and one kind of key**:
+
+- **In dsh**: the models show up in dsh's model list automatically, grouped by source. Nothing to configure.
+- **Everywhere else**: any editor or script that speaks the OpenAI API uses the same address and key to reach every model.
+- **Low maintenance**: one command to install; a key is always required; uninstall restores dsh's config exactly.
+- **On a server**: runs next to [dsh-vps](https://github.com/AIcivilization/dsh-vps) on the same VPS and opens a public address on dsh's own domain, so your laptop and phone can use it too.
+
+> A personal tool: one person, one account per provider, not a public service.
 
 ## Quick start
 
 ```bash
-# Not on npm yet; install from GitHub:
-npm install -g https://github.com/AIcivilization/dsh-model/archive/refs/heads/main.tar.gz && dsh-model --version
+npm install -g dsh-model
 dsh-model setup
 ```
 
-setup does the following, in order, and is safe to re-run:
+On a dsh-vps server, use `sudo dsh-model setup`.
 
-1. **Unified endpoint**: downloads and verifies the engine (CLIProxyAPI, pinned), runs it on `127.0.0.1:8317/v1`, and requires a key.
-2. **OpenCode Zen**: prompts for your API key (free sign-up at opencode.ai), tests it against a free model, and saves it only if the test passes. Models are prefixed `opencode/`.
-3. **WorkBuddy**: starts dsh-model's own **bridge**; models are prefixed `workbuddy/` or `workbuddy-ai/`. The account comes from one of two places:
-   - on a Mac with the WorkBuddy / WorkBuddy AI desktop app, it reuses the app's sign-in (sign in to the app first);
-   - on a server, or without the app, run `dsh-model workbuddy login` (add `ai` for the international product). It prints a link; open it in a browser on any device and approve. No browser is needed on the server.
-4. **dsh**: adds a single provider, `dsh-model`, that carries all of the models above.
+`setup` is safe to re-run. It:
 
-Other software uses `http://127.0.0.1:8317/v1` with a key from `dsh-model key add <name>`.
+1. downloads and verifies the engine and runs it on `127.0.0.1:8317/v1`, with key auth enforced;
+2. connects OpenCode Zen (enter your key; it is tested before being saved) and WorkBuddy (dsh-model's own bridge);
+3. installs the management page into dsh and syncs the models into dsh;
+4. on a VPS, also opens a public address `https://<dsh's domain>:9443/v1` (or `<IP>.sslip.io` when there is no domain).
 
-## Management page in dsh: Settings → dsh-model
+## Manage it in dsh: Settings → dsh-model
 
-setup installs dsh-model into dsh as a plugin. In dsh's Settings → dsh-model you can manage three things:
+| Section | What it holds |
+|---|---|
+| **Endpoint** | Local and public addresses, each with a Copy button |
+| **Sources** | One switch per provider: on connects (and signs in if needed), off pauses and keeps the sign-in. Each row is tagged Free / Free · limited / Paid and shows plan usage or remaining credits |
+| **Models** | Pick which models of each source appear in dsh (5 suggested per source by default); the rest stay available through the endpoint |
+| **API keys** | OpenAI-style, one per device. Requests, success rate, latency and speed over 24 hours; copy, rotate, revoke |
+| **Model stats** | Success rate, latency and speed per model |
 
-- **Sources**: WorkBuddy, WorkBuddy AI, Codex, Claude, Kimi, Grok, Muse, Antigravity, Devin, OpenCode Zen, each with its own switch.
-  - Turning one on connects it. If you are not signed in, a dialog opens with the authorization link, the code to enter, and a paste field for sources that need one. No browser and no provider CLIs are needed on the server.
-  - Turning one off only disables it; the sign-in is kept.
-  - Each row shows subscription usage: 5-hour and weekly windows with reset countdowns, or credits left.
-- **API keys**: OpenAI-style. Each key shows its requests, success rate, average latency, tokens/s and last use over the past 24 hours. You can add, rotate and revoke keys.
-- **Models**: success rate, latency and speed per model, to help you pick one.
+dsh-model does every sign-in itself. No provider CLI is installed and the server needs no browser:
 
-The CLI does the same: `dsh-model sources`, `dsh-model source enable|disable|logout <source>`, `dsh-model stats`.
+- **WorkBuddy, Codex, Kimi, Grok, Muse**: open the link and approve; if a code is needed, the dialog shows it;
+- **Devin, Claude, Antigravity**: these send the browser to a fixed local address that will not load. That is expected: bring the address back and press "Paste from clipboard".
 
-> After updating dsh-model, **restart dsh once** for the plugin page code to take effect. dsh hot-reloads config, not plugin code. Model and switch changes need no restart.
+If a source is signed in but has no usable plan (say, a Kimi account without Kimi Code), dsh-model detects it, hides its models in dsh and shows where to subscribe.
+
+> After updating dsh-model, restart dsh once so the management page picks up the new code. Model and switch changes need no restart.
+
+## Sources and cost
+
+| Source | Cost | Notes |
+|---|---|---|
+| WorkBuddy / WorkBuddy AI | Free | Credits come with the account |
+| Codex | Paid | ChatGPT Plus / Pro |
+| Kimi | Paid | Kimi Code plan |
+| Grok | Paid | SuperGrok / X Premium+ |
+| Muse | Paid | Muse Code plan |
+| Devin | Paid | The free tier is refused in testing |
+| OpenCode Zen | Paid | Pay as you go after a top-up; its free models only work inside the OpenCode app |
+| Claude, Antigravity | High risk, hidden by default | The providers have banned third-party use before |
+
+dsh-model only connects; it provides no quota of its own.
 
 ## Commands
 
-| Command | Purpose |
+| Command | What it does |
 |---|---|
-| `setup` | Install the unified endpoint and connect OpenCode Zen, WorkBuddy and dsh (safe to re-run) |
-| `opencode [status\|key\|remove]` | Set / change the OpenCode Zen key, or remove it (`--stdin` reads the key from a pipe) |
-| `workbuddy login [cn\|ai]` / `logout` | Sign in to WorkBuddy through dsh-model itself (prints a link to approve in any browser; works on servers) |
-| `workbuddy [status\|enable\|refresh\|disable]` | WorkBuddy bridge. Run `refresh` after switching accounts or signing in again in the app |
-| `login <up>` / `logout <up>` | Subscription upstreams (codex, kimi, xai, meta; claude and antigravity need `--accept-risk`) |
-| `status` / `doctor [--e2e]` | Overview / health checks (`--e2e` tests streaming and tool calls for one model per group) |
+| `setup` | Install / repair everything (idempotent) |
+| `sources` | Sources: switch, cost, sign-in state, usage |
+| `source enable\|disable\|logout <source>` | Turn on (signing in if needed) / off / sign out |
+| `key list\|add\|revoke\|rotate <name>` | Access keys, one per device |
+| `stats` | Success rate, latency and speed by key, source and model |
+| `status` / `doctor [--e2e]` | Overview / health checks |
 | `models [sync]` | List models / sync them to dsh |
-| `key list\|add\|revoke\|rotate` | Access keys, ideally one per device |
-| `remote enable --via ssh\|tailscale\|caddy` | Remote access |
+| `remote enable --via caddy\|ssh\|tailscale` / `remote disable` | Remote access (on a VPS, setup already enables caddy) |
 | `engine version\|upgrade\|rollback` | Engine version |
-| `service ...` / `repair` / `logs [--bridge]` | Services / repair / logs |
-| `uninstall` | Clean uninstall: restore dsh config, remove both services and all files |
+| `logs [--bridge]` / `repair` | Logs / repair |
+| `uninstall` | Clean uninstall |
 
 Every command accepts `--lang zh|en` and `--json`.
 
-## How it works
+## Architecture
 
 ```
-dsh · editors · scripts ──Bearer key──> engine 127.0.0.1:8317/v1 (single entry)
-                                             │
-            ┌────────────────────────────────┼─────────────────────────────┐
-            ▼                                ▼                             ▼
-  subscription OAuth (codex…)     opencode/* (your key)      workbuddy/* → bridge (127.0.0.1, internal secret)
-                                                                         → WorkBuddy app sign-in
+dsh · editors · scripts ──Bearer key──▶ engine 127.0.0.1:8317/v1 (the only entry)
+                                          │      ▲ VPS: Caddy https://<dsh domain>:9443
+             ┌────────────────────────────┼─────────────────────────┐
+             ▼                            ▼                         ▼
+   subscription OAuth (Codex, Kimi…)   opencode/* (your key)   workbuddy/* → dsh-model's bridge
 ```
 
-- Engine: [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (MIT). The bridge's WorkBuddy protocol layer is ported from [dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) v0.7.1 (MIT); see `src/bridge/workbuddy/`.
-- dsh gets exactly two entries: `providers.dsh-model` and `refs.DSH_MODEL_API_KEY`. If neither has changed by uninstall time, both are restored byte-for-byte.
+- The engine is [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (MIT), version-pinned and sha256-verified. The WorkBuddy protocol layer is ported from [dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) (MIT); the usage endpoints follow [CodexBar](https://github.com/steipete/CodexBar) (MIT).
+- dsh-model writes only two things into dsh: the model providers and `refs.DSH_MODEL_API_KEY`. On uninstall they are restored byte for byte if nobody changed them.
 
-See the [design doc](docs/DESIGN.md) (in Chinese).
+See the [design doc](docs/DESIGN.md) (Chinese).
 
 ## Notes
 
-- WorkBuddy: the bridge reads and decrypts the WorkBuddy app's locally stored sign-in and calls its API as the WorkBuddy client. This may conflict with its terms and puts the account at risk; it may break when WorkBuddy changes its encryption. Refreshed tokens are kept only in dsh-model's own copy; the app's files are never rewritten. On Linux servers use `dsh-model workbuddy login`.
-- OpenCode Zen: whether the free tier works from third-party tools depends on what your key's test shows.
-- Using subscription credentials outside the official clients may conflict with some providers' terms.
+- Using subscription and WorkBuddy credentials outside the official clients may break the providers' terms and put the account at risk. Decide for yourself.
 - macOS and Linux, Node ≥ 20.
 
 ## License

@@ -1,14 +1,27 @@
 {
   "name": "dsh-model",
-  "version": "0.13.1",
-  "description": "One local, authenticated OpenAI-compatible endpoint for dsh and your tools: OpenCode Zen, WorkBuddy (own bridge) and your CLI subscriptions. Clean uninstall. Powered by CLIProxyAPI.",
+  "version": "0.14.0",
+  "description": "Many model sources behind one authenticated OpenAI-compatible endpoint for DeepSeek Harness (dsh) and your tools: WorkBuddy, OpenCode Zen and your CLI subscriptions (Codex, Kimi…), with a management page inside dsh. 多家模型汇成一个 OpenAI 兼容地址，dsh 和其他软件都能直接用。",
   "keywords": [
+    "dsh-plugin",
+    "dsh-plugins",
     "dsh",
     "deepseek-harness",
+    "deepseek-harness-plugin",
+    "deepseek",
+    "cordis",
     "model-provider",
+    "llm-gateway",
     "openai-compatible",
+    "openai-api",
     "cli-subscription",
-    "self-hosted"
+    "codex",
+    "kimi",
+    "workbuddy",
+    "opencode",
+    "cliproxyapi",
+    "self-hosted",
+    "llm-tools"
   ],
   "license": "MIT",
   "type": "module",
@@ -70,5 +83,10 @@
     "react": {
       "optional": true
     }
-  }
+  },
+  "homepage": "https://github.com/AIcivilization/dsh-model#readme",
+  "bugs": {
+    "url": "https://github.com/AIcivilization/dsh-model/issues"
+  },
+  "author": "AIcivilization"
 }
