@@ -163,7 +163,7 @@ export class Daemon {
         const snap = this.stats.snapshot();
         const modelCount = (prefix) => Object.entries(snap.byModel).filter(([m]) => m.startsWith(`${prefix}/`)).length;
         return SOURCES.map((def) => {
-            const base = { id: def.id, label: def.label, kind: def.kind, login: def.login, riskAck: Boolean(def.riskAck), risky: Boolean(def.risky), ...(def.subscribeUrl ? { subscribeUrl: def.subscribeUrl } : {}) };
+            const base = { id: def.id, label: def.label, kind: def.kind, login: def.login, riskAck: Boolean(def.riskAck), risky: Boolean(def.risky), pricing: def.pricing, ...(def.subscribeUrl ? { subscribeUrl: def.subscribeUrl } : {}) };
             if (def.kind === 'engine') {
                 const mine = credsFor(creds, def);
                 const active = mine.filter((c) => !c.disabled);

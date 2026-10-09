@@ -53,6 +53,11 @@ export function usageLines(s: SourceState): string[] {
   return out
 }
 
+export function pricingTag(s: SourceState): string {
+  const t = s.pricing?.tier
+  return t === 'free' ? green(L('免费', 'free')) : t === 'limited' ? yellow(L('免费·额度少', 'free·limited')) : t === 'paid' ? red(L('需付费', 'paid')) : '-'
+}
+
 export async function sources(ctx: Ctx, opts: { all?: boolean } = {}): Promise<number> {
   // 高风险来源（Claude、Antigravity）默认不列出；已登录的照常显示，方便退出登录
   const list = (await control<SourceState[]>(ctx, 'GET', '/sources?refresh=1')).filter((s) => opts.all || !s.risky || s.loggedIn)
@@ -62,16 +67,22 @@ export async function sources(ctx: Ctx, opts: { all?: boolean } = {}): Promise<n
   }
   info(
     table([
-      [L('开关', 'On'), L('来源', 'Source'), L('状态', 'State'), L('账号', 'Account'), L('模型', 'Models')],
+      [L('开关', 'On'), L('来源', 'Source'), L('费用', 'Cost'), L('状态', 'State'), L('账号', 'Account'), L('模型', 'Models')],
       ...list.map((s) => [
         s.enabled ? green('●') : dim('○'),
         s.id,
+        pricingTag(s),
         s.loggedIn ? (s.enabled ? green(L('已接入', 'connected')) : yellow(L('已登录·关闭', 'signed in · off'))) : dim(L('未登录', 'signed out')),
         s.account ?? (s.detail ? dim(s.detail.slice(0, 40)) : '-'),
         s.models ? String(s.models) : '-',
       ]),
     ]),
   )
+  const unpaid = list.filter((s) => !s.loggedIn && s.pricing)
+  if (unpaid.length) {
+    info(bold(L('\n费用说明', '\nCost')))
+    for (const s of unpaid) info(`  ${s.id.padEnd(13)}${L(s.pricing.zh, s.pricing.en)}${s.subscribeUrl ? dim(`  ${s.subscribeUrl}`) : ''}`)
+  }
   const withUsage = list.filter((s) => s.usage)
   if (withUsage.length) {
     info(bold(L('\n订阅用量', '\nSubscription usage')))

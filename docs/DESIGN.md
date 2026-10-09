@@ -471,3 +471,19 @@ dsh-model 这个包同时声明成 dsh bundle（`dsh.bundle.patch` + `./client` 
 | Muse（Meta） | CodexBar 也不支持 | ✗ | 显示"暂不支持" |
 
 每一家的请求头和返回字段，照 CodexBar 对应的 `docs/<provider>.md` 和源码实现，代码里注明来源。查询失败时只在那一行显示"用量暂不可用"，不影响开关和模型。
+
+### 14.7 费用标签（2026-10 核实）
+
+dsh-model 只是转接口，不产出额度：一个来源能不能用，取决于你在那家有没有可用的套餐。管理页每个来源名后面标「免费 / 免费·额度少 / 需付费」，未登录时下面一行写明要什么、附开通链接；`dsh-model sources` 同样多一列「费用」。数据写在 `src/sources.ts` 的 `pricing`。
+
+| 来源 | 标签 | 说明 |
+|---|---|---|
+| WorkBuddy / WorkBuddy AI | 免费 | 账号自带免费积分 |
+| Devin | 免费·额度少 | 有 Free 档，额度很少；Pro $20/月 |
+| Antigravity | 免费·额度少 | Google 账号有免费额度（高风险，默认隐藏） |
+| OpenCode Zen | 需付费 | 充值拿 key 按量计费；免费模型实测只能在 OpenCode 软件里用（API 返回 FreeTierError） |
+| Codex | 需付费 | ChatGPT Plus / Pro |
+| Kimi | 需付费 | Kimi Code 套餐；普通账号实测 403 |
+| Grok | 需付费 | SuperGrok / X Premium+ |
+| Muse | 需付费 | Muse Code 套餐（$5/月起） |
+| Claude | 需付费 | Pro / Max（高风险，默认隐藏） |

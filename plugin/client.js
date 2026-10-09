@@ -334,7 +334,7 @@ window.__ModuleLoader__.load({
           h('label', { style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' } },
             h('input', { type: 'checkbox', checked: showRisky, onChange: (e) => toggleRisky(e.target.checked) }),
             L(`显示高风险来源${!showRisky && hidden ? `（${hidden}）` : ''}`, `Show high-risk sources${!showRisky && hidden ? ` (${hidden})` : ''}`))),
-        h('p', { style: S.note }, L('打开就接入，没登录会弹出登录；关闭只停用，登录保留。', 'Turn on to connect (signs in if needed); turning off keeps the sign-in.')),
+        h('p', { style: S.note }, L('打开就接入，没登录会弹出登录；关闭只停用，登录保留。标「需付费」的来源，要先在那家开通套餐，登录后才能用。', 'Turn on to connect (signs in if needed); turning off keeps the sign-in. Sources marked Paid need a plan from that provider before they work.')),
         err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
         showRisky ? h('p', { style: { ...S.note, color: C.warn } }, L('高风险来源（Claude、Antigravity）：服务商有封禁第三方使用订阅的先例，账号可能被封。仅在你清楚风险时使用。', 'High-risk sources (Claude, Antigravity): the providers have banned third-party use of subscriptions before; your account may be suspended. Use only if you accept the risk.')) : null,
         h('div', { style: S.card }, visible.map((s, i) => h('div', { key: s.id, style: i ? S.row : S.rowFirst },
@@ -342,6 +342,7 @@ window.__ModuleLoader__.load({
             h(Switch, { on: s.enabled, busy: busy[s.id], label: s.label, onChange: (on) => toggle(s, on) }),
             h('div', { style: S.grow },
               h('span', { style: S.label }, s.label),
+              h(PriceTag, { pricing: s.pricing }),
               s.risky ? h('span', { style: { fontSize: 11, color: C.err, marginLeft: 6, border: `1px solid ${C.err}`, borderRadius: 4, padding: '0 4px' } }, L('高风险', 'High risk')) : null,
               h('span', { style: { ...S.meta, marginLeft: 8 } },
                 s.loggedIn ? (s.account || '') : L('未登录', 'Signed out'),
@@ -349,7 +350,18 @@ window.__ModuleLoader__.load({
             s.loggedIn && s.kind !== 'opencode' ? h('button', { type: 'button', style: S.btn, onClick: () => logout(s) }, L('退出登录', 'Sign out')) : null,
             s.kind === 'opencode' && s.loggedIn ? h('button', { type: 'button', style: S.btn, onClick: onKey }, L('换 key', 'Change key')) : null),
           s.enabled ? h(Usage, { usage: s.usage, subscribeUrl: s.subscribeUrl }) : null,
+          !s.loggedIn && s.pricing ? h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 4 } },
+            L(s.pricing.zh, s.pricing.en),
+            s.subscribeUrl && s.pricing.tier !== 'free' ? h('a', { href: s.subscribeUrl, target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent, marginLeft: 8 } }, s.kind === 'opencode' ? L('去充值 ↗', 'Top up ↗') : L('看套餐 ↗', 'Plans ↗')) : null) : null,
           !s.loggedIn && s.detail ? h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 4 } }, s.detail) : null))))
+    }
+
+    /** 费用标签：免费 / 免费·额度少 / 需付费 */
+    function PriceTag({ pricing }) {
+      if (!pricing) return null
+      const color = pricing.tier === 'free' ? C.ok : pricing.tier === 'limited' ? C.warn : C.err
+      const text = pricing.tier === 'free' ? L('免费', 'Free') : pricing.tier === 'limited' ? L('免费·额度少', 'Free · limited') : L('需付费', 'Paid')
+      return h('span', { title: L(pricing.zh, pricing.en), style: { fontSize: 11, color, marginLeft: 6, border: `1px solid ${color}`, borderRadius: 4, padding: '0 4px', whiteSpace: 'nowrap' } }, text)
     }
 
     // —— key ——
