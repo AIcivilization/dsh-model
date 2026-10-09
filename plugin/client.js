@@ -565,10 +565,21 @@ window.__ModuleLoader__.load({
       const [err, setErr] = useState('')
       useEffect(() => {
         let alive = true
-        api('GET', '/self').then((r) => alive && setInfo(r), () => {})
+        // 服务比页面旧（没有 /self）：也要给出办法，不能整块不显示
+        api('GET', '/self').then((r) => alive && setInfo(r), (e) => alive && setInfo({ old: e.code === 'not_found' }))
         return () => { alive = false }
       }, [])
       if (!info) return null
+      if (!info.version) {
+        const cmd = 'npm install -g dsh-model && dsh-model setup'
+        return h('div', { style: S.section },
+          h('div', { style: S.h }, L('关于', 'About')),
+          h('div', { style: { ...S.card, padding: '12px 14px' } },
+            h('div', { style: S.meta }, info.old
+              ? L('这台机器上的 dsh-model 服务比这个页面旧，不支持在页面上更新。在终端执行一次（服务器上加 sudo），之后就能在这里更新和卸载：', 'The dsh-model service on this machine is older than this page and cannot update from here. Run this once in a terminal (with sudo on a server); after that you can update and uninstall here:')
+              : L('暂时查不到版本信息。可以在终端执行（服务器上加 sudo）：', 'Version info is unavailable right now. You can run in a terminal (with sudo on a server):')),
+            h('div', { style: { ...S.line, minHeight: 30, marginTop: 6 } }, h('code', { style: { ...S.mono, ...S.grow } }, cmd), h(CopyButton, { get: cmd }))))
+      }
       const hasUpdate = info.latest && newer(info.latest, info.version)
       const start = async (action) => {
         setErr('')
