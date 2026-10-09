@@ -23,6 +23,8 @@ export interface CompatModel {
   image?: boolean
   /** dsh 里显示的名字：名字 · 倍率 · 优惠（如 "Hy3 · x0.00 · Free now"） */
   dshName?: string
+  /** 计费倍率（WorkBuddy 的 "x0.79" → 0.79） */
+  rate?: number
   /** dsh 里的分组（一个分组对应一个 provider）：workbuddy / workbuddy-ai / opencode */
   group?: string
   groupLabel?: string
@@ -87,6 +89,7 @@ export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
               alias: `${c.prefix}/${m.id}`,
               displayName: `${c.label} · ${base}`,
               dshName: [name, ...tags].join(' · '),
+              ...(rate && /^x?\d+(\.\d+)?$/i.test(rate) ? { rate: Number(rate.replace(/^x/i, '')) } : {}),
               group: c.prefix,
               groupLabel: c.label,
               contextWindow: m.contextWindow,

@@ -17,7 +17,8 @@ import { L } from '../i18n.js';
 import { refreshOpencodeModels, removeOpencodeKey, saveOpencodeKey, validateKeyShape, verifyOpencodeKey } from '../integrations/opencode.js';
 import { riskNotice as workbuddyRiskNotice } from '../integrations/workbuddy.js';
 import { DSH_KEY_NAME, addKey, loadKeys, revokeKey, rotateKey, saveKeys } from '../keys.js';
-import { applyEngineConfig, dshKey, loadAll, saveAll, syncAll } from '../ops.js';
+import { applyEngineConfig, dshCandidates, dshKey, loadAll, saveAll, syncAll } from '../ops.js';
+import { defaultPick, pickedFor } from '../dsh/pick.js';
 import { loadSecrets } from '../secrets.js';
 import { SOURCES, credsFor, findSource, paymentRequired } from '../sources.js';
 import { withLock } from '../state.js';
@@ -621,6 +622,36 @@ export class Daemon {
             .filter((k) => !k.revokedAt)
             .map((k) => ({ name: k.name, key: redactKey(k.key), createdAt: k.createdAt, ...(snap.byKey[k.name] ? { stats: snap.byKey[k.name] } : {}) }));
     }
+    /** 这个来源的全部模型，以及哪些显示在 dsh 里 */
+    async sourceModels(id) {
+        const def = mustSource(id);
+        const all = await loadAll(this.ctx);
+        const c = (await dshCandidates(this.ctx, all)).get(def.id);
+        const list = (c?.models ?? []).map((m) => ({ id: m.id, name: m.name, rate: m.rate }));
+        const chosen = all.config.dshModels?.[def.id];
+        const picked = new Set(pickedFor(list, chosen));
+        const rec = new Set(defaultPick(list));
+        return { custom: chosen !== undefined, models: list.map((m) => ({ id: m.id, name: m.name, selected: picked.has(m.id), recommended: rec.has(m.id) })) };
+    }
+    /** 保存勾选；null = 恢复默认挑选 */
+    async setSourceModels(id, models) {
+        const def = mustSource(id);
+        if (models !== null && !(Array.isArray(models) && models.every((m) => typeof m === 'string' && m.length < 200))) {
+            throw new DshModelError('bad_models', L('models 应是模型 id 列表', 'models must be a list of model ids'));
+        }
+        await withLock(this.ctx, async () => {
+            const all = await loadAll(this.ctx);
+            const next = { ...all.config.dshModels };
+            if (models === null)
+                delete next[def.id];
+            else
+                next[def.id] = [...new Set(models)];
+            all.config.dshModels = Object.keys(next).length ? next : undefined;
+            await saveAll(this.ctx, all);
+        });
+        await this.resync();
+        return { selected: models === null ? -1 : new Set(models).size };
+    }
     /** 管理页"复制"用：取一把未吊销 key 的完整值（只经同源、带页面 token 的插件路由转发） */
     async revealKey(name) {
         const entry = (await loadKeys(this.ctx)).keys.find((k) => k.name === name && !k.revokedAt);
@@ -691,6 +722,12 @@ export class Daemon {
                     return ok(await this.disable(seg[1]).then(() => ({ enabled: false })));
                 if (seg[2] === 'logout')
                     return ok(await this.logout(seg[1]).then(() => ({ loggedIn: false })));
+            }
+            if (seg[0] === 'sources' && seg[1] && seg[2] === 'models') {
+                if (method === 'GET')
+                    return ok(await this.sourceModels(seg[1]));
+                if (method === 'POST')
+                    return ok(await this.setSourceModels(seg[1], b.models === null ? null : b.models));
             }
             if (method === 'POST' && path === '/opencode/key') {
                 return ok(await this.setOpencodeKey(String(b.key ?? ''), { skipVerify: b.skipVerify === true }));

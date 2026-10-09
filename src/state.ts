@@ -21,6 +21,8 @@ export interface Config {
   remote: { mode: RemoteMode; domain?: string; publicPort?: number }
   /** 出站代理：undefined = 还没定（setup 自动检测），null = 明确不用 */
   proxy?: string | null
+  /** 每个来源在 dsh 里显示哪些模型（管理页勾选）；没有的来源用默认挑选，见 dsh/pick.ts */
+  dshModels?: Record<string, string[]>
   /** 关掉的来源（workbuddy / workbuddy-ai / opencode；引擎来源的开关存在凭据的 disabled 上） */
   disabledSources?: string[]
   /** WorkBuddy bridge（统一端点下的自有组件） */

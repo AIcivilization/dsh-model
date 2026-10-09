@@ -55,6 +55,7 @@ export async function loadCompatUpstreams(ctx) {
                             alias: `${c.prefix}/${m.id}`,
                             displayName: `${c.label} · ${base}`,
                             dshName: [name, ...tags].join(' · '),
+                            ...(rate && /^x?\d+(\.\d+)?$/i.test(rate) ? { rate: Number(rate.replace(/^x/i, '')) } : {}),
                             group: c.prefix,
                             groupLabel: c.label,
                             contextWindow: m.contextWindow,

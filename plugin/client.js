@@ -311,7 +311,57 @@ window.__ModuleLoader__.load({
     const readRisky = () => {
       try { return window.localStorage.getItem(RISKY_KEY) === '1' } catch { return false }
     }
+    /** 勾选这个来源的哪些模型显示在 dsh 里（统一端点照常提供全部） */
+    function ModelPicker({ source, onClose }) {
+      const [data, setData] = useState(null)
+      const [sel, setSel] = useState(new Set())
+      const [q, setQ] = useState('')
+      const [msg, setMsg] = useState('')
+      const [saving, setSaving] = useState(false)
+      useEffect(() => {
+        let alive = true
+        api('GET', `/sources/${source.id}/models`).then((r) => {
+          if (!alive) return
+          setData(r)
+          setSel(new Set(r.models.filter((m) => m.selected).map((m) => m.id)))
+        }, (e) => alive && setMsg(e.message))
+        return () => { alive = false }
+      }, [source.id])
+      if (!data) return h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 8 } }, msg || L('加载中…', 'Loading…'))
+      const flip = (id) => setSel((x) => { const n = new Set(x); n.has(id) ? n.delete(id) : n.add(id); return n })
+      const save = async (models) => {
+        setSaving(true)
+        setMsg('')
+        try {
+          await api('POST', `/sources/${source.id}/models`, { models })
+          onClose(true)
+        } catch (e) {
+          setMsg(e.message)
+        } finally {
+          setSaving(false)
+        }
+      }
+      const shown = data.models.filter((m) => !q || `${m.name} ${m.id}`.toLowerCase().includes(q.toLowerCase()))
+      return h('div', { style: { marginTop: 10, marginLeft: 46, padding: 10, border: `1px solid ${C.border}`, borderRadius: 8 } },
+        h('div', { style: { ...S.line, marginBottom: 6, flexWrap: 'wrap' } },
+          h('span', { style: { ...S.meta, ...S.grow } }, L(`勾选的模型显示在 dsh 的模型列表里（已选 ${sel.size} / ${data.models.length}）。其他软件经统一端点仍可用全部模型。`, `Checked models appear in dsh's model list (${sel.size} / ${data.models.length} selected). Other tools can still use every model through the endpoint.`)),
+          data.models.length > 10 ? h('input', { style: { ...S.input, width: 140 }, placeholder: L('搜索', 'Search'), value: q, onChange: (e) => setQ(e.target.value) }) : null),
+        h('div', { style: { maxHeight: 300, overflowY: 'auto' } }, shown.map((m) => h('label', { key: m.id, style: { ...S.line, minHeight: 26, fontSize: 13, cursor: 'pointer' } },
+          h('input', { type: 'checkbox', checked: sel.has(m.id), onChange: () => flip(m.id) }),
+          h('span', { style: S.grow }, m.name),
+          m.recommended ? h('span', { style: { fontSize: 11, color: C.accent } }, L('推荐', 'Suggested')) : null))),
+        msg ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, msg) : null,
+        h('div', { style: { ...S.line, marginTop: 8, flexWrap: 'wrap' } },
+          h('button', { type: 'button', style: S.btnPrimary, disabled: saving, onClick: () => save([...sel]) }, saving ? L('保存中…', 'Saving…') : L('保存', 'Save')),
+          h('button', { type: 'button', style: S.btn, disabled: saving, onClick: () => save(null) }, L('恢复推荐', 'Use suggested')),
+          h('button', { type: 'button', style: S.btn, onClick: () => setSel(new Set(data.models.map((m) => m.id))) }, L('全选', 'All')),
+          h('button', { type: 'button', style: S.btn, onClick: () => setSel(new Set()) }, L('全不选', 'None')),
+          h('span', { style: S.grow }),
+          h('button', { type: 'button', style: S.btn, onClick: () => onClose(false) }, L('取消', 'Cancel'))))
+    }
+
     function SourcesCard({ sources, reload, onLogin, onKey }) {
+      const [picking, setPicking] = useState('')
       const [busy, setBusy] = useState({})
       const [err, setErr] = useState('')
       const [showRisky, setShowRisky] = useState(readRisky)
@@ -366,8 +416,10 @@ window.__ModuleLoader__.load({
               h('span', { style: { ...S.meta, marginLeft: 8 } },
                 s.loggedIn ? (s.account || '') : L('未登录', 'Signed out'),
                 s.models ? ` · ${L(`${s.models} 个模型`, `${s.models} models`)}` : '')),
+            s.loggedIn && s.enabled && s.models && !s.usage?.noAccess ? h('button', { type: 'button', style: S.btn, onClick: () => setPicking(picking === s.id ? '' : s.id) }, L('选模型', 'Models')) : null,
             s.loggedIn && s.kind !== 'opencode' ? h('button', { type: 'button', style: S.btn, onClick: () => logout(s) }, L('退出登录', 'Sign out')) : null,
             s.kind === 'opencode' && s.loggedIn ? h('button', { type: 'button', style: S.btn, onClick: onKey }, L('换 key', 'Change key')) : null),
+          picking === s.id ? h(ModelPicker, { source: s, onClose: (saved) => { setPicking(''); if (saved) void reload() } }) : null,
           s.enabled ? h(Usage, { usage: s.usage, subscribeUrl: s.subscribeUrl }) : null,
           !s.loggedIn && s.pricing ? h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 4 } },
             L(s.pricing.zh, s.pricing.en),

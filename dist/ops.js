@@ -3,6 +3,7 @@ import { connectDshGroups } from './dsh/connect.js';
 import { listModels, waitHealthy, waitModelsChange } from './engine/client.js';
 import { compatModelIndex, loadCompatUpstreams } from './engine/compat.js';
 import { subscriptionMap } from './engine/sourcemap.js';
+import { pickedFor } from './dsh/pick.js';
 import { writeEngineConfig } from './engine/config.js';
 import { DshModelError, isDshModelError } from './errors.js';
 import { L } from './i18n.js';
@@ -56,42 +57,20 @@ export async function syncModels(ctx, all, opts = {}) {
     const key = dshKey(all.keys);
     const models = opts.before ? await waitModelsChange(all.config.port, key, opts.before) : await listModels(all.config.port, key);
     const ids = models.map((m) => m.id);
-    const meta = compatModelIndex(await loadCompatUpstreams(ctx));
-    const subs = await subscriptionMap(ctx, all.config.port);
-    // 按来源分组，一个来源一个 provider：WorkBuddy / WorkBuddy AI / OpenCode Zen / Kimi / Codex …
-    // 订阅模型名后缀"· 订阅"；已登录但没有可用订阅的来源（如 Kimi 没有 Kimi Code 套餐）不写进 dsh，免得选了就报错
-    const groups = new Map();
-    const push = (gid, label, model) => {
-        let g = groups.get(gid);
-        if (!g)
-            groups.set(gid, (g = { providerId: gid, displayName: label, models: [] }));
-        g.models.push(model);
-    };
-    for (const id of ids) {
-        const m = meta.get(id);
-        if (m?.group) {
-            push(`dsh-model-${m.group}`, m.groupLabel ?? m.group, {
-                id,
-                name: m.dshName ?? m.displayName ?? id,
-                ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
-                ...(m.maxTokens ? { maxTokens: m.maxTokens } : {}),
-                input: m.image ? ['text', 'image'] : ['text'],
-            });
-            continue;
-        }
-        const s = subs.models.get(id);
-        if (s && subs.noAccess.has(s.source))
-            continue;
-        if (s)
-            push(`dsh-model-${s.source}`, s.label, { id, name: `${s.displayName ?? id} · ${L('订阅', 'subscription')}` });
-        else
-            push(all.config.dsh.providerId, L('订阅（dsh-model）', 'Subscriptions (dsh-model)'), { id, name: id });
+    const candidates = await dshCandidates(ctx, all, ids);
+    // 每个来源只把挑中的模型写进 dsh（管理页勾选，或默认挑选）；统一端点照常提供全部
+    const groups = [];
+    for (const c of candidates.values()) {
+        const picked = new Set(pickedFor(c.models.map((m) => ({ id: m.id, name: m.name, rate: m.rate })), all.config.dshModels?.[c.source]));
+        const models = c.models.filter((m) => picked.has(m.id)).map(({ rate: _r, ...m }) => m);
+        if (models.length)
+            groups.push({ providerId: c.providerId, displayName: c.label, models });
     }
     try {
         const r = await connectDshGroups(ctx, all.state, all.keys, {
             port: all.config.port,
             key,
-            groups: [...groups.values()],
+            groups,
             profile: opts.profile ?? all.config.dsh.profile,
             force: opts.force,
         });
@@ -99,8 +78,9 @@ export async function syncModels(ctx, all, opts = {}) {
         r.warnings.forEach((w) => warn(w));
         if (!opts.quiet) {
             if (r.providers.length) {
-                const summary = [...groups.values()].map((g) => `${g.displayName} ${g.models.length}`).join(' · ');
-                (r.changed ? ok : skip)(L(`dsh（${r.location.profile}）已接入 ${ids.length} 个模型：${summary}`, `dsh (${r.location.profile}) has ${ids.length} models: ${summary}`));
+                const summary = groups.map((g) => `${g.displayName} ${g.models.length}`).join(' · ');
+                const shown = groups.reduce((n, g) => n + g.models.length, 0);
+                (r.changed ? ok : skip)(L(`dsh（${r.location.profile}）显示 ${shown} 个模型（共 ${ids.length} 个可用）：${summary}`, `dsh (${r.location.profile}) shows ${shown} of ${ids.length} models: ${summary}`));
             }
             else {
                 skip(L('还没有登录任何上游，dsh 里暂时没有 dsh-model 的模型', 'No upstream logged in yet, so dsh has no dsh-model models for now'));
@@ -117,6 +97,44 @@ export async function syncModels(ctx, all, opts = {}) {
     }
     await saveAll(ctx, all);
     return ids;
+}
+/**
+ * 每个来源可以放进 dsh 的全部模型（勾选列表也用它）。
+ * 订阅模型名后缀"· 订阅"；已登录但没有可用订阅的来源（如 Kimi 没有 Kimi Code 套餐）不算，免得选了就报错。
+ */
+export async function dshCandidates(ctx, all, ids) {
+    const list = ids ?? (await listModels(all.config.port, dshKey(all.keys))).map((m) => m.id);
+    const meta = compatModelIndex(await loadCompatUpstreams(ctx));
+    const subs = await subscriptionMap(ctx, all.config.port);
+    const out = new Map();
+    const push = (source, providerId, label, model) => {
+        let g = out.get(source);
+        if (!g)
+            out.set(source, (g = { source, providerId, label, models: [] }));
+        g.models.push(model);
+    };
+    for (const id of list) {
+        const m = meta.get(id);
+        if (m?.group) {
+            push(m.group, `dsh-model-${m.group}`, m.groupLabel ?? m.group, {
+                id,
+                name: m.dshName ?? m.displayName ?? id,
+                ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+                ...(m.maxTokens ? { maxTokens: m.maxTokens } : {}),
+                input: m.image ? ['text', 'image'] : ['text'],
+                ...(m.rate !== undefined ? { rate: m.rate } : {}),
+            });
+            continue;
+        }
+        const s = subs.models.get(id);
+        if (s && subs.noAccess.has(s.source))
+            continue;
+        if (s)
+            push(s.source, `dsh-model-${s.source}`, s.label, { id, name: `${s.displayName ?? id} · ${L('订阅', 'subscription')}` });
+        else
+            push('other', all.config.dsh.providerId, L('订阅（dsh-model）', 'Subscriptions (dsh-model)'), { id, name: id });
+    }
+    return out;
 }
 /** 引擎里带前缀（opencode/ workbuddy/ workbuddy-ai/）的模型是否正好等于期望：不能缺，也不能多（关掉的来源要消失） */
 function aliasesMatch(models, expected) {
