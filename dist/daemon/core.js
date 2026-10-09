@@ -144,6 +144,22 @@ export class Daemon {
         }
         const cats = await loadCatalogs(this.ctx.paths.home);
         const secrets = await loadSecrets(this.ctx);
+        // 订阅来源能服务的模型数：管理接口按凭据列模型（只数没停用的）
+        const engineModels = new Map();
+        try {
+            const m = await this.mgmt();
+            for (const def of SOURCES.filter((d) => d.kind === 'engine')) {
+                const ids = new Set();
+                for (const c of credsFor(creds, def).filter((x) => !x.disabled))
+                    for (const mm of await m.credentialModels(c.name).catch(() => []))
+                        ids.add(mm.id);
+                if (ids.size)
+                    engineModels.set(def.id, ids.size);
+            }
+        }
+        catch {
+            // 引擎没起来
+        }
         const snap = this.stats.snapshot();
         const modelCount = (prefix) => Object.entries(snap.byModel).filter(([m]) => m.startsWith(`${prefix}/`)).length;
         return SOURCES.map((def) => {
@@ -159,7 +175,7 @@ export class Daemon {
                     ...(first ? { account: accountOf(first) } : {}),
                     ...(first?.status_message ? { detail: String(first.status_message) } : {}),
                     ...(active.length && active.every(paymentRequired) ? { detail: L('引擎收到 403 payment_required：当前账号没有可用订阅', 'Engine got 403 payment_required: this account has no usable subscription') } : {}),
-                    models: 0,
+                    models: engineModels.get(def.id) ?? 0,
                 };
             }
             if (def.kind === 'workbuddy') {
