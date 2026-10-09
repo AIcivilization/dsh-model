@@ -33,46 +33,85 @@
 
 ---
 
-## 1.3 默认模型（v2.1，2026-10-08）
+## 1.3 默认模型：统一端点（v3，2026-10-08，已确认）
 
-`setup` 默认只在 dsh 里接入两样东西，不安装订阅引擎：
+回到原设计的核心主张：**一个网关服务所有软件，dsh 是一等公民**。OpenCode Zen 和 WorkBuddy 的模型，和订阅上游一样从 dsh-model 的统一端点 `127.0.0.1:8317/v1` 出去。dsh 接的是这个端点，你的编辑器、脚本也用同一个地址、同一套模型。
 
-| 来源 | 做法 | 写入 dsh 的内容 |
+v2.1 的做法（在 dsh 里启用内置 opencode 路由，装第三方 dsh-workbuddy-connect 插件）只服务 dsh，违背"跨软件通用"，**作废**。已经那样装过的，setup 会迁移：移除 dsh-model 自己装的插件和 opencode 路由，改走统一端点。用户自己装的不动。
+
+| 来源 | 实现 | 挂到引擎的方式 |
 |---|---|---|
-| OpenCode Zen | 用户提供的 API key。先用一个免费模型发 1 token 请求实测，通过才写入。实测发现：无 key 和无效 key 都返回 403 FreeTierError，模型列表接口是公开的，验不了 key | `refs.OPENCODE_API_KEY` + `providers.opencode: {apiKeyEnv}`（启用 pi-ai 内置路由，不写 api/baseURL/models） |
-| WorkBuddy | 检测到 WorkBuddy / WorkBuddy AI 桌面 App 时，通过 `dsh plugin --profile <p> add dsh-workbuddy-connect@0.7.1` 安装。dsh 会自己做兼容检查并登记 bundle | profile 的 package.json 依赖与 `dsh.profile.bundles`（由 dsh 插件管理写入） |
+| 订阅（Codex 等） | CLIProxyAPI 原生 OAuth（不变） | 引擎内置 |
+| OpenCode Zen | 用户的 Zen API key | 引擎的 `openai-compatibility` 上游：`base-url: https://opencode.ai/zen/v1`，`prefix: opencode`，走 `requests.proxy-url` |
+| WorkBuddy / WorkBuddy AI | **dsh-model 自己的常驻组件 bridge**（Node）：读 WorkBuddy App 的登录态，对内提供 OpenAI 兼容接口 | 引擎的 `openai-compatibility` 上游：`base-url: http://127.0.0.1:<bridge 端口>/v1`，`prefix: workbuddy`（国际版为 `workbuddy-ai`），用 bridge 的内部密钥鉴权 |
 
-- 不选 dsh-connect-workbuddy：它带多账号池、自动换号签到，不符合单账号原则。
-- dsh 自带的 pnpm 11 会把被拦下的依赖构建脚本当成安装失败。涉及的 `@google/genai` preinstall 是 no-op，`protobufjs` postinstall 只打印版本提醒，所以安装时加 `--config.strict-dep-builds=false`：不执行这些脚本，也不判失败。安装失败时，回滚半装状态。
-- 已有的配置（用户自己配的 OpenCode、自己装的插件）一律不动，也不在卸载时移除。dsh-model 只移除台账里自己拥有的项（`state.dsh.ownedProviders/ownedRefs`、`state.plugins[].installedByUs`）。
-- 订阅引擎改为按需安装：第一次 `login` 时安装，或执行 `setup --engine`。
+模型 id 带前缀，比如 `opencode/big-pickle`、`workbuddy/glm-5.3`，避免和订阅模型重名。dsh 里只有一个 provider：`dsh-model`，它的模型清单由 `models sync` 写入。
+
+### 1.3.1 WorkBuddy bridge
+
+WorkBuddy 不是标准 API，是桌面 App 的私有接口。对照 dsh-workbuddy-connect 0.7.1（MIT）源码确认了下面这些事实：
+
+- **凭据**：macOS 上是 `~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info`（国际版另有路径）。从 WorkBuddy 5.6 起，`accessToken` / `refreshToken` **加密存储**。
+  - 解密需要先**以 `ELECTRON_RUN_AS_NODE=1` 运行 WorkBuddy 自己的 Electron 二进制**，经它的私有绑定 `workbuddyStorage` 取出 `atRestSecretKey`；
+  - 再用 `sha256(secret)` 作 AES-256-GCM 的密钥，AAD 照搬 App 的 `buildAuthenticatedContextAad`。
+- **请求**：发到 `{base}/v2/chat/completions`（OpenAI 形态），必须带官方客户端那套请求头（`X-IDE-Type: WorkBuddy`、`X-IDE-Version`、按 App 版本拼的 User-Agent、`X-User-Id` / `X-Enterprise-Id` / `X-Domain`，或对应的 `X-No-*`）。
+- **刷新**：`/v2/plugin/auth/token/refresh`，带 `X-Refresh-Token`。刷新结果**只存 dsh-model 自己的副本**，**从不改写** App 的凭据文件。
+- **模型目录**：`/v3/config`，目录内容随 User-Agent 区分。
+
+bridge 的职责只有一件：把"WorkBuddy 私有接口 + App 登录态"变成本机 OpenAI 兼容接口。
+- 只绑 `127.0.0.1`，要求内部密钥；
+- 支持流式输出和工具调用透传，上游中断时补发 `[DONE]`；
+- 401/402/429 按类别映射；
+- 发现会话失效时提示"请在 WorkBuddy App 里重新登录"；
+- 目录变化时由 dsh-model 重写引擎配置（引擎热重载），再同步到 dsh。
+
+**代码来源（已定）**：凭据解密、请求头身份、刷新这三块是 dsh-workbuddy-connect 逆向出来的协议细节。方案是**按 MIT 协议移植**这部分到 `src/bridge/workbuddy/`，保留版权声明并锁定来源 commit；bridge 的服务端、生命周期、目录同步、接线都由我们自己写。另一个选项是不看它、完全重写，但结果只会一样，还更容易出错。
+
+**限制与风险**：
+- 只在装了 WorkBuddy 桌面 App 的 Mac 上可用（VPS 上没有 App）。
+- 会读取并解密另一个 App 的登录凭据，并以它的客户端身份发请求：这是在绕开 WorkBuddy 自己的凭据保护，可能违反其服务条款，账号存在风险。
+- WorkBuddy 改了加密方式、AAD 或请求头校验，bridge 就会失效，需要跟进。
+- **默认启用**（已定）：setup 检测到 App 就启用，第一次启用时打印一次风险说明，不需要 `--accept-risk`。
+
+### 1.3.2 OpenCode Zen
+
+- 实测发现：不带 key 和带无效 key，返回的都是 403 `FreeTierError`；`/zen/v1/models` 是公开的，验证不了 key。
+- 所以写入前先用这把 key 向一个免费模型发 1 token 请求，**返回 200 才写入**。
+- **待你的 key 实测**：有效 key 能否从第三方调用免费档。如果不能，就只有付费模型（需要 Zen 余额）能用。
+
+### 1.3.3 运行形态的变化
+
+- 常驻进程从一个变成两个：引擎（launchd `com.dsh-model.engine`）和 bridge（`com.dsh-model.bridge`，仅在检测到 WorkBuddy App 时注册）。两者都只绑回环地址。
+- `setup` 默认安装引擎（OpenCode 也要走引擎），并接入 OpenCode Zen 和 WorkBuddy；订阅上游照旧用 `login`。
+- dsh 插件版 WorkBuddy 的界面能力（积分卡片、徽章、模型显隐）不再提供，改由 `dsh-model status` 显示账号和积分。
 
 ## 2. 架构
 
 ```
-┌──────────────────────── 本机 / VPS ────────────────────────┐
-│                                                            │
-│  dsh Web UI ──┐                                            │
-│  编辑器/脚本 ──┼── Bearer <key> ──> 127.0.0.1:8317/v1       │
-│               │                        │                   │
-│               │              ┌─────────▼──────────┐        │
-│               │              │ CLIProxyAPI 引擎    │        │
-│               │              │ (Go 单二进制，锁定版本)│       │
-│               │              │ 由 launchd/systemd 守护│     │
-│               │              └─────────┬──────────┘        │
-│               │                        │ 上游 OAuth         │
-│  dsh-model CLI（Node，非常驻）          ▼                   │
-│   · 生成引擎配置  · 写/还原 dsh 配置    Codex / Grok / ...  │
-│   · 下载校验引擎  · 注册系统服务                             │
-│   · 登录引导      · 诊断                                    │
-└────────────────────────────────────────────────────────────┘
+┌──────────────────────────── 本机 ────────────────────────────┐
+│                                                              │
+│  dsh ─┐                                                      │
+│  编辑器┼── Bearer <key> ──> 引擎 127.0.0.1:8317/v1（唯一入口） │
+│  脚本 ─┘                     │                               │
+│                ┌─────────────┼──────────────────┐            │
+│                ▼             ▼                  ▼            │
+│        订阅 OAuth       openai-compat       openai-compat     │
+│      (Codex/Grok/…)    opencode/*  ──>     workbuddy/*        │
+│                        opencode.ai/zen      │                 │
+│                                             ▼                 │
+│                              bridge 127.0.0.1:<端口>（内部密钥）│
+│                              读 WorkBuddy App 登录态 → 私有接口 │
+│                                                              │
+│  dsh-model CLI（非常驻）：生成引擎配置 · 管理两个服务 ·        │
+│    写/还原 dsh 配置 · 登录引导 · 目录同步 · 诊断 · 卸载        │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 关键决策：
 
-1. **dsh-model 不常驻**。常驻进程只有引擎本身，由系统服务直接拉起。dsh-model 只是一个配置编排 CLI，跑完就退出，因此没有内存预算、进程池这类问题。
-2. **引擎只绑 `127.0.0.1`，任何场景都不例外**。远程访问通过 SSH 隧道、Tailscale 或 Caddy 进入（见 §7），引擎自己永远不监听公网。
-3. **端点强制 API key**。浏览器跨站请求和 DNS rebinding 拿不到 key，自然失败，所以不需要额外写一层 Host/Origin 校验代理（见 §5）。
+1. **对外只有一个入口**：所有模型都经引擎的 `127.0.0.1:8317/v1`，统一用 key 鉴权。bridge 不对外，只接受引擎带内部密钥的请求。
+2. **引擎和 bridge 只绑 `127.0.0.1`，任何场景都不例外**。远程访问通过 SSH 隧道、Tailscale 或 Caddy 进入（见 §7）。
+3. **端点强制 API key**。浏览器跨站请求和 DNS rebinding 拿不到 key，自然失败（见 §5）。
 
 ---
 
