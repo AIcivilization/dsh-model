@@ -382,3 +382,92 @@ dsh-model/
 | dsh 配置格式变化（预览期） | 校验版本区间；managed block 加哈希还原；fixture 测试 |
 | 引擎项目停更或改协议 | fork 兜底（§8） |
 | 本机凭据泄漏 | home 目录 0700、auth 和 keys 文件 0600；日志脱敏；不提供凭据导出功能 |
+
+---
+
+## 14. dsh 插件页（v0.6 计划，待确认）
+
+用户要的只有两块，其余配置一律用默认值，不暴露给用户：
+
+1. **来源开关**：列出可以接入的大模型 CLI 或 IDE，每个一个开关。打开就接入，还没登录就弹出登录；关闭就断开，模型从 dsh 消失，但登录保留，下次打开不用重新登录。
+2. **本产品的 key**：OpenAI 格式。每把 key 显示状态：速度、稳定程度、最近错误。
+
+界面做成 **dsh 插件页**，在 dsh「设置」里加一个「dsh-model」分区，写法照搬 dsh-vps-manager 的 `settings.section`。本机和 VPS 都在 dsh 里操作。
+
+### 14.1 架构
+
+```
+浏览器（dsh 页面）──> dsh 插件宿主端 /api-dsh-model/*（在 dsh 自己的鉴权之后）
+                         │  带控制密钥
+                         ▼
+                 dsh-model 守护进程（现在的 bridge 扩展而来，127.0.0.1）
+                  ├─ 来源开关 / 登录：调引擎管理接口（OAuth）或自己的 WorkBuddy 登录
+                  ├─ key 增删、统计：轮询引擎用量队列并累计
+                  └─ 改写 engine.yaml（引擎热重载）与 dsh 的 provider（dsh 热加载）
+                         │
+                         ▼
+                 引擎 127.0.0.1:8317/v1（统一端点，不变）
+```
+
+- 守护进程用的是 bridge 现有的常驻服务。所有操作都不需要 root：引擎配置和 dsh 配置在 VPS 模式下都归 dsh 用户，引擎也会热重载。
+- 浏览器始终看不到任何密钥：控制密钥、管理密钥都只在宿主端和守护进程之间传递。
+- 命令行（`dsh-model ...`）保留，能做的事情和页面一样。
+
+### 14.2 来源与登录方式（服务器上不装任何 CLI）
+
+| 来源 | 登录方式 | 用户要做的 |
+|---|---|---|
+| WorkBuddy / WorkBuddy AI | 自己的登录流程：链接 + 轮询（已实现） | 打开链接，授权 |
+| Codex、Kimi、Grok（xAI）、Muse（Meta） | 引擎管理接口 `oauth/auth-url` 返回链接和 `user_code`，轮询 `oauth/status` | 打开链接，输码，授权 |
+| Claude、Antigravity、Devin | 同上，但授权后浏览器会跳到一个本机回调地址 | 把那个打不开的地址粘贴回页面，由 `POST oauth/callback` 提交 |
+| OpenCode Zen | 只能用 key | 粘贴 key，写入前实测 |
+
+开关的含义：
+- **打开**：已登录的话，启用凭据（引擎 `credentials/status`），WorkBuddy 让 bridge 服务这个产品，OpenCode 恢复它的 key；没登录就进入登录流程。
+- **关闭**：只停用，不删登录。另有单独的「退出登录」按钮。
+- 每家上游只登录一个账号，重新登录会替换旧账号。
+
+### 14.3 key 状态
+
+- 引擎打开用量统计（`usage-statistics-enabled`）。守护进程每 5 秒从管理接口取一次用量记录（引擎只保留 60 秒），按**客户端 key**、**来源**、**模型**累计，存到 `stats.json`，保留 1 小时和 24 小时两个统计窗口。
+- 每把 key 显示：请求数、成功率、平均延迟、输出速度（output_tokens / 延迟）、最后使用时间、最近一次错误。
+- 每个来源和模型显示：成功率、平均延迟、输出速度，方便挑模型。
+
+### 14.4 安全上的变化
+
+- **引擎管理接口改为打开**：只监听本机，`allow-remote: false`，网页控制台保持关闭。管理密钥是 32 字节随机值，存在 `$DSH_MODEL_HOME`（权限 0600），只有守护进程使用。原先的"管理接口完全关闭"作废。
+- 守护进程的控制接口也只监听本机，并且要求控制密钥。插件宿主端只在 dsh 自己的鉴权之后转发请求：VPS 上 dsh 在 dsh-gate 登录之后，本机 Desktop 本来就是本人。
+
+### 14.5 分发
+
+dsh-model 这个包同时声明成 dsh bundle（`dsh.bundle.patch` + `./client` 导出），可以在 dsh 插件页通过 GitHub 链接安装，也可以执行 `dsh-model setup` 自动装进 dsh。命令行和插件是同一个包。
+
+### 14.6 订阅用量（每个来源一行）
+
+**放在哪**：放在「来源开关」列表里每个来源的那一行。行头是开关、来源名、账号、套餐；已登录且已打开的来源，下面展开显示用量：
+
+```
+[●] Codex        you@mail.com   Plus
+    5 小时窗口 ███████░░░ 68%  · 2 小时 13 分后重置
+    每周窗口   ███░░░░░░░ 31%  · 4 天后重置
+[●] WorkBuddy    莫名            剩余 1,234 积分 · 本期 6 天后重置
+[ ] Claude       未登录          [登录]
+```
+
+开关、账号和额度在同一处，一眼就能决定今天用哪家。key 的速度和稳定性单独放在「API key」区块（§14.3），两者不混在一起。
+
+**怎么取**：参考 steipete 的 **CodexBar**（MIT，22k★，"Every AI coding limit, in your menu bar"），它用已有的登录凭据去调各家自己的额度接口。我们的情况更直接：引擎的 auth 目录和 bridge 的自有副本里本来就存着各来源的 OAuth 令牌，守护进程拿它们**主动查询**，每 5 分钟一次，打开页面时也会立即刷新一次。不必等到真有请求经过才知道额度。引擎自带的被动额度观测（只覆盖 claude / codex / devin，信息来自响应头）作为补充。
+
+| 来源 | 额度接口（来自 CodexBar 文档） | 用现有令牌 | 显示内容 |
+|---|---|---|---|
+| Codex | `GET chatgpt.com/backend-api/wham/usage` | ✓ 引擎的 Codex 令牌 | 5 小时 / 每周窗口百分比、重置时间、credits |
+| Claude | `GET api.anthropic.com/api/oauth/usage` | ✓ 引擎的 Claude 令牌 | 5 小时 / 每周窗口百分比 |
+| Kimi | `GET api.kimi.com/coding/v1/usages` | 待实测 | 每周额度 + 5 小时限额 |
+| Grok | `cli-chat-proxy.grok.com/v1/billing?format=credits` | 待实测 | credits |
+| Antigravity | `POST cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` | 待实测 | 按模型的额度 |
+| Devin | `GET app.devin.ai/api/<org>/billing/quota/usage` | 待实测 | 每日 / 每周额度 |
+| WorkBuddy / WorkBuddy AI | 移植来的 `fetchCredits` | ✓ | 剩余积分、本期重置时间 |
+| OpenCode Zen | 只有浏览器 cookie 能查，API key 查不了 | ✗ | 显示"暂不支持" |
+| Muse（Meta） | CodexBar 也不支持 | ✗ | 显示"暂不支持" |
+
+每一家的请求头和返回字段，照 CodexBar 对应的 `docs/<provider>.md` 和源码实现，代码里注明来源。查询失败时只在那一行显示"用量暂不可用"，不影响开关和模型。
