@@ -105,7 +105,8 @@ export class Stats {
         p: sourceOf(r),
         m: r.alias || r.model || 'unknown',
         l: Math.max(0, Number(r.latency_ms) || 0),
-        o: Math.max(0, Number(r.tokens?.output_tokens) || 0),
+        // 推理模型的 token 大多算在 reasoning_tokens 里（引擎分开记）：速度要把两者都算上
+        o: Math.max(0, (Number(r.tokens?.output_tokens) || 0) + (Number(r.tokens?.reasoning_tokens) || 0)),
         f: r.failed ? 1 : 0,
       })
     }

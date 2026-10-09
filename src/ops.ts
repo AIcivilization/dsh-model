@@ -118,15 +118,22 @@ export async function syncModels(ctx: Ctx, all: All, opts: { before?: string[]; 
   return ids
 }
 
-/** 等引擎热重载后列出这些模型（openai-compatibility 上游改动之后），最多 timeoutMs */
+/** 引擎里带前缀（opencode/ workbuddy/ workbuddy-ai/）的模型是否正好等于期望：不能缺，也不能多（关掉的来源要消失） */
+function aliasesMatch(models: ModelEntry[], expected: string[]): boolean {
+  const want = new Set(expected)
+  const prefixes = ['opencode/', 'workbuddy/', 'workbuddy-ai/']
+  const have = models.map((m) => m.id).filter((id) => prefixes.some((p) => id.startsWith(p)))
+  return have.length === want.size && have.every((id) => want.has(id))
+}
+
+/** 等引擎热重载后模型列表与期望一致（openai-compatibility 上游改动之后），最多 timeoutMs */
 async function waitForAliases(port: number, key: string, expected: string[], timeoutMs = 6000): Promise<ModelEntry[]> {
   const deadline = Date.now() + timeoutMs
   let last: ModelEntry[] = []
   while (Date.now() < deadline) {
     try {
       last = await listModels(port, key)
-      const have = new Set(last.map((m) => m.id))
-      if (expected.every((id) => have.has(id))) return last
+      if (aliasesMatch(last, expected)) return last
     } catch {
       // 重载中
     }
@@ -142,13 +149,11 @@ async function waitForAliases(port: number, key: string, expected: string[], tim
 export async function syncAll(ctx: Ctx, all: All, opts: { quiet?: boolean } = {}): Promise<string[]> {
   await applyEngineConfig(ctx, all)
   const expected = [...compatModelIndex(await loadCompatUpstreams(ctx)).keys()]
-  if (expected.length) {
-    const key = dshKey(all.keys)
-    const have = new Set((await waitForAliases(all.config.port, key, expected, 8000)).map((m) => m.id))
-    // 不看"这次有没有写文件"，而看引擎实际加载了没有：别的进程可能已经写过同样的内容（VPS 实测）
-    if (!expected.every((id) => have.has(id)) && (await restartEngineBestEffort(ctx, all))) {
-      await waitForAliases(all.config.port, key, expected, 8000)
-    }
+  const key = dshKey(all.keys)
+  // 不看"这次有没有写文件"，而看引擎实际加载的模型是否与期望一致：别的进程可能已经写过同样的内容（VPS 实测），
+  // 关掉一个来源时也要等它的模型真的消失，才把清单写进 dsh
+  if (!aliasesMatch(await waitForAliases(all.config.port, key, expected, 8000), expected) && (await restartEngineBestEffort(ctx, all))) {
+    await waitForAliases(all.config.port, key, expected, 8000)
   }
   return syncModels(ctx, all, { quiet: opts.quiet })
 }
