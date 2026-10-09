@@ -107,9 +107,10 @@ describe('daemon core against a real engine', () => {
   it('callback-style sources ask for a paste; risky ones need acknowledgement first', async () => {
     const claude = await daemon.enable('claude')
     expect(claude.riskNotice).toBeTruthy()
-    const codex = await daemon.enable('codex')
-    expect(codex.login).toMatchObject({ source: 'codex', needsPaste: true })
-    daemon.cancelSession(codex.login!.id)
+    // Codex 走引擎自带的 device code（要连 OpenAI，不在这里测）；Devin 仍是回调式
+    const devin = await daemon.enable('devin')
+    expect(devin.login).toMatchObject({ source: 'devin', needsPaste: true })
+    daemon.cancelSession(devin.login!.id)
   }, 30_000)
 
   it('a key added through the daemon works immediately (hot reload)', async () => {
