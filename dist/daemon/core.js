@@ -47,6 +47,16 @@ const USAGE_REFRESH_MS = 5 * 60 * 1000;
 /** 查不了用量的来源多久重新实测一次 */
 const PROBE_MS = 6 * 60 * 60 * 1000;
 const log_ = (m) => log(m);
+/** 进程还在不在（signal 0 只做检查） */
+const alive = (pid) => {
+    try {
+        process.kill(pid, 0);
+        return true;
+    }
+    catch {
+        return false;
+    }
+};
 const log = (m) => console.error(`[${new Date().toISOString()}] ${m}`);
 export class Daemon {
     ctx;
@@ -655,6 +665,13 @@ export class Daemon {
      * 用 detached 让它脱离守护进程的进程组（launchd 重启服务时不会被一起杀掉）。
      */
     async startSelfJob(action, opts = {}) {
+        // 同一时间只跑一个（实测：连点两次会起两个更新、日志互相覆盖）
+        if (this.selfJob && Date.now() - Date.parse(this.selfJob.startedAt) < 10 * 60 * 1000) {
+            if (this.selfJob.pid && !alive(this.selfJob.pid))
+                this.selfJob = undefined;
+            else
+                return { started: false, log: this.selfJob.log };
+        }
         const log = selfJobLog(this.ctx, action);
         if (this.ctx.mode === 'vps') {
             // 守护进程是 dsh 用户：写请求单，由 dsh-model-admin（root）执行
@@ -680,7 +697,7 @@ export class Daemon {
         });
         child.unref();
         closeSync(out);
-        this.selfJob = { action, startedAt: new Date().toISOString(), log };
+        this.selfJob = { action, startedAt: new Date().toISOString(), log, ...(child.pid ? { pid: child.pid } : {}) };
         log_(`daemon: started ${action} (pid ${child.pid})`);
         return { started: true, log };
     }

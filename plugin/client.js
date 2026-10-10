@@ -563,6 +563,7 @@ window.__ModuleLoader__.load({
       const [confirming, setConfirming] = useState(false)
       const [keepAuth, setKeepAuth] = useState(false)
       const [err, setErr] = useState('')
+      const [starting, setStarting] = useState(false)
       useEffect(() => {
         let alive = true
         // 服务比页面旧（没有 /self）：也要给出办法，不能整块不显示
@@ -582,12 +583,18 @@ window.__ModuleLoader__.load({
       }
       const hasUpdate = info.latest && newer(info.latest, info.version)
       const start = async (action) => {
+        if (starting) return
         setErr('')
+        setStarting(true)
         try {
           await api('POST', `/self/${action}`, action === 'uninstall' ? { keepAuth } : {})
           onJob({ action, from: info.version, target: info.latest })
         } catch (e) {
-          setErr(e.message)
+          // 连不上守护进程多半是它已经开始重启（任务已经在跑）：照样进进度页，等它回来
+          if (e.code === 'daemon_unreachable') onJob({ action, from: info.version, target: info.latest })
+          else setErr(e.message)
+        } finally {
+          setStarting(false)
         }
       }
       return h('div', { style: S.section },
@@ -596,7 +603,7 @@ window.__ModuleLoader__.load({
           h('div', { style: S.line },
             h('span', { style: { ...S.label, ...S.grow } }, `dsh-model ${info.version}`,
               h('span', { style: { ...S.meta, marginLeft: 8 } }, info.latest ? (hasUpdate ? L(`有新版本 ${info.latest}`, `${info.latest} available`) : L('已是最新', 'Up to date')) : L('查不到最新版本', 'Latest version unknown'))),
-            info.canManage && hasUpdate ? h('button', { type: 'button', style: S.btnPrimary, onClick: () => void start('update') }, L(`更新到 ${info.latest}`, `Update to ${info.latest}`)) : null,
+            info.canManage && hasUpdate ? h('button', { type: 'button', style: S.btnPrimary, disabled: starting, onClick: () => void start('update') }, starting ? L('正在开始…', 'Starting…') : L(`更新到 ${info.latest}`, `Update to ${info.latest}`)) : null,
             info.canManage ? h('button', { type: 'button', style: { ...S.btn, color: C.err }, onClick: () => setConfirming(true) }, L('卸载', 'Uninstall')) : null),
           !info.canManage ? h('div', { style: { marginTop: 8 } },
             h('div', { style: S.meta }, L('服务器上更新和卸载要 root 权限，请在服务器终端里执行：', 'On the server, update and uninstall need root; run in a server terminal:')),
@@ -608,7 +615,7 @@ window.__ModuleLoader__.load({
               h('input', { type: 'checkbox', checked: keepAuth, onChange: (e) => setKeepAuth(e.target.checked) }),
               L('先把各家登录凭据备份到主目录（以后重装可以拷回来）', 'Back up provider sign-ins to the home folder first (to reuse after reinstalling)')),
             h('div', { style: { ...S.line, marginTop: 8 } },
-              h('button', { type: 'button', style: { ...S.btnPrimary, background: C.err }, onClick: () => void start('uninstall') }, L('确认卸载', 'Uninstall')),
+              h('button', { type: 'button', style: { ...S.btnPrimary, background: C.err }, disabled: starting, onClick: () => void start('uninstall') }, starting ? L('正在开始…', 'Starting…') : L('确认卸载', 'Uninstall')),
               h('button', { type: 'button', style: S.btn, onClick: () => setConfirming(false) }, L('取消', 'Cancel')))) : null,
           err ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, err) : null))
     }

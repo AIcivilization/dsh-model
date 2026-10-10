@@ -92,6 +92,15 @@ interface SessionInternal extends LoginSession {
 }
 
 const log_ = (m: string) => log(m)
+/** 进程还在不在（signal 0 只做检查） */
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
 const log = (m: string) => console.error(`[${new Date().toISOString()}] ${m}`)
 
 export class Daemon {
@@ -654,7 +663,7 @@ export class Daemon {
 
   // —— 更新 / 卸载（管理页的按钮）——
 
-  private selfJob?: { action: 'update' | 'uninstall'; startedAt: string; log: string }
+  private selfJob?: { action: 'update' | 'uninstall'; startedAt: string; log: string; pid?: number }
 
   /** 版本与能不能在页面上自管理（VPS 上要 root，只给命令） */
   async selfInfo(): Promise<{ version: string; latest: string | null; canManage: boolean; job?: { action: string; startedAt: string; log: string }; commands: { update: string; uninstall: string } }> {
@@ -677,6 +686,11 @@ export class Daemon {
    * 用 detached 让它脱离守护进程的进程组（launchd 重启服务时不会被一起杀掉）。
    */
   async startSelfJob(action: 'update' | 'uninstall', opts: { keepAuth?: boolean } = {}): Promise<{ started: boolean; log: string }> {
+    // 同一时间只跑一个（实测：连点两次会起两个更新、日志互相覆盖）
+    if (this.selfJob && Date.now() - Date.parse(this.selfJob.startedAt) < 10 * 60 * 1000) {
+      if (this.selfJob.pid && !alive(this.selfJob.pid)) this.selfJob = undefined
+      else return { started: false, log: this.selfJob.log }
+    }
     const log = selfJobLog(this.ctx, action)
     if (this.ctx.mode === 'vps') {
       // 守护进程是 dsh 用户：写请求单，由 dsh-model-admin（root）执行
@@ -701,7 +715,7 @@ export class Daemon {
     })
     child.unref()
     closeSync(out)
-    this.selfJob = { action, startedAt: new Date().toISOString(), log }
+    this.selfJob = { action, startedAt: new Date().toISOString(), log, ...(child.pid ? { pid: child.pid } : {}) }
     log_(`daemon: started ${action} (pid ${child.pid})`)
     return { started: true, log }
   }
