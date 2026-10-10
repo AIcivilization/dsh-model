@@ -73,6 +73,7 @@ If a source is signed in but has no usable plan (say, a Kimi account without Kim
 | Source | Cost | Notes |
 |---|---|---|
 | WorkBuddy / WorkBuddy AI | Free | Credits come with the account |
+| Ollama / LM Studio | Free | Models running on this machine; they appear once installed and started, no sign-in |
 | Codex | Paid | ChatGPT Plus / Pro |
 | Kimi | Paid | Kimi Code plan |
 | Grok | Paid | SuperGrok / X Premium+ |

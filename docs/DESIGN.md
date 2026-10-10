@@ -505,3 +505,12 @@ dsh-model 只是转接口，不产出额度：一个来源能不能用，取决�
 - **dsh-vps 上**：守护进程以 dsh 用户运行，没有 root。setup（root）装一个 systemd path 单元 `dsh-model-admin.path`：守护进程往 `<home>/admin/request` 写请求单，systemd 以 root 运行 `dsh-model admin-run`。它先删请求单，再只执行 `update` 或 `uninstall` 两件事，其他一律拒绝。卸载时一并移除这个单元。
 - 更新和卸载都会重启或移除守护进程本身，所以由守护进程起一个脱离进程组的独立进程来执行（Linux 用 `systemd-run --user`）。页面轮询 `/self` 显示进度。
 - 插件安装改为从 npm 装同一版本（以前用 `link:` 指到 npm 全局目录，VPS 上那个目录归 root，之后从市场装就报 EACCES）。
+
+### 14.10 本机模型（Ollama、LM Studio）
+
+思路来自 dsh-plugin-cli-hub 的 ollama adapter，但不调命令行，直接走它们自带的 OpenAI 兼容接口：Ollama 是 `127.0.0.1:11434/v1`（认 `OLLAMA_HOST`），LM Studio 是 `127.0.0.1:1234/v1`。
+
+- **检测**：守护进程启动时、每 2 分钟、页面打开时各问一次 `/v1/models`（超时 1.5 秒），结果存在 `local-models.json`。在运行就算"已接入"，不用登录；状态变了就同步进 dsh。
+- **接入**：作为引擎的 openai-compatibility 上游，前缀 `ollama/`、`lmstudio/`，`proxy-url: direct`。模型名后缀「本地免费」，dsh 里按来源分组。
+- **默认挑选**：排除 embedding 模型（bge-、embed、rerank）。
+- **开关**：关掉就记进 `disabledSources`；没在运行时打开，会提示去下载和启动。

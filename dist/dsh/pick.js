@@ -5,7 +5,7 @@
 //   去掉画图 / 审查 / 自动路由这类不是对话用的 → 免费的先放（最多 2 个）→ 各系列轮流取最新版本，凑满 5 个。
 export const DEFAULT_PICK = 5;
 const MAX_FREE = 2;
-const NON_CHAT = /image|embed|tts|whisper|audio|review|(^|\/)(auto|default-model)$/i;
+const NON_CHAT = /image|embed|bge-|rerank|tts|whisper|audio|review|(^|\/)(auto|default-model)$/i;
 /** 系列的先后：常用的大模型在前 */
 const FAMILY_ORDER = ['gpt', 'claude', 'gemini', 'grok', 'kimi', 'glm', 'deepseek', 'qwen', 'minimax', 'hy'];
 const bare = (id) => id.slice(id.lastIndexOf('/') + 1).toLowerCase();

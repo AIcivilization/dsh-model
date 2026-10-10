@@ -89,7 +89,7 @@ describe('daemon core against a real engine', () => {
 
   it('lists every source; engine sources start signed out', async () => {
     const list = await daemon.sources()
-    expect(list.map((s) => s.id)).toEqual(['workbuddy', 'workbuddy-ai', 'codex', 'claude', 'kimi', 'xai', 'meta', 'antigravity', 'devin', 'opencode'])
+    expect(list.map((s) => s.id)).toEqual(['workbuddy', 'workbuddy-ai', 'codex', 'claude', 'kimi', 'xai', 'meta', 'antigravity', 'devin', 'ollama', 'lmstudio', 'opencode'])
     expect(list.find((s) => s.id === 'kimi')).toMatchObject({ loggedIn: false, enabled: false })
     expect(list.find((s) => s.id === 'workbuddy')).toMatchObject({ loggedIn: true, enabled: true, models: 1 })
   })

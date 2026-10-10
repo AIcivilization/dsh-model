@@ -9,6 +9,7 @@ import { closeSync, openSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { latestVersion, selfJobLog } from '../commands/self.js';
+import { LOCAL_SERVERS, loadLocalCatalog, refreshLocalCatalog } from '../integrations/local.js';
 import { adminInstalled, adminRequestPath } from '../service/admin.js';
 import { atomicWrite } from '../util/fs.js';
 import { lang } from '../i18n.js';
@@ -81,6 +82,8 @@ export class Daemon {
         if (await this.refreshCatalogs())
             void this.resync();
         this.timers.push(setInterval(() => void this.refreshCatalogs().then((c) => (c ? this.resync() : undefined)), CATALOG_REFRESH_MS));
+        // 本机模型服务（Ollama、LM Studio）随时可能启动或退出：两分钟问一次，变了就同步
+        this.timers.push(setInterval(() => void refreshLocalCatalog(this.ctx.paths.home, this.ctx.owner).then((c) => (c ? this.resync() : undefined), () => { }), 2 * 60 * 1000));
         this.timers.push(setInterval(() => void this.pollUsage(), USAGE_POLL_MS));
         this.timers.push(setInterval(() => void this.stats.save().catch(() => { }), STATS_SAVE_MS));
         this.timers.push(setInterval(() => void this.reloadKeyNames(), STATS_SAVE_MS));
@@ -115,7 +118,7 @@ export class Daemon {
         }
     }
     async refreshCatalogs() {
-        let changed = false;
+        let changed = await refreshLocalCatalog(this.ctx.paths.home, this.ctx.owner).catch(() => false);
         for (const rt of this.runtimes) {
             try {
                 if (await refreshCatalog(this.ctx.paths.home, rt, this.ctx.owner))
@@ -151,7 +154,7 @@ export class Daemon {
             const u = this.usageCache.get(s.id);
             // 引擎来源：实测结果出来前不显示用量行；OpenCode 的 key 设置时已实测
             if (USAGE_UNSUPPORTED.has(s.id) && s.loggedIn) {
-                const stub = s.kind === 'engine' ? undefined : { source: s.id, windows: [], fetchedAt: new Date().toISOString(), unsupported: true };
+                const stub = s.kind !== 'opencode' ? undefined : { source: s.id, windows: [], fetchedAt: new Date().toISOString(), unsupported: true };
                 const usage = u ?? stub;
                 return usage ? { ...s, usage } : s;
             }
@@ -173,6 +176,7 @@ export class Daemon {
         }
         const cats = await loadCatalogs(this.ctx.paths.home);
         const secrets = await loadSecrets(this.ctx);
+        const local = await loadLocalCatalog(this.ctx.paths.home);
         // 订阅来源能服务的模型数：管理接口按凭据列模型（只数没停用的）
         const engineModels = new Map();
         try {
@@ -218,6 +222,19 @@ export class Daemon {
                     models: c?.signedIn ? c.models.length : 0,
                 };
             }
+            if (def.kind === 'local') {
+                const st = local[def.id];
+                const srv = LOCAL_SERVERS.find((x) => x.id === def.id);
+                const up = Boolean(st?.reachable);
+                return {
+                    ...base,
+                    loggedIn: up,
+                    enabled: up && (st?.models.length ?? 0) > 0 && !disabled.has(def.id),
+                    ...(up ? { account: srv.base.replace(/\/v1$/, '') } : { detail: L(`没检测到 ${srv.label} 在运行（${srv.base.replace(/\/v1$/, '')}）`, `${srv.label} is not running (${srv.base.replace(/\/v1$/, '')})`) }),
+                    ...(up && !st?.models.length ? { detail: L('在运行，但还没有模型', 'Running, but has no models yet') } : {}),
+                    models: st?.models.length ?? 0,
+                };
+            }
             const has = Boolean(secrets.opencode?.key);
             return { ...base, loggedIn: has, enabled: has && !disabled.has('opencode'), models: has ? modelCount('opencode') : 0 };
         });
@@ -241,6 +258,12 @@ export class Daemon {
     async enable(id, opts = {}) {
         const def = mustSource(id);
         const state = (await this.sources()).find((s) => s.id === def.id);
+        if (def.kind === 'local') {
+            await refreshLocalCatalog(this.ctx.paths.home, this.ctx.owner);
+            const now = (await this.sourcesRaw()).find((s) => s.id === def.id);
+            if (!now.loggedIn || !now.models)
+                throw new DshModelError('local_not_running', now.detail ?? L(`${def.label} 没在运行`, `${def.label} is not running`), L(`先装好并启动它：${def.subscribeUrl}`, `Install and start it first: ${def.subscribeUrl}`));
+        }
         if (def.kind === 'opencode' && !state.loggedIn) {
             throw new DshModelError('needs_key', L('OpenCode Zen 需要 API key：用 opencode/key 提交', 'OpenCode Zen needs an API key: submit it via opencode/key'));
         }
@@ -284,6 +307,9 @@ export class Daemon {
             const m = await this.mgmt();
             for (const c of credsFor(await m.credentials(), def))
                 await m.deleteCredential(c.name);
+        }
+        else if (def.kind === 'local') {
+            throw new DshModelError('no_logout', L(`${def.label} 不需要登录；不想用就关掉开关`, `${def.label} has no sign-in; turn the switch off instead`));
         }
         else if (def.kind === 'workbuddy') {
             const v = WORKBUDDY_VARIANTS.find((x) => x.id === def.variant);
@@ -790,8 +816,12 @@ export class Daemon {
                 return ok({ sources: await this.sources(), keys: await this.keys(), stats: this.statsSnapshot(), endpoints: await this.endpoints() });
             }
             if (method === 'GET' && path === '/sources') {
-                if (query.get('refresh') === '1')
+                if (query.get('refresh') === '1') {
+                    // 本机模型服务开没开：页面打开时顺手问一下（1.5 秒超时），变了就同步进 dsh
+                    if (await refreshLocalCatalog(this.ctx.paths.home, this.ctx.owner).catch(() => false))
+                        void this.resync();
                     await this.refreshUsage();
+                }
                 return ok(await this.sources());
             }
             if (seg[0] === 'sources' && seg[1] && method === 'POST') {

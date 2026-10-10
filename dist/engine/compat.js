@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { bridgeConfigPath, loadCatalogs } from '../bridge/runtime.js';
 import { loadSecrets } from '../secrets.js';
 import { readJson } from '../util/fs.js';
+import { LOCAL_SERVERS, loadLocalCatalog } from '../integrations/local.js';
 export const OPENCODE_BASE = 'https://opencode.ai/zen/v1';
 export const OPENCODE_PREFIX = 'opencode';
 export function opencodeModelsPath(ctx) {
@@ -66,6 +67,21 @@ export async function loadCompatUpstreams(ctx) {
                 })(),
             });
         }
+    }
+    // 本机模型服务（Ollama、LM Studio）：在运行、有模型、没被关掉就接进来
+    const local = await loadLocalCatalog(ctx.paths.home);
+    for (const s of LOCAL_SERVERS) {
+        const st = local[s.id];
+        if (!st?.reachable || !st.models.length || disabled.has(s.id))
+            continue;
+        out.push({
+            name: s.id,
+            label: s.label,
+            baseUrl: s.base,
+            apiKey: 'local',
+            direct: true,
+            models: st.models.map((id) => ({ name: id, alias: `${s.id}/${id}`, displayName: `${s.label} · ${id}`, dshName: `${id} · 本地免费`, rate: 0, group: s.id, groupLabel: `${s.label}（本地）` })),
+        });
     }
     return out;
 }

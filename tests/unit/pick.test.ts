@@ -23,3 +23,13 @@ describe('default dsh model pick', () => {
     expect(pickedFor(models, ['gone'])).toEqual(defaultPick(models))
   })
 })
+
+describe('default pick for local models', () => {
+  it('leaves embedding models out', () => {
+    const ids = ['ollama/bge-m3:latest', 'ollama/qwen3:8b', 'ollama/gemma4:12b-mlx', 'ollama/nomic-embed-text:latest']
+    const picked = defaultPick(ids.map((id) => ({ id, name: id, rate: 0 })))
+    expect(picked).not.toContain('ollama/bge-m3:latest')
+    expect(picked).not.toContain('ollama/nomic-embed-text:latest')
+    expect(picked).toHaveLength(2)
+  })
+})

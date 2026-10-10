@@ -140,7 +140,7 @@ export async function dshCandidates(ctx, all, ids) {
 /** 引擎里带前缀（opencode/ workbuddy/ workbuddy-ai/）的模型是否正好等于期望：不能缺，也不能多（关掉的来源要消失） */
 function aliasesMatch(models, expected) {
     const want = new Set(expected);
-    const prefixes = ['opencode/', 'workbuddy/', 'workbuddy-ai/'];
+    const prefixes = ['opencode/', 'workbuddy/', 'workbuddy-ai/', 'ollama/', 'lmstudio/'];
     const have = models.map((m) => m.id).filter((id) => prefixes.some((p) => id.startsWith(p)));
     return have.length === want.size && have.every((id) => want.has(id));
 }

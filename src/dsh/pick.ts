@@ -13,7 +13,7 @@ export interface PickCandidate {
 
 export const DEFAULT_PICK = 5
 const MAX_FREE = 2
-const NON_CHAT = /image|embed|tts|whisper|audio|review|(^|\/)(auto|default-model)$/i
+const NON_CHAT = /image|embed|bge-|rerank|tts|whisper|audio|review|(^|\/)(auto|default-model)$/i
 /** 系列的先后：常用的大模型在前 */
 const FAMILY_ORDER = ['gpt', 'claude', 'gemini', 'grok', 'kimi', 'glm', 'deepseek', 'qwen', 'minimax', 'hy']
 

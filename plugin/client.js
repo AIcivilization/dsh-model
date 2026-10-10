@@ -416,15 +416,16 @@ window.__ModuleLoader__.load({
               h(PriceTag, { pricing: s.pricing }),
               s.risky ? h('span', { style: { fontSize: 11, color: C.err, marginLeft: 6, border: `1px solid ${C.err}`, borderRadius: 4, padding: '0 4px' } }, L('高风险', 'High risk')) : null,
               h('span', { style: { ...S.meta, marginLeft: 8 } },
-                s.loggedIn ? (s.account || '') : L('未登录', 'Signed out'),
+                s.loggedIn ? (s.account || '') : s.kind === 'local' ? L('未运行', 'Not running') : L('未登录', 'Signed out'),
                 s.models ? ` · ${L(`${s.models} 个模型`, `${s.models} models`)}` : '')),
             s.loggedIn && s.enabled && s.models && !s.usage?.noAccess ? h('button', { type: 'button', style: S.btn, onClick: () => setPicking(picking === s.id ? '' : s.id) }, L('选模型', 'Models')) : null,
-            s.loggedIn && s.kind !== 'opencode' ? h('button', { type: 'button', style: S.btn, onClick: () => logout(s) }, L('退出登录', 'Sign out')) : null,
+            s.loggedIn && s.kind !== 'opencode' && s.kind !== 'local' ? h('button', { type: 'button', style: S.btn, onClick: () => logout(s) }, L('退出登录', 'Sign out')) : null,
             s.kind === 'opencode' && s.loggedIn ? h('button', { type: 'button', style: S.btn, onClick: onKey }, L('换 key', 'Change key')) : null),
           picking === s.id ? h(ModelPicker, { source: s, onClose: (saved) => { setPicking(''); if (saved) void reload() } }) : null,
           s.enabled ? h(Usage, { usage: s.usage, subscribeUrl: s.subscribeUrl }) : null,
           !s.loggedIn && s.pricing ? h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 4 } },
             L(s.pricing.zh, s.pricing.en),
+            s.subscribeUrl && s.kind === 'local' ? h('a', { href: s.subscribeUrl, target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent, marginLeft: 8 } }, L('去下载 ↗', 'Download ↗')) : null,
             s.subscribeUrl && s.pricing.tier !== 'free' ? h('a', { href: s.subscribeUrl, target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent, marginLeft: 8 } }, s.kind === 'opencode' ? L('去充值 ↗', 'Top up ↗') : L('看套餐 ↗', 'Plans ↗')) : null) : null,
           !s.loggedIn && s.detail ? h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 4 } }, s.detail) : null))))
     }

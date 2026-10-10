@@ -72,7 +72,7 @@ export async function sources(ctx: Ctx, opts: { all?: boolean } = {}): Promise<n
         s.enabled ? green('●') : dim('○'),
         s.id,
         pricingTag(s),
-        s.loggedIn ? (s.usage?.noAccess ? yellow(L('已登录·无订阅', 'signed in · no plan')) : s.enabled ? green(L('已接入', 'connected')) : yellow(L('已登录·关闭', 'signed in · off'))) : dim(L('未登录', 'signed out')),
+        s.loggedIn ? (s.usage?.noAccess ? yellow(L('已登录·无订阅', 'signed in · no plan')) : s.enabled ? green(L('已接入', 'connected')) : yellow(L('已登录·关闭', 'signed in · off'))) : dim(s.kind === 'local' ? L('未运行', 'not running') : L('未登录', 'signed out')),
         s.account ?? (s.detail ? dim(s.detail.slice(0, 40)) : '-'),
         s.models ? String(s.models) : '-',
       ]),

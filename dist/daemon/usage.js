@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 const TIMEOUT_MS = 15_000;
 /** 这几家暂不支持（见设计 §14.6） */
-export const USAGE_UNSUPPORTED = new Set(['antigravity', 'devin', 'meta', 'opencode']);
+export const USAGE_UNSUPPORTED = new Set(['antigravity', 'devin', 'meta', 'opencode', 'ollama', 'lmstudio']);
 async function getJson(url, headers) {
     const res = await fetch(url, { headers: { Accept: 'application/json', ...headers }, signal: AbortSignal.timeout(TIMEOUT_MS) });
     const text = await res.text();

@@ -4,8 +4,8 @@
 // login：device = 链接 + 码（自动轮询）；paste = 授权后把跳转地址贴回来；link = 链接（自动轮询）；key = 粘贴 key。
 // 登录方式对照引擎管理接口 v8.0.13 实测：codex / claude 在管理接口里是回调式（需要贴回地址），kimi / xai / meta 是 device。
 
-export type SourceKind = 'engine' | 'workbuddy' | 'opencode'
-export type LoginKind = 'device' | 'paste' | 'link' | 'key'
+export type SourceKind = 'engine' | 'workbuddy' | 'opencode' | 'local'
+export type LoginKind = 'device' | 'paste' | 'link' | 'key' | 'none'
 
 export interface SourceDef {
   id: string
@@ -48,6 +48,8 @@ export const SOURCES: SourceDef[] = [
   { id: 'meta', label: 'Muse (Meta)', kind: 'engine', login: 'device', engineProvider: 'meta', filePrefix: 'meta-', pricing: { tier: 'paid', zh: '需要 Muse Code 套餐（$5 / 月起），meta.ai 的免费版接不进来', en: 'Needs a Muse Code plan (from $5/mo); the free meta.ai tier cannot be used here' } },
   { id: 'antigravity', label: 'Antigravity', kind: 'engine', login: 'paste', engineProvider: 'antigravity', filePrefix: 'antigravity-', riskAck: true, risky: true, pricing: { tier: 'limited', zh: 'Google 账号有免费额度，额度有限', en: 'Free quota with a Google account, limited' } },
   { id: 'devin', label: 'Devin', kind: 'engine', login: 'paste', engineProvider: 'devin', filePrefix: 'devin-', subscribeUrl: 'https://devin.ai/pricing', probeModel: 'devin/swe-1-7-lightning', pricing: { tier: 'paid', zh: '需要 Devin Pro（$20 / 月）；免费档实测调用被拒（insufficient_quota）', en: 'Needs Devin Pro ($20/mo); the free tier is refused in testing (insufficient_quota)' } },
+  { id: 'ollama', label: 'Ollama（本地）', kind: 'local', login: 'none', subscribeUrl: 'https://ollama.com/download', pricing: { tier: 'free', zh: '本机运行，免费；装好并启动 Ollama、拉一个模型后自动出现', en: 'Runs on this machine, free; appears once Ollama is installed, running and has a model' } },
+  { id: 'lmstudio', label: 'LM Studio（本地）', kind: 'local', login: 'none', subscribeUrl: 'https://lmstudio.ai', pricing: { tier: 'free', zh: '本机运行，免费；在 LM Studio 里打开本地服务（Developer → Start Server）后自动出现', en: 'Runs on this machine, free; appears once the LM Studio local server is started (Developer → Start Server)' } },
   { id: 'opencode', label: 'OpenCode Zen', kind: 'opencode', login: 'key', subscribeUrl: 'https://opencode.ai/zen', pricing: { tier: 'paid', zh: '要先充值拿 key 按量计费；它的免费模型只能在 OpenCode 软件里用', en: 'Top up for a pay-as-you-go key; its free models only work inside the OpenCode app' } },
 ]
 

@@ -73,6 +73,7 @@ dsh-model setup
 | 来源 | 费用 | 说明 |
 |---|---|---|
 | WorkBuddy / WorkBuddy AI | 免费 | 账号自带积分 |
+| Ollama / LM Studio | 免费 | 本机运行的模型。装好并启动后自动出现，不用登录 |
 | Codex | 需付费 | ChatGPT Plus / Pro |
 | Kimi | 需付费 | Kimi Code 套餐 |
 | Grok | 需付费 | SuperGrok / X Premium+ |
