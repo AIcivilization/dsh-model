@@ -502,5 +502,6 @@ dsh-model 只是转接口，不产出额度：一个来源能不能用，取决�
 - **一键安装**：插件就是完整的 dsh-model 包。服务没装时页面给出「一键安装」：宿主端用 dsh 的运行时（桌面版是 Electron，加 `ELECTRON_RUN_AS_NODE=1`）执行包里的 `dsh-model setup --skip-dsh-plugin`。服务文件里也带上这个变量。dsh-vps 上要 root，只给命令。
 - **更新**（`dsh-model update`）：npm 全局装的就 `npm install -g`，从页面一键安装的随插件更新 → `dsh plugin add dsh-model@<版本>`（沿用 profile 原来的 pnpm 仓库，否则报 ERR_PNPM_UNEXPECTED_STORE）→ 用新版本执行 `repair` 重写服务。插件换不成只警告，服务照样重装。
 - **卸载**：`uninstall --yes --remove-plugin`，连用户自己从市场装的插件也移除。
+- **dsh-vps 上**：守护进程以 dsh 用户运行，没有 root。setup（root）装一个 systemd path 单元 `dsh-model-admin.path`：守护进程往 `<home>/admin/request` 写请求单，systemd 以 root 运行 `dsh-model admin-run`。它先删请求单，再只执行 `update` 或 `uninstall` 两件事，其他一律拒绝。卸载时一并移除这个单元。
 - 更新和卸载都会重启或移除守护进程本身，所以由守护进程起一个脱离进程组的独立进程来执行（Linux 用 `systemd-run --user`）。页面轮询 `/self` 显示进度。
 - 插件安装改为从 npm 装同一版本（以前用 `link:` 指到 npm 全局目录，VPS 上那个目录归 root，之后从市场装就报 EACCES）。

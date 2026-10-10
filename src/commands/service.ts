@@ -1,6 +1,7 @@
 // commands/service.ts — service install|start|stop|restart|status|uninstall，以及 repair
 
 import type { Ctx } from '../context.js'
+import { installAdmin } from '../service/admin.js'
 import { requireRootInVps } from '../context.js'
 import { DshModelError } from '../errors.js'
 import { L } from '../i18n.js'
@@ -66,6 +67,7 @@ export async function repair(ctx: Ctx): Promise<number> {
       if (!(await waitHealthy(all.config.port, 15_000))) throw new DshModelError('engine_unhealthy', L('引擎没有启动，查看 dsh-model logs', 'Engine did not start; see dsh-model logs'))
       ok(L('服务已重装并重启', 'Service reinstalled and restarted'))
       await ensureDaemon(ctx, all)
+      if (ctx.mode === 'vps') await installAdmin(ctx)
     }
     await syncAll(ctx, all)
     return 0

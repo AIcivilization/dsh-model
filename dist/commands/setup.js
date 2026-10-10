@@ -22,6 +22,7 @@ import { opencodeConfigured } from '../integrations/opencode.js';
 import { ensureDaemon } from '../daemon/service.js';
 import { installDshPlugin } from '../integrations/dshplugin.js';
 import { enableCaddy } from './remote.js';
+import { installAdmin } from '../service/admin.js';
 import { DEFAULT_PUBLIC_PORT, publicHost } from '../remote/public.js';
 export async function setup(ctx, opts) {
     requireRootInVps(ctx);
@@ -91,6 +92,9 @@ export async function setup(ctx, opts) {
             skip(L('已跳过（--skip-dsh-plugin）', 'Skipped (--skip-dsh-plugin)'));
         else
             await step('dsh-plugin', () => installDshPlugin(ctx, all));
+        // vps：让 dsh 管理页能直接点「更新 / 卸载」（root 执行，只认这两件事）
+        if (ctx.mode === 'vps' && !ctx.serviceDisabled)
+            await step('admin', () => installAdmin(ctx));
         // vps：自动在 dsh 的域名上开对外端点（没有域名就用 IP），自己的其他设备直接能用
         if (ctx.mode === 'vps') {
             info('');

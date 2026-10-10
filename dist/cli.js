@@ -9,7 +9,7 @@ import { repair, service } from './commands/service.js';
 import { setup } from './commands/setup.js';
 import { doctor, status } from './commands/status.js';
 import { uninstall } from './commands/uninstall.js';
-import { selfUpdate } from './commands/self.js';
+import { adminRun, selfUpdate } from './commands/self.js';
 import { opencode } from './commands/opencode.js';
 import { workbuddy } from './commands/workbuddy.js';
 import { bridge } from './commands/bridge.js';
@@ -190,6 +190,8 @@ export async function main(argv) {
                 return await logs(ctx, o.lines ? Number(o.lines) : undefined, o.bridge ? 'bridge' : 'engine');
             case 'uninstall':
                 return await uninstall(ctx, { yes: o.yes, keepAuth: o['keep-auth'], removePlugin: o['remove-plugin'] });
+            case 'admin-run':
+                return await adminRun(ctx);
             case 'self-update':
             case 'update':
                 return await selfUpdate(ctx, { to: o.to });

@@ -7,9 +7,10 @@
 import { spawn } from 'node:child_process';
 import { closeSync, openSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { latestVersion } from '../commands/self.js';
+import { latestVersion, selfJobLog } from '../commands/self.js';
+import { adminInstalled, adminRequestPath } from '../service/admin.js';
+import { atomicWrite } from '../util/fs.js';
 import { lang } from '../i18n.js';
 import { which } from '../util/exec.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
@@ -642,7 +643,7 @@ export class Daemon {
         return {
             version: pkgVersion(),
             latest: await latestVersion(),
-            canManage: !vps,
+            canManage: !vps || (await adminInstalled()),
             ...(this.selfJob ? { job: { action: this.selfJob.action, startedAt: this.selfJob.startedAt, log: log.replace(/\x1b\[[0-9;]*m/g, '').slice(-6000) } } : {}),
             commands: vps
                 ? { update: 'sudo npm install -g dsh-model@latest && sudo dsh-model setup', uninstall: 'sudo dsh-model uninstall' }
@@ -654,10 +655,17 @@ export class Daemon {
      * 用 detached 让它脱离守护进程的进程组（launchd 重启服务时不会被一起杀掉）。
      */
     async startSelfJob(action, opts = {}) {
-        if (this.ctx.mode === 'vps')
-            throw new DshModelError('needs_root', L('服务器上要 root 权限，请在终端里执行命令', 'On the server this needs root; run the command in a terminal'));
-        // 卸载会删掉 home，日志放在外面
-        const log = action === 'uninstall' ? join(homedir(), 'dsh-model-uninstall.log') : join(this.ctx.paths.home, 'update.log');
+        const log = selfJobLog(this.ctx, action);
+        if (this.ctx.mode === 'vps') {
+            // 守护进程是 dsh 用户：写请求单，由 dsh-model-admin（root）执行
+            if (!(await adminInstalled()))
+                throw new DshModelError('needs_root', L('服务器上要 root 权限，请在终端里执行命令（重跑一次 sudo dsh-model setup 之后就能在页面上点）', 'On the server this needs root; run the command in a terminal (after re-running sudo dsh-model setup, the buttons work here)'));
+            const req = { action, keepAuth: opts.keepAuth === true, lang: lang() };
+            await atomicWrite(adminRequestPath(this.ctx), JSON.stringify(req), { mode: 0o600 });
+            this.selfJob = { action, startedAt: new Date().toISOString(), log };
+            log_(`daemon: requested ${action} from dsh-model-admin`);
+            return { started: true, log };
+        }
         const args = action === 'update' ? ['update'] : ['uninstall', '--yes', '--remove-plugin', ...(opts.keepAuth ? ['--keep-auth'] : [])];
         const out = openSync(log, 'w', 0o600);
         const cmd = [process.execPath, join(PKG_ROOT, 'bin', 'dsh-model.js'), ...args, '--lang', lang()];

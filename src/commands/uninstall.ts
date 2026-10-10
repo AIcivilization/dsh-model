@@ -16,6 +16,7 @@ import { fail, info, ok, warn } from '../util/output.js'
 import { disable as disableRemote } from './remote.js'
 import { disableWorkbuddy, removeWorkbuddyPlugin } from '../integrations/workbuddy.js'
 import { removeDshPlugin } from '../integrations/dshplugin.js'
+import { removeAdmin } from '../service/admin.js'
 
 async function confirm(question: string): Promise<boolean> {
   if (!process.stdin.isTTY) return false
@@ -70,6 +71,9 @@ export async function uninstall(ctx: Ctx, opts: { yes?: boolean; keepAuth?: bool
     ok(L(`dsh 配置已还原（patch：${r.patch}，凭据：${r.cred}）`, `dsh config restored (patch: ${r.patch}, credentials: ${r.cred})`))
   })
   await saveAll(ctx, all).catch(() => {})
+  await step('admin', async () => {
+    if (ctx.mode === 'vps') await removeAdmin()
+  })
   await step('service', async () => {
     if (ctx.serviceDisabled) return
     await serviceFor(ctx).uninstall()

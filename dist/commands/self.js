@@ -3,7 +3,9 @@
 // 1. 新版本装到原来的位置：npm 全局装的就 npm install -g；从 dsh 管理页一键安装的（程序就在插件目录里）跳过这步；
 // 2. dsh 里的插件换成同一版本（插件页的新代码要重启一次 dsh 才生效）；
 // 3. 用新版本执行一次 repair：重写服务文件、重启引擎与守护进程、同步模型。
-import { realpath } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { closeSync, openSync } from 'node:fs';
+import { chown, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { requireRootInVps } from '../context.js';
 import { DshModelError, isDshModelError } from '../errors.js';
@@ -15,6 +17,7 @@ import { run, runInherit } from '../util/exec.js';
 import { exists } from '../util/fs.js';
 import { info, next, ok, skip, warn } from '../util/output.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
+import { takeAdminRequest } from '../service/admin.js';
 const REGISTRY = 'https://registry.npmjs.org/dsh-model';
 /** a 比 b 新（只比 major.minor.patch） */
 export function isNewer(a, b) {
@@ -113,4 +116,31 @@ export async function selfUpdate(ctx, opts = {}) {
     ok(L(`已更新到 ${target}`, `Updated to ${target}`));
     next(L('重启一次 dsh，管理页的新代码才会生效', 'Restart dsh once so the management page picks up the new code'));
     return 0;
+}
+/** 管理页请求的日志：更新写在 home 里；卸载会删 home，写在它外面 */
+export function selfJobLog(ctx, action) {
+    return action === 'uninstall' ? join(dirname(ctx.paths.home), 'dsh-model-uninstall.log') : join(ctx.paths.home, 'update.log');
+}
+/** 由 dsh-model-admin.service（root）执行：取出管理页的请求单，只做 update / uninstall */
+export async function adminRun(ctx) {
+    if (!ctx.isRoot)
+        throw new DshModelError('needs_root', L('admin-run 只由 dsh-model-admin 服务以 root 执行', 'admin-run is run by the dsh-model-admin service as root'));
+    const req = await takeAdminRequest(ctx);
+    if (!req)
+        return 0;
+    const log = selfJobLog(ctx, req.action);
+    const out = openSync(log, 'w', 0o600);
+    if (ctx.owner)
+        await chown(log, ctx.owner.uid, ctx.owner.gid).catch(() => { });
+    const args = req.action === 'update' ? ['update'] : ['uninstall', '--yes', '--remove-plugin', ...(req.keepAuth ? ['--keep-auth'] : [])];
+    const code = await new Promise((resolve) => {
+        const child = spawn(process.execPath, [join(PKG_ROOT, 'bin', 'dsh-model.js'), ...args, '--lang', req.lang ?? 'zh'], {
+            stdio: ['ignore', out, out],
+            env: { ...process.env, NO_COLOR: '1', NODE_NO_WARNINGS: '1' },
+        });
+        child.on('error', () => resolve(-1));
+        child.on('exit', (c) => resolve(c ?? -1));
+    });
+    closeSync(out);
+    return code;
 }
