@@ -8,7 +8,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/AIcivilization/dsh-model" alt="MIT license"></a>
   <a href="https://www.npmjs.com/package/dsh-model"><img src="https://img.shields.io/npm/v/dsh-model?color=cb3837&logo=npm" alt="npm version"></a>
   <img src="https://img.shields.io/badge/DeepSeek%20Harness-%E2%89%A5%200.2.0--rc.2-4176E6" alt="DeepSeek Harness ≥ 0.2.0-rc.2">
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue" alt="Platform: macOS / Linux">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Platform: Windows / macOS / Linux">
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-339933?logo=node.js&logoColor=white" alt="Node ≥ 20">
   <a href="https://github.com/router-for-me/CLIProxyAPI"><img src="https://img.shields.io/badge/engine-CLIProxyAPI%208.0.13-555" alt="Engine: CLIProxyAPI 8.0.13"></a>
 </p>
@@ -37,7 +37,7 @@ npm install -g dsh-model
 dsh-model setup
 ```
 
-On a dsh-vps server, use `sudo dsh-model setup`.
+On a dsh-vps server, use `sudo dsh-model setup`. On Windows, run it in a normal PowerShell or Command Prompt; no administrator rights needed.
 
 `setup` is safe to re-run. It:
 
@@ -121,7 +121,8 @@ See the [design doc](docs/DESIGN.md) (Chinese).
 ## Notes
 
 - Using subscription and WorkBuddy credentials outside the official clients may break the providers' terms and put the account at risk. Decide for yourself.
-- macOS and Linux, Node ≥ 20.
+- Windows 10 / 11 (x64, ARM64), macOS and Linux, Node ≥ 20.
+- Windows: the background services start at sign-in with no window. If an antivirus blocks them (the program is gone or will not start), trust `%USERPROFILE%\.dsh-model` and run `dsh-model repair`.
 
 ## License
 

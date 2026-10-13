@@ -8,7 +8,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/AIcivilization/dsh-model" alt="MIT license"></a>
   <a href="https://www.npmjs.com/package/dsh-model"><img src="https://img.shields.io/npm/v/dsh-model?color=cb3837&logo=npm" alt="npm version"></a>
   <img src="https://img.shields.io/badge/DeepSeek%20Harness-%E2%89%A5%200.2.0--rc.2-4176E6" alt="DeepSeek Harness ≥ 0.2.0-rc.2">
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue" alt="Platform: macOS / Linux">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Platform: Windows / macOS / Linux">
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-339933?logo=node.js&logoColor=white" alt="Node ≥ 20">
   <a href="https://github.com/router-for-me/CLIProxyAPI"><img src="https://img.shields.io/badge/engine-CLIProxyAPI%208.0.13-555" alt="Engine: CLIProxyAPI 8.0.13"></a>
 </p>
@@ -37,7 +37,7 @@ npm install -g dsh-model
 dsh-model setup
 ```
 
-服务器上（装了 dsh-vps 的 VPS）用 `sudo dsh-model setup`。
+服务器上（装了 dsh-vps 的 VPS）用 `sudo dsh-model setup`。Windows 上在普通的 PowerShell 或命令提示符里执行即可，不需要管理员。
 
 `setup` 可以重复执行，它会依次：
 
@@ -121,7 +121,8 @@ dsh · 编辑器 · 脚本 ──Bearer key──▶ 引擎 127.0.0.1:8317/v1（
 ## 注意
 
 - 订阅和 WorkBuddy 的凭据在官方客户端之外使用，可能不符合服务商的条款，账号有风险，请自行判断。
-- 支持 macOS 和 Linux，需要 Node ≥ 20。
+- 支持 Windows 10 / 11（x64、ARM64）、macOS、Linux，需要 Node ≥ 20。
+- Windows：后台服务登录后自动运行、不弹窗口。如果被杀毒软件拦下（程序不见了或启动不了），把 `%USERPROFILE%\.dsh-model` 加入信任，再执行 `dsh-model repair`。
 
 ## License
 

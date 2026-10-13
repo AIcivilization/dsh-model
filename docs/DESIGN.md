@@ -514,3 +514,26 @@ dsh-model 只是转接口，不产出额度：一个来源能不能用，取决�
 - **接入**：作为引擎的 openai-compatibility 上游，前缀 `ollama/`、`lmstudio/`，`proxy-url: direct`。模型名后缀「本地免费」，dsh 里按来源分组。
 - **默认挑选**：排除 embedding 模型（bge-、embed、rerank）。
 - **开关**：关掉就记进 `disabledSources`；没在运行时打开，会提示去下载和启动。
+
+## 16. Windows
+
+目标是和 Mac 一样：普通用户执行 `dsh-model setup`（或在 dsh 管理页点一键安装），不需要管理员。
+
+| 事情 | Mac / Linux | Windows |
+|---|---|---|
+| 引擎发布包 | `tar.gz`，系统 `tar -xzf` | `zip`，用 `System32\tar.exe`（Windows 10 1803 起自带的 bsdtar，认 zip；写全路径，免得用到 Git Bash 的 GNU tar）。程序是 `cli-proxy-api.exe` |
+| 版本切换 `current` | 相对软链 + rename | 目录联接（junction，不需要管理员），先删旧的再建 |
+| 后台服务 | launchd / systemd | 当前用户的 Run 键（`HKCU\…\Run`）登录后启动 `wscript` + 隐藏窗口的 `.vbs`（存成 UTF-16LE，中文路径不乱码）→ `dsh-model service supervise <spec.json>` 用 `windowsHide` 拉起真正的程序，退出了隔几秒重拉（太频繁就拉长到 60 秒）。pid 写在 `services/<label>.pid`，停止用 `taskkill /T /F` |
+| 更新 / 卸载任务 | detached 子进程（Linux 用 systemd-run） | 先起一个只活几毫秒的中转进程，由它拉起任务后退出：任务的父进程不在了，`taskkill /T` 守护进程时不会把它带走。工作目录放在用户主目录 |
+| dsh 命令行 | `Resources/runtime/cli/bin/dsh` | `DeepSeek Harness.exe` + `ELECTRON_RUN_AS_NODE=1` 运行 `resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js`（Mac 启动脚本做的就是这件事）；位置依次找：正在运行的桌面版、`%LOCALAPPDATA%\Programs`、Program Files。版本用 `--version` 问它 |
+| 系统代理 | `scutil --proxy` | 注册表 `Internet Settings` 的 `ProxyEnable` / `ProxyServer`（Clash 等"系统代理"写在这里），两种写法都认 |
+| `.cmd` 程序 | — | `npm.cmd` 等经 `cmd.exe` 调（Node 18.20 / 20.12 起直接 spawn 会 EINVAL），参数统一加引号 |
+| 子进程窗口 | — | 一律 `windowsHide` |
+| 文件 | rename 覆盖 | rename 遇到 EACCES / EBUSY / EPERM 退避重试（dsh 自己也这么做）；删目录重试（刚结束的进程可能还占着） |
+| 权限 | 0600 / 0700 | 没有 Unix 权限位，靠用户目录本身的访问控制；doctor 不查 |
+
+**测试**：GitHub Actions 在 ubuntu / macos / windows 上各跑全部测试。Windows 上另有两个真机测试：真的写 Run 键、隐藏启动、被结束后自动重启、卸载干净；真正的 `setup` 把引擎和守护进程注册成后台服务、能调到守护进程，`uninstall` 后全部清掉。
+
+**还没覆盖的**（要在真的 Windows 电脑上测）：装了 dsh 桌面版时找到它的命令行、装插件；在管理页一键安装（以 Electron 运行）；系统代理检测；Codex 用验证码登录（`.exe`）；杀毒软件拦截。
+
+**已知风险**：微软计划逐步停用 VBScript（Windows 11 24H2 起变成可选组件，计划以后默认关闭）。到时候改用 `conhost.exe --headless` 启动。
