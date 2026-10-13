@@ -25,10 +25,26 @@ export async function atomicWrite(file: string, data: string | Buffer, options: 
     await writeFile(tmp, data, { mode })
     await chmod(tmp, mode) // umask 可能削掉 writeFile 的 mode
     if (options.owner) await chown(tmp, options.owner.uid, options.owner.gid)
-    await rename(tmp, file)
+    await renameRetry(tmp, file)
   } catch (error) {
     await rm(tmp, { force: true })
     throw error
+  }
+}
+
+/**
+ * Windows 上目标文件正被别的进程打开（杀毒扫描、引擎在读配置）时，rename 会短暂报 EACCES / EBUSY / EPERM：
+ * 退避重试一会儿（dsh 自己的 atomic-write 也这么做）。其他平台直接 rename。
+ */
+async function renameRetry(from: string, to: string): Promise<void> {
+  for (let i = 0; ; i++) {
+    try {
+      return await rename(from, to)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (process.platform !== 'win32' || i >= 8 || !['EACCES', 'EBUSY', 'EPERM'].includes(code ?? '')) throw error
+      await new Promise((r) => setTimeout(r, 25 * 2 ** i))
+    }
   }
 }
 

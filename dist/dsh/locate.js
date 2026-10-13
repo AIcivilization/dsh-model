@@ -1,5 +1,6 @@
 // dsh/locate.ts — 找到 dsh：DSH_HOME、profile、版本
 import { readdir, readFile } from 'node:fs/promises';
+import { dshCliVersion } from './cli.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { VPS_ROOT } from '../context.js';
@@ -51,6 +52,11 @@ export async function dshVersion(ctx) {
             if (r.code === 0 && r.stdout.trim())
                 return r.stdout.trim();
         }
+    }
+    // Windows 没有 Info.plist：问 dsh 命令行自己（输出可能是 "dsh 0.2.0-rc.2"，取其中的版本号）
+    if (ctx.platform === 'win32') {
+        const out = await dshCliVersion(ctx);
+        return out?.match(/\d+\.\d+\.\d+(?:-[\w.]+)?/)?.[0] ?? null;
     }
     return null;
 }

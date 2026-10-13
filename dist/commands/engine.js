@@ -103,7 +103,7 @@ async function trialRun(ctx, all, bin) {
         doc.oauth['auth-dir'] = join(dir, 'auth');
         const cfg = join(dir, 'engine.yaml');
         await atomicWrite(cfg, YAML.stringify(doc));
-        const child = spawn(bin, ['-config', cfg], { cwd: dir, stdio: 'ignore' });
+        const child = spawn(bin, ['-config', cfg], { cwd: dir, stdio: 'ignore', windowsHide: true });
         try {
             if (!(await waitHealthy(port, 15_000)))
                 throw new DshModelError('engine_trial_failed', L('新版本试运行没有启动', 'New version did not start in trial run'));

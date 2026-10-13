@@ -38,7 +38,7 @@ export interface Paths {
 
 export interface Ctx {
   mode: Mode
-  platform: 'darwin' | 'linux'
+  platform: 'darwin' | 'linux' | 'win32'
   paths: Paths
   /** vps 模式：dsh-model 写出的文件归这个用户 */
   owner?: Owner
@@ -81,8 +81,8 @@ export function makePaths(home: string): Paths {
 
 export async function createContext(env: NodeJS.ProcessEnv = process.env): Promise<Ctx> {
   const platform = process.platform
-  if (platform !== 'darwin' && platform !== 'linux') {
-    throw new DshModelError('unsupported_platform', L(`暂不支持这个平台：${platform}（只支持 macOS 和 Linux）`, `Unsupported platform: ${platform} (macOS and Linux only)`))
+  if (platform !== 'darwin' && platform !== 'linux' && platform !== 'win32') {
+    throw new DshModelError('unsupported_platform', L(`暂不支持这个平台：${platform}（支持 macOS、Linux、Windows）`, `Unsupported platform: ${platform} (macOS, Linux and Windows are supported)`))
   }
   const mode = detectMode(env, platform)
   const isRoot = typeof process.getuid === 'function' && process.getuid() === 0

@@ -29,7 +29,7 @@ export interface Config {
   bridge?: { port: number; riskNoticeAt?: string }
 }
 
-export type ServiceKind = 'launchd' | 'systemd-user' | 'systemd-system'
+export type ServiceKind = 'launchd' | 'systemd-user' | 'systemd-system' | 'windows'
 
 export interface DshState {
   dshHome: string

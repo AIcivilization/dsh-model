@@ -41,8 +41,8 @@ export function makePaths(home) {
 }
 export async function createContext(env = process.env) {
     const platform = process.platform;
-    if (platform !== 'darwin' && platform !== 'linux') {
-        throw new DshModelError('unsupported_platform', L(`暂不支持这个平台：${platform}（只支持 macOS 和 Linux）`, `Unsupported platform: ${platform} (macOS and Linux only)`));
+    if (platform !== 'darwin' && platform !== 'linux' && platform !== 'win32') {
+        throw new DshModelError('unsupported_platform', L(`暂不支持这个平台：${platform}（支持 macOS、Linux、Windows）`, `Unsupported platform: ${platform} (macOS, Linux and Windows are supported)`));
     }
     const mode = detectMode(env, platform);
     const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;

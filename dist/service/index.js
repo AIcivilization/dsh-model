@@ -5,6 +5,7 @@ import { currentBinary } from '../engine/install.js';
 import { PKG_ROOT } from '../util/pkg.js';
 import { launchd } from './launchd.js';
 import { systemd } from './systemd.js';
+import { windowsService } from './windows.js';
 export const SERVICE_LABEL = 'com.dsh-model.engine';
 export const UNIT_NAME = 'dsh-model-engine.service';
 export const BRIDGE_LABEL = 'com.dsh-model.bridge';
@@ -12,6 +13,8 @@ export const BRIDGE_UNIT = 'dsh-model-bridge.service';
 export function serviceKind(ctx) {
     if (ctx.mode === 'vps')
         return 'systemd-system';
+    if (ctx.platform === 'win32')
+        return 'windows';
     return ctx.platform === 'darwin' ? 'launchd' : 'systemd-user';
 }
 /** bridge 是 Node 进程：用当前 node 的绝对路径，加上本包的入口 */
@@ -40,6 +43,8 @@ export function serviceFor(ctx, name = 'engine', proxy) {
         home: ctx.paths.home,
         ...(name === 'bridge' ? { env: bridgeEnv(ctx, proxy) } : {}),
     };
+    if (kind === 'windows')
+        return windowsService({ ...common, label: name === 'engine' ? 'dsh-model-engine' : 'dsh-model-bridge', file: join(ctx.paths.home, 'services', `${name === 'engine' ? 'dsh-model-engine' : 'dsh-model-bridge'}.json`) });
     if (kind === 'launchd')
         return launchd({ ...common, label, file: join(homedir(), 'Library/LaunchAgents', `${label}.plist`) });
     if (kind === 'systemd-user')

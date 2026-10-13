@@ -7,7 +7,7 @@
 import { spawn } from 'node:child_process'
 import { closeSync, openSync } from 'node:fs'
 import { chown, realpath } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import type { Ctx } from '../context.js'
 import { requireRootInVps } from '../context.js'
 import { DshModelError, isDshModelError } from '../errors.js'
@@ -45,9 +45,10 @@ export async function latestVersion(): Promise<string | null> {
 async function npmBeside(): Promise<{ npm: string; env: NodeJS.ProcessEnv } | null> {
   if (process.versions.electron) return null
   const dir = dirname(process.execPath)
-  const npm = join(dir, 'npm')
+  // Windows 上 npm 是 npm.cmd（exec.ts 会经 cmd.exe 调它）；PATH 分隔符也不同
+  const npm = join(dir, process.platform === 'win32' ? 'npm.cmd' : 'npm')
   if (!(await exists(npm))) return null
-  return { npm, env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ''}` } }
+  return { npm, env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH ?? ''}` } }
 }
 
 /** 当前程序是不是 npm 全局装的（是就能用 npm install -g 原地更新） */
@@ -131,6 +132,7 @@ export async function adminRun(ctx: Ctx): Promise<number> {
   const code = await new Promise<number>((resolve) => {
     const child = spawn(process.execPath, [join(PKG_ROOT, 'bin', 'dsh-model.js'), ...args, '--lang', req.lang ?? 'zh'], {
       stdio: ['ignore', out, out],
+      windowsHide: true,
       env: { ...process.env, NO_COLOR: '1', NODE_NO_WARNINGS: '1' },
     })
     child.on('error', () => resolve(-1))

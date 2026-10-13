@@ -5,7 +5,6 @@
 // 职责：来源状态与开关、登录会话（引擎 OAuth / WorkBuddy 自有登录 / OpenCode key）、key 管理、用量统计。
 // CLI 与 dsh 插件都只通过 /control/* 调这里，逻辑只有一份。
 import { spawn } from 'node:child_process';
-import { closeSync, openSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { latestVersion, selfJobLog } from '../commands/self.js';
@@ -14,6 +13,7 @@ import { adminInstalled, adminRequestPath } from '../service/admin.js';
 import { atomicWrite } from '../util/fs.js';
 import { lang } from '../i18n.js';
 import { which } from '../util/exec.js';
+import { spawnDetached } from '../util/detach.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
 import { randomBytes } from 'node:crypto';
 import { currentBinary } from '../engine/install.js';
@@ -461,7 +461,7 @@ export class Daemon {
         const m = await this.mgmt();
         const before = credsFor(await m.credentials(), def).map((c) => c.name);
         const abort = new AbortController();
-        const child = spawn(currentBinary(this.ctx), ['-config', this.ctx.paths.engineYaml, def.deviceCliFlag, '-no-browser'], { cwd: this.ctx.paths.home, stdio: ['ignore', 'pipe', 'pipe'], signal: abort.signal });
+        const child = spawn(currentBinary(this.ctx), ['-config', this.ctx.paths.engineYaml, def.deviceCliFlag, '-no-browser'], { cwd: this.ctx.paths.home, stdio: ['ignore', 'pipe', 'pipe'], signal: abort.signal, windowsHide: true });
         let out = '';
         const s = {
             id: randomBytes(12).toString('hex'),
@@ -710,21 +710,20 @@ export class Daemon {
             return { started: true, log };
         }
         const args = action === 'update' ? ['update'] : ['uninstall', '--yes', '--remove-plugin', ...(opts.keepAuth ? ['--keep-auth'] : [])];
-        const out = openSync(log, 'w', 0o600);
         const cmd = [process.execPath, join(PKG_ROOT, 'bin', 'dsh-model.js'), ...args, '--lang', lang()];
-        // Linux 的 systemd --user 重启服务会杀掉整个 cgroup：交给 systemd-run 另起一个
-        const useSystemdRun = this.ctx.platform === 'linux' && (await which('systemd-run'));
-        const keepEnv = ['PATH', 'HOME', 'LANG', 'DSH_HOME', 'DSH_MODEL_HOME', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'].filter((k) => process.env[k]).map((k) => `--setenv=${k}=${process.env[k]}`);
-        const viaSystemd = ['--user', '--collect', '--quiet', ...keepEnv, '--setenv=NO_COLOR=1', '/bin/sh', '-c', 'log="$1"; shift; exec "$@" >"$log" 2>&1', 'sh', log, ...cmd];
-        const child = spawn(useSystemdRun ? 'systemd-run' : cmd[0], useSystemdRun ? viaSystemd : cmd.slice(1), {
-            detached: true,
-            stdio: ['ignore', out, out],
-            env: { ...process.env, NO_COLOR: '1', NODE_NO_WARNINGS: '1', ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
-        });
-        child.unref();
-        closeSync(out);
-        this.selfJob = { action, startedAt: new Date().toISOString(), log, ...(child.pid ? { pid: child.pid } : {}) };
-        log_(`daemon: started ${action} (pid ${child.pid})`);
+        const env = { ...process.env, NO_COLOR: '1', NODE_NO_WARNINGS: '1', ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) };
+        let pid;
+        if (this.ctx.platform === 'linux' && (await which('systemd-run'))) {
+            // Linux 的 systemd --user 重启服务会杀掉整个 cgroup：交给 systemd-run 另起一个
+            const keepEnv = ['PATH', 'HOME', 'LANG', 'DSH_HOME', 'DSH_MODEL_HOME', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'].filter((k) => process.env[k]).map((k) => `--setenv=${k}=${process.env[k]}`);
+            const viaSystemd = ['--user', '--collect', '--quiet', ...keepEnv, '--setenv=NO_COLOR=1', '/bin/sh', '-c', 'log="$1"; shift; exec "$@" >"$log" 2>&1', 'sh', log, ...cmd];
+            spawn('systemd-run', viaSystemd, { detached: true, stdio: 'ignore', env }).unref();
+        }
+        else {
+            pid = spawnDetached(cmd[0], cmd.slice(1), { log, env });
+        }
+        this.selfJob = { action, startedAt: new Date().toISOString(), log, ...(pid ? { pid } : {}) };
+        log_(`daemon: started ${action}${pid ? ` (pid ${pid})` : ''}`);
         return { started: true, log };
     }
     /** 这个来源的全部模型，以及哪些显示在 dsh 里 */

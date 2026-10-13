@@ -1,6 +1,6 @@
 // util/proxy.ts — 出站代理：引擎作为后台服务运行时拿不到终端里的 HTTPS_PROXY，
 // 所以 setup 时把代理写进 engine.yaml 的 requests.proxy-url。
-// 检测顺序：HTTPS_PROXY / ALL_PROXY 环境变量 → macOS 系统代理（scutil --proxy）
+// 检测顺序：HTTPS_PROXY / ALL_PROXY 环境变量 → 系统代理（macOS：scutil --proxy；Windows：注册表 Internet Settings，Clash 等"系统代理"写在这里）
 
 import { connect } from 'node:net'
 import { DshModelError } from '../errors.js'
@@ -40,7 +40,29 @@ export async function detectProxy(env: NodeJS.ProcessEnv = process.env, platform
       if (get('SOCKSEnable') === '1' && get('SOCKSProxy') && get('SOCKSPort')) return { url: `socks5://${get('SOCKSProxy')}:${get('SOCKSPort')}`, source: 'macOS system proxy' }
     }
   }
+  if (platform === 'win32') {
+    const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
+    const [en, srv] = await Promise.all([run('reg', ['query', key, '/v', 'ProxyEnable']), run('reg', ['query', key, '/v', 'ProxyServer'])])
+    const url = en.code === 0 && srv.code === 0 ? parseWindowsProxy(en.stdout, srv.stdout) : null
+    if (url) return { url, source: 'Windows system proxy' }
+  }
   return null
+}
+
+/**
+ * 解析 reg query 的输出。ProxyServer 两种写法：
+ *   "127.0.0.1:7890"（所有协议共用）或 "http=127.0.0.1:7890;https=127.0.0.1:7890;socks=127.0.0.1:7891"
+ */
+export function parseWindowsProxy(enableOut: string, serverOut: string): string | null {
+  if (!/ProxyEnable\s+REG_DWORD\s+0x0*1\b/i.test(enableOut)) return null
+  const raw = /ProxyServer\s+REG_SZ\s+(\S+)/i.exec(serverOut)?.[1]
+  if (!raw) return null
+  if (!raw.includes('=')) return /^[a-z]+:\/\//i.test(raw) ? raw : `http://${raw}`
+  const parts = new Map(raw.split(';').map((p) => p.split('=') as [string, string]).filter(([k, v]) => k && v).map(([k, v]) => [k.toLowerCase(), v]))
+  const pick = parts.get('https') ?? parts.get('http')
+  if (pick) return /^[a-z]+:\/\//i.test(pick) ? pick : `http://${pick}`
+  const socks = parts.get('socks')
+  return socks ? `socks5://${socks.replace(/^[a-z0-9]+:\/\//i, '')}` : null
 }
 
 /** 代理端口能不能连上（doctor 用） */

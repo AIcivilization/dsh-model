@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const REPO = 'router-for-me/CLIProxyAPI'
-const TARGETS = ['darwin-aarch64', 'darwin-amd64', 'linux-aarch64', 'linux-amd64']
+const TARGETS = ['darwin-aarch64', 'darwin-amd64', 'linux-aarch64', 'linux-amd64', 'windows-aarch64', 'windows-amd64']
 
 const version = (process.argv[2] ?? '').replace(/^v/, '')
 if (!/^\d+\.\d+\.\d+$/.test(version)) {
@@ -31,7 +31,8 @@ for (const line of (await res.text()).split('\n')) {
 const assets = {}
 for (const target of TARGETS) {
   const [os, arch] = target.split('-')
-  const file = `CLIProxyAPI_${version}_${os}_${arch}.tar.gz`
+  // Windows 发布的是 zip，其余是 tar.gz / Windows ships a zip, the rest tar.gz
+  const file = `CLIProxyAPI_${version}_${os}_${arch}.${os === 'windows' ? 'zip' : 'tar.gz'}`
   const sha256 = sums.get(file)
   if (!sha256) throw new Error(`missing checksum for ${file}`)
   assets[target] = { file, url: `${base}/${file}`, sha256 }

@@ -104,6 +104,7 @@ function runCli(args) {
   running = new Promise((resolve) => {
     let out = ''
     const child = spawn(process.execPath, [join(PKG_ROOT, 'bin/dsh-model.js'), ...args], {
+      windowsHide: true,
       // dsh 桌面版可能跑在 Electron 里：让它当普通 Node 用
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', FORCE_COLOR: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],

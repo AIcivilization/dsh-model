@@ -179,7 +179,8 @@ export async function doctor(ctx: Ctx, opts: { e2e?: boolean; all?: boolean; mod
     const credText = await readText(d.credFile)
     add('dsh-key', readRef(credText) === key ? 'ok' : 'fail', readRef(credText) === key ? L(`${KEY_REF} 与 key 一致`, `${KEY_REF} matches`) : L(`${KEY_REF} 与 key 不一致（dsh-model repair）`, `${KEY_REF} does not match (dsh-model repair)`))
     const cm = await fileMode(d.credFile)
-    if (cm != null) add('dsh-cred-perms', cm === 0o600 ? 'ok' : 'fail', L(`.credentials.yaml 权限 ${cm.toString(8)}（dsh 要求 600）`, `.credentials.yaml mode ${cm.toString(8)} (dsh requires 600)`))
+    // Windows 没有 Unix 权限位（读出来总是 666），权限靠用户目录本身的访问控制，不查
+    if (cm != null && ctx.platform !== 'win32') add('dsh-cred-perms', cm === 0o600 ? 'ok' : 'fail', L(`.credentials.yaml 权限 ${cm.toString(8)}（dsh 要求 600）`, `.credentials.yaml mode ${cm.toString(8)} (dsh requires 600)`))
     const patchText = await readText(d.patchFile)
     if (patchText != null && d.writtenPatchSha && sha256(patchText) !== d.writtenPatchSha) {
       add('dsh-patch-edited', 'ok', L('cordis.patch.yml 在接线后被修改过（卸载时只会移除 dsh-model 的部分）', 'cordis.patch.yml edited since connect (uninstall will remove only dsh-model parts)'))

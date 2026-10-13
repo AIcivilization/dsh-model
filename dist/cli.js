@@ -10,6 +10,7 @@ import { setup } from './commands/setup.js';
 import { doctor, status } from './commands/status.js';
 import { uninstall } from './commands/uninstall.js';
 import { adminRun, selfUpdate } from './commands/self.js';
+import { supervise } from './service/windows.js';
 import { opencode } from './commands/opencode.js';
 import { workbuddy } from './commands/workbuddy.js';
 import { bridge } from './commands/bridge.js';
@@ -183,6 +184,9 @@ export async function main(argv) {
             case 'engine':
                 return await engine(ctx, a1, a2);
             case 'service':
+                // Windows 后台服务的常驻进程（由隐藏窗口脚本启动，不是给人用的）
+                if (a1 === 'supervise' && a2)
+                    return await supervise(a2);
                 return await service(ctx, a1);
             case 'repair':
                 return await repair(ctx);

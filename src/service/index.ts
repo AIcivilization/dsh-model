@@ -8,6 +8,7 @@ import { currentBinary } from '../engine/install.js'
 import { PKG_ROOT } from '../util/pkg.js'
 import { launchd } from './launchd.js'
 import { systemd } from './systemd.js'
+import { windowsService } from './windows.js'
 
 export const SERVICE_LABEL = 'com.dsh-model.engine'
 export const UNIT_NAME = 'dsh-model-engine.service'
@@ -49,6 +50,7 @@ export interface ServiceManager {
 
 export function serviceKind(ctx: Ctx): ServiceKind {
   if (ctx.mode === 'vps') return 'systemd-system'
+  if (ctx.platform === 'win32') return 'windows'
   return ctx.platform === 'darwin' ? 'launchd' : 'systemd-user'
 }
 
@@ -80,6 +82,7 @@ export function serviceFor(ctx: Ctx, name: ServiceName = 'engine', proxy?: strin
     home: ctx.paths.home,
     ...(name === 'bridge' ? { env: bridgeEnv(ctx, proxy) } : {}),
   }
+  if (kind === 'windows') return windowsService({ ...common, label: name === 'engine' ? 'dsh-model-engine' : 'dsh-model-bridge', file: join(ctx.paths.home, 'services', `${name === 'engine' ? 'dsh-model-engine' : 'dsh-model-bridge'}.json`) })
   if (kind === 'launchd') return launchd({ ...common, label, file: join(homedir(), 'Library/LaunchAgents', `${label}.plist`) })
   if (kind === 'systemd-user') return systemd('systemd-user', { ...common, label, file: join(homedir(), '.config/systemd/user', label) })
   return systemd('systemd-system', { ...common, label, file: join('/etc/systemd/system', label), user: ctx.runAs })
