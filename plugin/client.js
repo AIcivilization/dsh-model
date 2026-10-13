@@ -327,8 +327,6 @@ window.__ModuleLoader__.load({
         }, (e) => alive && setMsg(e.message))
         return () => { alive = false }
       }, [source.id])
-      if (selfJob) return h(SelfProgress, { job: selfJob, onDone: () => { setSelfJob(null); void load(true) } })
-      if (errCode === 'daemon_not_configured' || errCode === 'daemon_unreachable') return h(Onboarding, { code: errCode, onDone: () => void load(true) })
       if (!data) return h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 8 } }, msg || L('加载中…', 'Loading…'))
       const flip = (id) => setSel((x) => { const n = new Set(x); n.has(id) ? n.delete(id) : n.add(id); return n })
       const save = async (models) => {
@@ -677,6 +675,9 @@ window.__ModuleLoader__.load({
         const t = setInterval(() => void load(false), 15000)
         return () => { alive.current = false; clearInterval(t) }
       }, [load])
+      // 更新 / 卸载进行中、服务没装或没在运行：整页换成对应的卡片（不能只显示一行错误）
+      if (selfJob) return h(SelfProgress, { job: selfJob, onDone: () => { setSelfJob(null); void load(true) } })
+      if (errCode === 'daemon_not_configured' || errCode === 'daemon_unreachable') return h(Onboarding, { code: errCode, onDone: () => void load(true) })
       if (!data) return h('div', { style: { fontSize: 13, color: err ? C.err : C.sub, padding: '8px 0' } }, err || L('加载中…', 'Loading…'))
       return h('div', { style: { color: C.text, maxWidth: 820 } },
         err ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 12 } }, err) : null,
