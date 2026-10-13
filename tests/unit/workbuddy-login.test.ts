@@ -49,7 +49,7 @@ describe('workbuddy login (own flow, fake server)', () => {
       expect(cred.expiresAtMs).toBeGreaterThan(Date.now() + 3000_000)
 
       const file = join(bridgeDir(ctx.paths.home), CN_VARIANT.ownFilename)
-      expect((await stat(file)).mode & 0o777).toBe(0o600)
+      if (process.platform !== 'win32') expect((await stat(file)).mode & 0o777).toBe(0o600)
       expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(1)
       // 移植的凭据库能直接读这份（桌面路径指向不存在的文件，避免读到本机真实 App 的凭据）
       const store = new WorkBuddyCredentialStore({ variant: CN_VARIANT, ownPath: file, desktopPath: join(ctx.paths.home, 'nope'), refresh: async () => ({ accessToken: 'x' }) })

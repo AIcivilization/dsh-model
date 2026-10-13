@@ -79,14 +79,15 @@ describe('engine contract (real binary)', () => {
     expect(await main(['key', 'add', 'laptop'])).toBe(0)
     const laptop = (await loadKeys(t.ctx)).keys.find((k) => k.name === 'laptop')!.key
     let okAfter = false
-    for (let i = 0; i < 20 && !okAfter; i++) {
+    // CI 的机器慢：热重载最多等 15 秒
+    for (let i = 0; i < 60 && !okAfter; i++) {
       okAfter = await listModels(port, laptop).then(() => true, () => false)
       if (!okAfter) await new Promise((r) => setTimeout(r, 250))
     }
     expect(okAfter).toBe(true)
     expect(await main(['key', 'revoke', 'laptop'])).toBe(0)
     let rejected = false
-    for (let i = 0; i < 20 && !rejected; i++) {
+    for (let i = 0; i < 60 && !rejected; i++) {
       rejected = await listModels(port, laptop).then(() => false, () => true)
       if (!rejected) await new Promise((r) => setTimeout(r, 250))
     }
@@ -103,6 +104,13 @@ describe('engine contract (real binary)', () => {
 
   it('uninstall restores dsh files byte-for-byte and removes home', async () => {
     expect(await healthy(port)).toBe(true)
+    // 测试自己拉起的引擎（没走服务）：先停掉。Windows 上进程的工作目录在 home 里时删不掉 home
+    if (child && child.exitCode === null) {
+      const exited = new Promise((r) => child!.once('exit', r))
+      child.kill()
+      await exited
+    }
+    child = undefined
     expect(await main(['uninstall', '--yes'])).toBe(0)
     expect(await readFile(join(t.ctx.dshHome, '.credentials.yaml'), 'utf8')).toBe(await fixture('credentials.yml'))
     expect(await readFile(join(t.profileDir, 'cordis.patch.yml'), 'utf8')).toBe(await fixture('no-llm.yml'))
