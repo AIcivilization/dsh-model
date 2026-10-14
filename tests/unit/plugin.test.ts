@@ -86,7 +86,8 @@ describe('dsh plugin client side', () => {
     })
     mod!.apply({ slots: { inject: (_n: string, fn: () => void) => fn(), register: (o: { name: string; id: string }) => registered.push(o) } })
     expect(mod!.inject).toContain('slots')
-    expect(registered).toEqual([expect.objectContaining({ name: 'settings.section', id: 'dsh-model' })])
+    // 设置页一项 + 整个窗口浮层上的额度提醒
+    expect(registered).toEqual([expect.objectContaining({ name: 'settings.section', id: 'dsh-model' }), expect.objectContaining({ name: 'shell.overlay', id: 'dsh-model-quota' })])
     expect(mod!.__test.pct(0.987)).toBe('99%')
     expect(mod!.__test.until(new Date(Date.now() + 3 * 3600_000 + 5 * 60_000).toISOString())).toMatch(/^3 小时 5 分后重置$/)
   })
