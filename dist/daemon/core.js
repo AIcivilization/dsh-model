@@ -474,7 +474,8 @@ export class Daemon {
     async usage(refresh = false) {
         if (refresh)
             await this.refreshUsage();
-        return [...this.usageCache.values()];
+        // 带上来源名：dsh 里的额度提醒直接显示
+        return [...this.usageCache.values()].map((u) => ({ ...u, ...(findSource(u.source) ? { label: findSource(u.source).label } : {}) }));
     }
     // —— 登录会话 ——
     session(id) {

@@ -766,6 +766,55 @@ window.__ModuleLoader__.load({
         state && state !== 'restarting' ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, state) : null)
     }
 
+    // —— 额度提醒（dsh 任何页面的右下角）——
+    /** 额度快用完的来源：积分剩 10% 以下，或某个窗口用了 90% 以上 */
+    function lowQuota(list) {
+      const out = []
+      for (const u of list || []) {
+        if (u.error || u.noAccess) continue
+        const label = u.label || u.source
+        const c = u.credits
+        if (c && !c.unlimited && c.total > 0 && c.remaining / c.total <= 0.1) {
+          const pct = Math.max(0, Math.round((c.remaining / c.total) * 100))
+          out.push({ key: `${u.source}:credits:${pct <= 0 ? 0 : 10}`, text: L(`${label} 积分只剩 ${pct}%（${c.remaining.toLocaleString()} / ${c.total.toLocaleString()}）`, `${label} credits are down to ${pct}% (${c.remaining.toLocaleString()} / ${c.total.toLocaleString()})`) })
+        }
+        for (const w of u.windows || []) {
+          if (w.usedPercent != null && w.usedPercent >= 90) {
+            out.push({ key: `${u.source}:${w.id}:${w.usedPercent >= 100 ? 100 : 90}`, text: L(`${label} 的 ${w.label} 额度已用 ${Math.round(w.usedPercent)}%${w.resetAt ? `，${until(w.resetAt)}` : ''}`, `${label} ${w.label} quota is ${Math.round(w.usedPercent)}% used${w.resetAt ? `, ${until(w.resetAt)}` : ''}`) })
+          }
+        }
+      }
+      return out
+    }
+    const DISMISS_KEY = 'dsh-model.quotaDismissed'
+    const readDismissed = () => {
+      try { return JSON.parse(window.localStorage.getItem(DISMISS_KEY) || '{}') } catch { return {} }
+    }
+    function QuotaNotice() {
+      const [alerts, setAlerts] = useState([])
+      const [dismissed, setDismissed] = useState(readDismissed)
+      useEffect(() => {
+        let stop = false
+        const tick = () => api('GET', '/usage').then((u) => { if (!stop) setAlerts(lowQuota(u)) }, () => {})
+        void tick()
+        const t = setInterval(tick, 5 * 60 * 1000)
+        return () => { stop = true; clearInterval(t) }
+      }, [])
+      const now = Date.now()
+      const shown = alerts.filter((a) => !(dismissed[a.key] && now - dismissed[a.key] < 24 * 60 * 60 * 1000))
+      if (!shown.length) return null
+      const dismiss = () => {
+        const next = { ...dismissed }
+        for (const a of shown) next[a.key] = Date.now()
+        setDismissed(next)
+        try { window.localStorage.setItem(DISMISS_KEY, JSON.stringify(next)) } catch { /* 无痕模式：只在本次生效 */ }
+      }
+      return h('div', { role: 'status', style: { position: 'fixed', right: 16, bottom: 16, zIndex: 900, maxWidth: 360, background: C.base, color: C.text, border: `1px solid ${C.warn}`, borderRadius: 10, padding: '10px 12px', boxShadow: 'var(--dsw-elevation-soft, 0 8px 30px rgba(0,0,0,.2))', fontSize: 13 } },
+        h('div', { style: { fontWeight: 600, marginBottom: 4, color: C.warn } }, L('dsh-model：额度快用完了', 'dsh-model: quota running low')),
+        shown.map((a) => h('div', { key: a.key, style: { lineHeight: 1.6 } }, a.text)),
+        h('div', { style: { ...S.line, marginTop: 6, justifyContent: 'flex-end' } }, h('button', { type: 'button', style: S.btn, onClick: dismiss }, L('知道了', 'Got it'))))
+    }
+
     // —— 整页 ——
     function SettingsSection() {
       const [data, setData] = useState(null)
@@ -825,9 +874,15 @@ window.__ModuleLoader__.load({
       } catch (error) {
         console.warn('[dsh-model] 设置页注册失败', error)
       }
+      // 额度提醒挂在整个窗口的浮层上（不只设置页）；注册失败不影响别的
+      try {
+        ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dsh-model-quota' }, QuotaNotice))
+      } catch (error) {
+        console.warn('[dsh-model] 额度提醒注册失败', error)
+      }
     }
 
-    module.exports = { name, inject, apply, __test: { until, pct, ms } }
+    module.exports = { name, inject, apply, __test: { until, pct, ms, lowQuota } }
     return module.exports
   },
 })

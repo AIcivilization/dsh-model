@@ -497,9 +497,10 @@ export class Daemon {
     if (USAGE_UNSUPPORTED.has(id)) this.usageCache.delete(id)
   }
 
-  async usage(refresh = false): Promise<SourceUsage[]> {
+  async usage(refresh = false): Promise<(SourceUsage & { label?: string })[]> {
     if (refresh) await this.refreshUsage()
-    return [...this.usageCache.values()]
+    // 带上来源名：dsh 里的额度提醒直接显示
+    return [...this.usageCache.values()].map((u) => ({ ...u, ...(findSource(u.source) ? { label: findSource(u.source)!.label } : {}) }))
   }
 
   // —— 登录会话 ——

@@ -13,6 +13,7 @@ let handler: Handler = () => [404, {}]
 let hostInfo: unknown = { running: '1.0.0', installed: '1.0.0', restart: 'desktop' }
 let setupReplies: unknown[] = []
 let Section: React.ComponentType
+let Overlay: React.ComponentType
 let root: Root | undefined
 let container: HTMLElement
 
@@ -34,7 +35,7 @@ beforeAll(async () => {
   w.__ModuleLoader__ = {
     load({ factory }: { factory: (req: (n: string) => unknown) => { apply: (ctx: unknown) => void } }) {
       const mod = factory((n) => (n === 'react' ? React : null))
-      mod.apply({ slots: { inject: (_n: string, fn: () => void) => fn(), register: (_d: unknown, C: React.ComponentType) => (Section = C) } })
+      mod.apply({ slots: { inject: (_n: string, fn: () => void) => fn(), register: (d: { name: string }, C: React.ComponentType) => (d.name === 'shell.overlay' ? (Overlay = C) : (Section = C)) } })
     },
   }
   await import('../../plugin/client.js')
@@ -48,12 +49,12 @@ afterEach(async () => {
   container?.remove()
 })
 
-async function render(): Promise<void> {
+async function render(C: React.ComponentType = Section): Promise<void> {
   container = document.createElement('div')
   document.body.appendChild(container)
   await act(async () => {
     root = createRoot(container)
-    root.render(createElement(Section))
+    root.render(createElement(C))
   })
 }
 
@@ -193,5 +194,19 @@ describe('settings page', () => {
     expect(container.textContent).toContain('进行中…')
     await waitText('没有完成（退出码 1）', 5000)
     expect(container.textContent).toContain('✓ 完成')
+  })
+
+  it('low quota: a notice in the shell overlay, dismissed for a day with "Got it"', async () => {
+    window.localStorage.clear()
+    handler = (c) => (c.path === '/usage' ? [200, [{ source: 'workbuddy-ai', label: 'WorkBuddy AI', windows: [], credits: { remaining: 50, total: 670 }, fetchedAt: new Date().toISOString() }, { source: 'workbuddy', label: 'WorkBuddy', windows: [], credits: { remaining: 3000, total: 4000 }, fetchedAt: new Date().toISOString() }]] : [404, {}])
+    await render(Overlay)
+    await waitText('WorkBuddy AI 积分只剩 7%（50 / 670）')
+    expect(container.textContent).not.toContain('3,000')
+    await click('知道了')
+    expect(container.textContent).toBe('')
+    await act(async () => root?.unmount())
+    await render(Overlay)
+    await act(async () => new Promise((r) => setTimeout(r, 50)))
+    expect(container.textContent).toBe('')
   })
 })
