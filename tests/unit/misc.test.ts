@@ -91,3 +91,16 @@ describe('self-update version compare', () => {
     expect(isNewer('0.14.0', '0.14.0')).toBe(false)
   })
 })
+
+describe('same-name models: auto/ failover entries', () => {
+  it('adds auto/<name> to every source that has the model, only when two or more do', async () => {
+    const { addAutoModels } = await import('../../src/engine/compat.js')
+    const up = (name: string, label: string, models: { name: string; rate?: number }[]) => ({ name, label, baseUrl: 'http://x', apiKey: 'k', models: models.map((m) => ({ ...m, alias: `${name}/${m.name}`, dshName: `${m.name.toUpperCase()} · x${m.rate ?? 1}`, group: name, groupLabel: label })) })
+    const out = addAutoModels([up('workbuddy', 'WorkBuddy', [{ name: 'ds-flash', rate: 0.11 }, { name: 'only-here' }]), up('workbuddy-ai', 'WorkBuddy AI', [{ name: 'ds-flash', rate: 0 }])])
+    const autos = out.flatMap((u) => u.models.filter((m) => m.alias.startsWith('auto/')).map((m) => [u.name, m.alias, m.dshName, m.rate]))
+    expect(autos).toEqual([
+      ['workbuddy', 'auto/ds-flash', 'DS-FLASH · 2 个来源', 0],
+      ['workbuddy-ai', 'auto/ds-flash', 'DS-FLASH · 2 个来源', 0],
+    ])
+  })
+})

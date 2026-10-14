@@ -131,7 +131,41 @@ export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
       models: st.models.map((id) => ({ name: id, alias: `${s.id}/${id}`, displayName: `${s.label} · ${id}`, dshName: `${id} · 本地免费`, rate: 0, group: s.id, groupLabel: `${s.label}（本地）` })),
     })
   }
-  return out
+  return addAutoModels(out)
+}
+
+export const AUTO_PREFIX = 'auto'
+
+/**
+ * 同名模型自动切换（设计 §14.13）：同一个模型名出现在两个以上来源时，在每个来源里再登记一个 auto/<名字>。
+ * 引擎把同一个 alias 的几个上游当成候选，一个限流或出错就换下一个（v8.0.13 实测：一个一直 429，请求照样成功）。
+ * 订阅来源（引擎原生 OAuth）不参与：计费方式不同，混在一起会让人搞不清用的是哪家。
+ */
+export function addAutoModels(upstreams: CompatUpstream[]): CompatUpstream[] {
+  const where = new Map<string, CompatUpstream[]>()
+  for (const u of upstreams) {
+    for (const name of new Set(u.models.map((m) => m.name))) where.set(name, [...(where.get(name) ?? []), u])
+  }
+  for (const [name, ups] of where) {
+    if (ups.length < 2) continue
+    const first = ups[0]!.models.find((m) => m.name === name)!
+    const pretty = (first.dshName ?? name).split(' · ')[0]!
+    const rates = ups.map((u) => u.models.find((m) => m.name === name)?.rate).filter((r): r is number => r !== undefined)
+    const sources = ups.map((u) => u.label).join(' / ')
+    for (const u of ups) {
+      const own = u.models.find((m) => m.name === name)!
+      u.models.push({
+        ...own,
+        alias: `${AUTO_PREFIX}/${name}`,
+        displayName: `${pretty}（${sources}）`,
+        dshName: `${pretty} · ${ups.length} 个来源`,
+        ...(rates.length ? { rate: Math.min(...rates) } : {}),
+        group: AUTO_PREFIX,
+        groupLabel: '自动切换（多来源）',
+      })
+    }
+  }
+  return upstreams
 }
 
 /** 渲染成引擎 v8 的 api-keys.openai-compatibility 段 */

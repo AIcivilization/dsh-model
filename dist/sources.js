@@ -44,4 +44,4 @@ export function paymentRequired(cred) {
     return Array.isArray(cooldowns) && cooldowns.some((c) => c?.reason === 'payment_required');
 }
 /** 引擎里作为 openai-compatibility 上游的来源：模型名前缀就是来源 id（同步时据此核对引擎是否已热重载） */
-export const COMPAT_PREFIXES = SOURCES.filter((s) => s.kind !== 'engine').map((s) => `${s.variant ?? s.id}/`);
+export const COMPAT_PREFIXES = [...SOURCES.filter((s) => s.kind !== 'engine').map((s) => `${s.variant ?? s.id}/`), 'auto/'];
