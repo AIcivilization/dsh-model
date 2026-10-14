@@ -559,18 +559,29 @@ window.__ModuleLoader__.load({
       const [res, setRes] = useState(null)
       const notInstalled = code === 'daemon_not_configured'
       const action = notInstalled ? 'setup' : 'repair'
+      const setupCall = async (body, retried) => {
+        const r = await fetch('/api-dsh-model/setup', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json', 'x-dsh-model-token': token },
+          body: JSON.stringify(body),
+        })
+        const j = await r.json().catch(() => ({}))
+        if (r.status === 403 && !retried && j?.error?.code === 'refused') { await refreshToken(); return setupCall(body, true) }
+        return j
+      }
       const run = async () => {
         setBusy(true)
         setRes(null)
         try {
-          const r = await fetch('/api-dsh-model/setup', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'content-type': 'application/json', 'x-dsh-model-token': token },
-            body: JSON.stringify({ action, lang: isZh() ? 'zh' : 'en' }),
-          })
-          const j = await r.json().catch(() => ({}))
-          if (r.status === 403 && j?.error?.code === 'refused') { await refreshToken(); setBusy(false); return run() }
+          let j = await setupCall({ action, lang: isZh() ? 'zh' : 'en' })
+          if (j.vps) { setRes(j); return }
+          // 每秒取一次新输出，一行一行显示出来
+          while (j.running) {
+            setRes({ ...j, code: null })
+            await new Promise((r) => setTimeout(r, 1000))
+            j = await setupCall({ poll: true })
+          }
           setRes(j)
           if (j.code === 0) setTimeout(onDone, 1500)
         } catch (e) {
@@ -598,7 +609,7 @@ window.__ModuleLoader__.load({
             h('p', { style: { ...S.note, marginTop: 10 } }, L('也可以在终端里执行：', 'Or run in a terminal:')),
             cmdBlock(cmds)),
           res && !res.vps ? h('div', { style: { marginTop: 12 } },
-            h('div', { style: { fontSize: 12, color: res.code === 0 ? C.ok : C.err, marginBottom: 6 } }, res.code === 0 ? L('完成，正在加载…', 'Done, loading…') : L(`没有完成（退出码 ${res.code}），输出如下：`, `Did not finish (exit code ${res.code}); output:`)),
+            h('div', { style: { fontSize: 12, color: res.code === null ? C.sub : res.code === 0 ? C.ok : C.err, marginBottom: 6 } }, res.code === null ? L('进行中…', 'Working…') : res.code === 0 ? L('完成，正在加载…', 'Done, loading…') : L(`没有完成（退出码 ${res.code}），输出如下：`, `Did not finish (exit code ${res.code}); output:`)),
             h('pre', { style: { ...S.mono, ...S.card, padding: 10, maxHeight: 260, overflow: 'auto', whiteSpace: 'pre-wrap', margin: 0 } }, res.output || '')) : null))
     }
 

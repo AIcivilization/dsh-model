@@ -11,6 +11,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 type Handler = (call: { method: string; path: string; body?: unknown }) => [number, unknown]
 let handler: Handler = () => [404, {}]
 let hostInfo: unknown = { running: '1.0.0', installed: '1.0.0', restart: 'desktop' }
+let setupReplies: unknown[] = []
 let Section: React.ComponentType
 let root: Root | undefined
 let container: HTMLElement
@@ -25,6 +26,7 @@ beforeAll(async () => {
   w.fetch = async (url: string, opts: { body: string }) => {
     if (url === '/api-dsh-model/token') return reply(200, { token: 't' })
     if (url === '/api-dsh-model/host') return reply(200, hostInfo)
+    if (url === '/api-dsh-model/setup') return reply(200, setupReplies.length > 1 ? setupReplies.shift() : setupReplies[0])
     const [status, body] = handler(JSON.parse(opts.body))
     return reply(status, body)
   }
@@ -175,5 +177,21 @@ describe('settings page', () => {
     const btn = [...container.querySelectorAll('button')].find((b) => b.textContent === '测一下')!
     await act(async () => btn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await waitText('可用 · 1.2 秒 · 好')
+  })
+
+  it('one-click set-up shows progress while it runs', async () => {
+    handler = () => [503, { error: { code: 'daemon_not_configured', message: 'not configured' } }]
+    setupReplies = [
+      { running: true, output: '统一端点（引擎）\n下载引擎…', code: null },
+      { running: true, output: '统一端点（引擎）\n下载引擎…\n✓ 引擎已在 127.0.0.1:8317 运行', code: null },
+      { running: false, output: '统一端点（引擎）\n下载引擎…\n✓ 引擎已在 127.0.0.1:8317 运行\n✓ 完成', code: 1 },
+    ]
+    await render()
+    await waitText('一键安装')
+    await click('一键安装')
+    await waitText('下载引擎…')
+    expect(container.textContent).toContain('进行中…')
+    await waitText('没有完成（退出码 1）', 5000)
+    expect(container.textContent).toContain('✓ 完成')
   })
 })

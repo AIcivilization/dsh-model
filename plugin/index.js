@@ -126,25 +126,26 @@ function check(req, token, needToken = true) {
 const exists = (p) => access(p).then(() => true, () => false)
 
 /** 从页面一键执行 setup / repair（只在本机模式：VPS 上要 root，页面只给命令）。同一时间只跑一个 */
-let running = null
-function runCli(args) {
-  if (running) return running
-  running = new Promise((resolve) => {
-    let out = ''
-    const child = spawn(process.execPath, [join(PKG_ROOT, 'bin/dsh-model.js'), ...args], {
-      windowsHide: true,
-      // dsh 桌面版可能跑在 Electron 里：让它当普通 Node 用
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', FORCE_COLOR: '0' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    const add = (b) => { out = (out + b.toString()).slice(-20000) }
-    child.stdout.on('data', add)
-    child.stderr.on('data', add)
-    const timer = setTimeout(() => child.kill('SIGTERM'), 10 * 60 * 1000)
-    child.on('error', (e) => { clearTimeout(timer); resolve({ code: -1, output: `${out}\n${e.message}` }) })
-    child.on('exit', (code) => { clearTimeout(timer); resolve({ code: code ?? -1, output: out.replace(/\x1b\[[0-9;]*m/g, '') }) })
-  }).finally(() => { running = null })
-  return running
+/** 一键安装 / 修复的进度：页面每秒来取一次新输出 */
+let job = null
+function startCli(action, args) {
+  if (job && job.running) return job
+  job = { action, running: true, output: '', code: null, startedAt: Date.now() }
+  const current = job
+  const child = spawn(process.execPath, [join(PKG_ROOT, 'bin/dsh-model.js'), ...args], {
+    windowsHide: true,
+    // dsh 桌面版可能跑在 Electron 里：让它当普通 Node 用
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', FORCE_COLOR: '0' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const add = (b) => { current.output = (current.output + b.toString().replace(/\x1b\[[0-9;]*m/g, '')).slice(-20000) }
+  child.stdout.on('data', add)
+  child.stderr.on('data', add)
+  const timer = setTimeout(() => child.kill('SIGTERM'), 10 * 60 * 1000)
+  const done = (code) => { clearTimeout(timer); current.running = false; current.code = code }
+  child.on('error', (e) => { add(`\n${e.message}`); done(-1) })
+  child.on('exit', (code) => done(code ?? -1))
+  return job
 }
 
 export function apply(ctx) {
@@ -235,10 +236,12 @@ export function apply(ctx) {
             return json(res, 400, { error: { code: 'invalid_json', message: 'invalid JSON' } })
           }
           if (await exists(VPS_ROOT)) return json(res, 200, { vps: true })
+          // { poll: true }：只取进度；否则开始（已经在跑就接着看同一个）
+          if (body.poll) return json(res, 200, job ? { running: job.running, output: job.output, code: job.code, action: job.action } : { running: false, output: '', code: null })
           const action = body.action === 'repair' ? 'repair' : 'setup'
           const lang = body.lang === 'en' ? 'en' : 'zh'
-          const r = await runCli(action === 'repair' ? ['repair', '--lang', lang] : ['setup', '--skip-dsh-plugin', '--lang', lang])
-          return json(res, 200, r)
+          const j = startCli(action, action === 'repair' ? ['repair', '--lang', lang] : ['setup', '--skip-dsh-plugin', '--lang', lang])
+          return json(res, 200, { running: j.running, output: j.output, code: j.code, action: j.action })
         },
       }),
     )
