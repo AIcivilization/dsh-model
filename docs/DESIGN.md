@@ -560,3 +560,13 @@ Gemini（Google AI Studio 的 OpenAI 兼容接口 `…/v1beta/openai`）、Groq�
 - **插件更新了但 dsh 没重启**：宿主报告"加载时的版本"和"磁盘上的版本"，两者不一致时页面顶部提示。dsh-vps 上可以一键重启，由 root 的 dsh-model-admin 执行 `systemctl restart dsh-gate`；桌面版提示完全退出再打开（页面上不强行结束桌面 App）。
 - **一键安装 / 修复**：输出每秒刷新一次，一行一行显示。
 - **额度快用完**：挂在整个窗口的浮层（`shell.overlay`）上，在 dsh 任何页面都能看到。积分剩 10% 以下，或某个窗口用了 90% 以上时提醒；点「知道了」后 24 小时内不再提醒。
+
+### 14.15 每日签到
+
+国产 IDE 每天签到送积分。第一批做 WorkBuddy 国内版（国际版没有签到）和 Qoder；Trae 新版、WPS 灵犀之后加；妙手、千问办公没有签到。
+
+- **WorkBuddy 国内版**：用 bridge 已有的登录，`POST {billing}/v2/billing/meter/daily-checkin`，返回里有"已签到"就算今天已签过（接口照 corrinehu/dsh-buddy-checkin，MIT）。VPS 上也能签。2026-10-14 在 VPS 上实测通过。
+- **Qoder**：用户粘贴个人访问令牌（存 `secrets.json`），流程是 `jobToken/exchange` → `me/campaigns` 找当天的 `CLAIM_BENEFIT` → `claim`。领取是幂等的（照 G57651/dsh-dual-checkin，MIT）。
+- **「今天」按北京时间**：VPS 的系统时间是 UTC。
+- **自动签到默认打开**：守护进程每 15 分钟看一次；每天在零点后随机延后 5–55 分钟签；失败的隔一小时再试；电脑关机错过了，开机后一分钟内补签。
+- **结果存** `checkin.json`。页面顶部的卡片只显示一行"今日已完成签到：…"，没签完的可以一键签到；签完在 dsh 右下角提示一次。命令行用 `dsh-model checkin`。
