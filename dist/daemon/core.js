@@ -18,6 +18,7 @@ import { spawnDetached } from '../util/detach.js';
 import { classify, recentFailures } from './failures.js';
 import { autoDue, beijingNow, checkinAdvice, ensureJitter, loadCheckin, runCheckin, setAuto, todayResults } from '../checkin/index.js';
 import { QODER_REGIONS, exchangePat, qoderCheckin } from '../checkin/qoder.js';
+import { findTraeCredential, traeCheckin } from '../checkin/trae.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
 import { randomBytes } from 'node:crypto';
 import { currentBinary } from '../engine/install.js';
@@ -725,6 +726,10 @@ export class Daemon {
         const q = (await loadSecrets(this.ctx)).checkin?.qoder;
         if (q?.pat)
             out.push({ id: 'qoder', label: QODER_REGIONS[q.region].label, run: () => qoderCheckin(q.pat, q.region) });
+        // Trae：本机装了并登录过 Trae 才有（读它自己的登录信息，不需要另外设置；VPS 上一般没有）
+        const trae = await findTraeCredential().catch(() => null);
+        if (trae)
+            out.push({ id: 'trae', label: 'Trae', run: async () => traeCheckin((await findTraeCredential()) ?? trae) });
         return out;
     }
     async checkinStatus() {

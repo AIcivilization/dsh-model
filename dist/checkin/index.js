@@ -1,4 +1,4 @@
-// checkin/index.ts — 每日签到（设计 §14.15）：WorkBuddy 国内版、Qoder；以后加 Trae、WPS 灵犀
+// checkin/index.ts — 每日签到（设计 §14.15）：WorkBuddy 国内版、Qoder、Trae；以后加 WPS 灵犀
 //
 // 「今天」按北京时间算：这几家都在北京时间零点换天（VPS 的系统时间是 UTC）。
 // 自动签到默认打开：守护进程每 15 分钟看一眼，过了当天随机的几分钟后签一次；失败的隔一小时再试；错过了下次开机补。
@@ -22,6 +22,8 @@ export function todayResults(file, now = new Date()) {
 /** 失败原因 → 该怎么办 */
 export function checkinAdvice(id, message) {
     if (/无效|过期|401|403|unauthor|expired/i.test(message)) {
+        if (id === 'trae')
+            return L('Trae 登录过期：打开 Trae 重新登录一次', 'Trae sign-in expired: open Trae and sign in again');
         return id === 'qoder' ? L('Qoder 个人访问令牌失效：在签到卡片里重新填一个', 'The Qoder access token no longer works: enter a new one in the check-in card') : L('WorkBuddy 登录过期：在来源里重新登录 WorkBuddy', 'WorkBuddy sign-in expired: sign in to WorkBuddy again under Sources');
     }
     if (/timeout|timed out|fetch failed|network|ECONN/i.test(message))

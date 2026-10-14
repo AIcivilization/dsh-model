@@ -563,9 +563,10 @@ Gemini（Google AI Studio 的 OpenAI 兼容接口 `…/v1beta/openai`）、Groq�
 
 ### 14.15 每日签到
 
-国产 IDE 每天签到送积分。第一批做 WorkBuddy 国内版（国际版没有签到）和 Qoder；Trae 新版、WPS 灵犀之后加；妙手、千问办公没有签到。
+国产 IDE 每天签到送积分：WorkBuddy 国内版（国际版没有签到）、Qoder、Trae；WPS 灵犀之后加；妙手、千问办公没有签到。
 
 - **WorkBuddy 国内版**：用 bridge 已有的登录，`POST {billing}/v2/billing/meter/daily-checkin`，返回里有"已签到"就算今天已签过（接口照 corrinehu/dsh-buddy-checkin，MIT）。VPS 上也能签。2026-10-14 在 VPS 上实测通过。
+- **Trae**：读本机 Trae 桌面版的登录（`storage.json` 里加密的 `iCubeAuthInfo://icube.cloudide`，按公开算法解密；退而用 CLI 的 `~/.trae-cn/trae-jwt-token`），只在内存里用，不落盘。先查 `checkin_credits/status`，没签再 `claim`（照 G57651/dsh-dual-checkin，MIT）。2026-10-14 在 Trae CN 3.4.2 上核对过：存储位置和格式没变，每天送 200 积分。只有装了 Trae 的电脑上才出现。读取并解密另一个应用存的登录信息，经用户明确同意（2026-10-14）。
 - **Qoder**：用户粘贴个人访问令牌（存 `secrets.json`），流程是 `jobToken/exchange` → `me/campaigns` 找当天的 `CLAIM_BENEFIT` → `claim`。领取是幂等的（照 G57651/dsh-dual-checkin，MIT）。
 - **「今天」按北京时间**：VPS 的系统时间是 UTC。
 - **自动签到默认打开**：守护进程每 15 分钟看一次；每天在零点后随机延后 5–55 分钟签；失败的隔一小时再试；电脑关机错过了，开机后一分钟内补签。
