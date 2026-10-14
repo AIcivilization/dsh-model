@@ -504,6 +504,25 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', style: S.btnPrimary, disabled: !name.trim(), onClick: add }, L('新增 key', 'Add key'))))
     }
 
+    /** 最近 24 小时失败的请求：哪个模型、为什么、该怎么办（只有出过错才显示） */
+    function FailuresCard({ failures }) {
+      const [all, setAll] = useState(false)
+      if (!failures || !failures.length) return null
+      const color = (k) => (k === 'rate' || k === 'upstream' ? C.warn : C.err)
+      const shown = all ? failures : failures.slice(0, 5)
+      return h('div', { style: S.section },
+        h('div', { style: S.h }, L(`最近失败（24 小时内 ${failures.length} 次）`, `Recent failures (${failures.length} in 24 hours)`)),
+        h('p', { style: S.note }, L('经统一端点失败的请求。只记录模型和报错，不记录对话内容。', 'Requests that failed through the endpoint. Only the model and the error are kept, never the conversation.')),
+        h('div', { style: S.card }, shown.map((f, i) => h('div', { key: `${f.at}-${i}`, style: i ? S.row : S.rowFirst },
+          h('div', { style: S.line },
+            h('span', { style: { ...S.label, ...S.mono, ...S.grow, fontSize: 13 } }, f.model || L('（未知模型）', '(unknown model)')),
+            h('span', { style: { fontSize: 12, color: color(f.kind) } }, `HTTP ${f.status}`),
+            h('span', { style: S.meta }, ago(f.at))),
+          h('div', { style: { fontSize: 13, color: color(f.kind), marginTop: 2 } }, f.advice),
+          f.message ? h('div', { style: { ...S.meta, ...S.mono, marginTop: 2, wordBreak: 'break-all' } }, f.message) : null))),
+        failures.length > 5 ? h('button', { type: 'button', style: { ...S.btn, marginTop: 8 }, onClick: () => setAll(!all) }, all ? L('收起', 'Show less') : L(`全部 ${failures.length} 条`, `All ${failures.length}`)) : null)
+    }
+
     function ModelsCard({ stats }) {
       const rows = Object.entries(stats?.byModel || {}).sort((a, b) => b[1].d1.requests - a[1].d1.requests).slice(0, 30)
       if (!rows.length) return null
@@ -743,8 +762,8 @@ window.__ModuleLoader__.load({
       const alive = useRef(true)
       const load = useCallback(async (refresh) => {
         try {
-          const [sources, keys, stats, endpoints] = await Promise.all([api('GET', refresh ? '/sources?refresh=1' : '/sources'), api('GET', '/keys'), api('GET', '/stats'), api('GET', '/endpoints').catch(() => null)])
-          if (alive.current) { setData({ sources, keys, stats, endpoints }); setErr(''); setErrCode('') }
+          const [sources, keys, stats, endpoints, failures] = await Promise.all([api('GET', refresh ? '/sources?refresh=1' : '/sources'), api('GET', '/keys'), api('GET', '/stats'), api('GET', '/endpoints').catch(() => null), api('GET', '/failures').catch(() => null)])
+          if (alive.current) { setData({ sources, keys, stats, endpoints, failures }); setErr(''); setErrCode('') }
         } catch (e) {
           if (alive.current) { setErr(e.hint ? `${e.message}（${e.hint}）` : e.message); setErrCode(e.code || '') }
         }
@@ -764,6 +783,7 @@ window.__ModuleLoader__.load({
         err ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 12 } }, err) : null,
         h(EndpointCard, { endpoints: data.endpoints }),
         h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: (s) => setKeyDialog(s || true) }),
+        h(FailuresCard, { failures: data.failures }),
         h(KeysCard, { keys: data.keys, reload: () => load(false) }),
         h(ModelsCard, { stats: data.stats }),
         h(AboutCard, { onJob: setSelfJob }),

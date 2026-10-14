@@ -61,6 +61,7 @@ const ALLOWED = [
   ['POST', /^\/keys\/[A-Za-z0-9._-]{1,40}\/reveal$/],
   ['GET', /^\/endpoints$/],
   ['GET', /^\/self$/],
+  ['GET', /^\/failures$/],
   ['POST', /^\/self\/(update|uninstall)$/],
   ['GET', /^\/sources\/[a-z-]{2,20}\/models$/],
   ['POST', /^\/sources\/[a-z-]{2,20}\/models$/],

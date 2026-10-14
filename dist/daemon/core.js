@@ -15,6 +15,7 @@ import { atomicWrite } from '../util/fs.js';
 import { lang } from '../i18n.js';
 import { which } from '../util/exec.js';
 import { spawnDetached } from '../util/detach.js';
+import { recentFailures } from './failures.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
 import { randomBytes } from 'node:crypto';
 import { currentBinary } from '../engine/install.js';
@@ -906,6 +907,8 @@ export class Daemon {
                 return ok(await this.endpoints());
             if (method === 'GET' && path === '/self')
                 return ok(await this.selfInfo());
+            if (method === 'GET' && path === '/failures')
+                return ok(await recentFailures(this.ctx.paths.logs));
             if (method === 'POST' && path === '/self/update')
                 return ok(await this.startSelfJob('update'));
             if (method === 'POST' && path === '/self/uninstall')

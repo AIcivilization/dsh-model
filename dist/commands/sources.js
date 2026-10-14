@@ -194,3 +194,22 @@ export async function stats(ctx) {
         info(dim(L('还没有请求记录', 'No requests recorded yet')));
     return 0;
 }
+/** dsh-model failures：最近 24 小时失败的请求和建议 */
+export async function failures(ctx) {
+    const list = await control(ctx, 'GET', '/failures');
+    if (isJsonMode()) {
+        printJson(list);
+        return 0;
+    }
+    if (!list.length) {
+        ok(L('最近 24 小时没有失败的请求', 'No failed requests in the last 24 hours'));
+        return 0;
+    }
+    for (const f of list) {
+        info(`${dim(f.at.replace('T', ' ').slice(0, 19))}  ${bold(f.model || '-')}  HTTP ${f.status}`);
+        info(`  ${f.kind === 'rate' || f.kind === 'upstream' ? yellow(f.advice) : red(f.advice)}`);
+        if (f.message)
+            info(dim(`  ${f.message}`));
+    }
+    return 0;
+}

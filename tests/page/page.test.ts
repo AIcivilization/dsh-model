@@ -157,4 +157,12 @@ describe('settings page', () => {
     await waitText('WorkBuddy')
     expect(container.textContent).not.toContain('已更新到')
   })
+
+  it('shows recent failures with advice', async () => {
+    handler = normal((c) => (c.path === '/failures' ? [200, [{ at: new Date().toISOString(), model: 'workbuddy-ai/deepseek-v4.1-flash', source: 'workbuddy-ai', status: 429, code: 'model_cooldown', message: '请求过于频繁，请稍后重试。', kind: 'rate', advice: '被限流：请求太频繁' }]] : [404, {}]))
+    await render()
+    await waitText('最近失败（24 小时内 1 次）')
+    expect(container.textContent).toContain('被限流：请求太频繁')
+    expect(container.textContent).toContain('workbuddy-ai/deepseek-v4.1-flash')
+  })
 })
