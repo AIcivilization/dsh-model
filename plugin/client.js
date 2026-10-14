@@ -815,6 +815,40 @@ window.__ModuleLoader__.load({
         h('div', { style: { ...S.line, marginTop: 6, justifyContent: 'flex-end' } }, h('button', { type: 'button', style: S.btn, onClick: dismiss }, L('知道了', 'Got it'))))
     }
 
+    // —— 首次使用向导 ——
+    const GUIDE_KEY = 'dsh-model.guideDone'
+    const readGuideDone = () => {
+      try { return window.localStorage.getItem(GUIDE_KEY) === '1' } catch { return false }
+    }
+    /** 刚装好、接入的来源少于两个时显示：先接一个免费来源 → 模型已经挑好 → 去 dsh 里用 */
+    function Guide({ sources, onConnect }) {
+      const [done, setDone] = useState(readGuideDone)
+      const connected = sources.filter((s) => s.loggedIn && s.enabled)
+      if (done || connected.length >= 2) return null
+      const free = sources.filter((s) => !s.risky && !(s.loggedIn && s.enabled) && s.pricing && s.pricing.tier !== 'paid')
+      const hide = () => {
+        setDone(true)
+        try { window.localStorage.setItem(GUIDE_KEY, '1') } catch { /* 无痕模式：只在本次生效 */ }
+      }
+      const step = (n, title, body) => h('div', { style: { display: 'flex', gap: 10, marginTop: n > 1 ? 12 : 0 } },
+        h('div', { style: { width: 22, height: 22, borderRadius: 11, background: C.accent, color: C.accentFg, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' } }, String(n)),
+        h('div', { style: S.grow }, h('div', { style: { ...S.label, marginBottom: 2 } }, title), body))
+      return h('div', { style: { ...S.section } },
+        h('div', { style: { ...S.card, padding: 14, borderColor: C.accent } },
+          h('div', { style: { ...S.line, marginBottom: 10 } },
+            h('div', { style: { ...S.h, ...S.grow, margin: 0 } }, L('开始使用', 'Getting started')),
+            h('button', { type: 'button', style: S.btn, onClick: hide }, L('我知道了，不再显示', 'Got it, hide this'))),
+          step(1, L('接入一个免费来源', 'Connect a free source'),
+            h('div', null,
+              h('div', { style: S.meta }, L('先接一个就能用。标「免费·额度少」的要先去对方网站拿一把免费 key。', 'One is enough to start. "Free · limited" ones need a free key from their website first.')),
+              h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 } },
+                free.slice(0, 8).map((s) => h('button', { key: s.id, type: 'button', style: S.btn, onClick: () => onConnect(s) }, `${s.label}${s.pricing.tier === 'free' ? L(' · 免费', ' · free') : ''}`))))),
+          step(2, L('模型已经替你挑好', 'Models are picked for you'),
+            h('div', { style: S.meta }, L('每个来源默认挑 5 个放进 dsh（免费的优先）。想换就在下面「来源」里点「选模型」。', 'Each source puts 5 suggested models into dsh (free ones first). Change them with "Models" under Sources below.'))),
+          step(3, L('去用', 'Use it'),
+            h('div', { style: S.meta }, L('在 dsh 的模型列表里，选来源分组下的任意模型就能开始对话。其他软件用下面的「访问地址」和 API key。', 'In dsh\'s model list, pick any model under a source group. Other tools use the endpoint and an API key below.')))))
+    }
+
     // —— 整页 ——
     function SettingsSection() {
       const [data, setData] = useState(null)
@@ -851,8 +885,24 @@ window.__ModuleLoader__.load({
       if (selfJob) return h(SelfProgress, { job: selfJob, onDone: () => { setSelfJob(null); void load(true) } })
       if (errCode === 'daemon_not_configured' || errCode === 'daemon_unreachable') return h('div', null, banner, h(Onboarding, { code: errCode, onDone: () => void load(true) }))
       if (!data) return h('div', { style: { fontSize: 13, color: err ? C.err : C.sub, padding: '8px 0' } }, err || L('加载中…', 'Loading…'))
+      // 向导里的「接入」：和来源开关打开时一样（要 key 的弹 key，要登录的弹登录）
+      const connect = async (s) => {
+        if ((s.kind === 'opencode' || s.kind === 'apikey') && !s.loggedIn) { setKeyDialog(s); return }
+        try {
+          let r = await api('POST', `/sources/${s.id}/enable`, {})
+          if (r.riskNotice) {
+            if (!window.confirm(r.riskNotice)) return
+            r = await api('POST', `/sources/${s.id}/enable`, { acceptRisk: true })
+          }
+          if (r.login) setLogin({ source: s, session: r.login })
+          await load(false)
+        } catch (e) {
+          setErr(`${s.label}：${e.message}${e.hint ? `（${e.hint}）` : ''}`)
+        }
+      }
       return h('div', { style: { color: C.text, maxWidth: 820 } },
         banner,
+        h(Guide, { sources: data.sources, onConnect: (s) => void connect(s) }),
         err ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 12 } }, err) : null,
         h(EndpointCard, { endpoints: data.endpoints }),
         h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: (s) => setKeyDialog(s || true) }),

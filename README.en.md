@@ -52,12 +52,14 @@ On a dsh-vps server, use `sudo dsh-model setup`. On Windows, run it in a normal 
 |---|---|
 | **Endpoint** | Local and public addresses, each with a Copy button |
 | **Sources** | One switch per provider: on connects (and signs in if needed), off pauses and keeps the sign-in. Each row is tagged Free / Free · limited / Paid and shows plan usage or remaining credits |
-| **Models** | Pick which models of each source appear in dsh (5 suggested per source by default); the rest stay available through the endpoint |
+| **Models** | Pick which models of each source appear in dsh (5 suggested per source by default); the rest stay available through the endpoint; a "Test" button per model |
+| **Auto switch** | When a model is offered by several sources, dsh gets an "Auto switch (multiple sources)" group that moves to another source when one is rate-limited or failing |
+| **Recent failures** | Failed requests in the last 24 hours: which model, why, and what to do (no conversation content kept) |
 | **API keys** | OpenAI-style, one per device. Requests, success rate, latency and speed over 24 hours; copy, rotate, revoke |
 | **Model stats** | Success rate, latency and speed per model |
 | **About** | Current and latest npm version; one-click Update and Uninstall (on a VPS these need root, so the commands are shown instead) |
 
-If the service is not set up on this machine yet, the page says what is missing and offers a "Set up now" button, so you can also start by installing dsh-model from the dsh plugin marketplace and finish from this page.
+If the service is not set up on this machine yet, the page says what is missing and offers a "Set up now" button with live progress. A "Getting started" guide appears on a fresh install; a banner shows when the plugin was updated but dsh not restarted (one-click restart on dsh-vps); a low-quota notice appears in the corner of any dsh page. so you can also start by installing dsh-model from the dsh plugin marketplace and finish from this page.
 
 dsh-model does every sign-in itself. No provider CLI is installed and the server needs no browser:
 
@@ -96,6 +98,7 @@ dsh-model only connects; it provides no quota of its own.
 | `sources` | Sources: switch, cost, sign-in state, usage |
 | `source enable\|disable\|logout <source>` | Turn on (signing in if needed) / off / sign out |
 | `key list\|add\|revoke\|rotate <name>` | Access keys, one per device |
+| `failures` | Failed requests in the last 24 hours, with advice |
 | `stats` | Success rate, latency and speed by key, source and model |
 | `status` / `doctor [--e2e]` | Overview / health checks |
 | `models [sync]` | List models / sync them to dsh |
