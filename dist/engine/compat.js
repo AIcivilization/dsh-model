@@ -7,6 +7,7 @@ import { bridgeConfigPath, loadCatalogs } from '../bridge/runtime.js';
 import { loadSecrets } from '../secrets.js';
 import { readJson } from '../util/fs.js';
 import { LOCAL_SERVERS, loadLocalCatalog } from '../integrations/local.js';
+import { keyProvider, loadKeyCatalog } from '../integrations/apikeys.js';
 export const OPENCODE_BASE = 'https://opencode.ai/zen/v1';
 export const OPENCODE_PREFIX = 'opencode';
 export function opencodeModelsPath(ctx) {
@@ -67,6 +68,21 @@ export async function loadCompatUpstreams(ctx) {
                 })(),
             });
         }
+    }
+    // 自带 API key 的来源：有 key、有模型、没被关掉就接进来（走出站代理，不 direct）
+    const keyCat = await loadKeyCatalog(ctx.paths.home);
+    for (const [id, s] of Object.entries(secrets.apikeys ?? {})) {
+        const p = keyProvider(id);
+        const models = keyCat[id]?.models ?? [];
+        if (!p || !models.length || disabled.has(id))
+            continue;
+        out.push({
+            name: id,
+            label: p.label,
+            baseUrl: s.base ?? p.base,
+            apiKey: s.key,
+            models: models.map((m) => ({ name: m.id, alias: `${id}/${m.id}`, displayName: `${p.label} · ${m.id}`, dshName: m.free ? `${m.id} · Free` : m.id, ...(m.free ? { rate: 0 } : {}), group: id, groupLabel: p.label })),
+        });
     }
     // 本机模型服务（Ollama、LM Studio）：在运行、有模型、没被关掉就接进来
     const local = await loadLocalCatalog(ctx.paths.home);

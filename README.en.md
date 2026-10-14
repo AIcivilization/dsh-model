@@ -74,6 +74,10 @@ If a source is signed in but has no usable plan (say, a Kimi account without Kim
 |---|---|---|
 | WorkBuddy / WorkBuddy AI | Free | Credits come with the account |
 | Ollama / LM Studio | Free | Models running on this machine; they appear once installed and started, no sign-in |
+| Gemini (Google AI Studio), Groq | Free · limited | Paste a free API key; daily / per-minute limits apply |
+| OpenRouter | Free · limited | `:free` models are free (about 50 requests a day) |
+| SiliconFlow | Free · limited | Some small models are free after identity verification |
+| DeepSeek official, any OpenAI-compatible service | Paid | Paste an API key (and a URL for other services) |
 | Codex | Paid | ChatGPT Plus / Pro |
 | Kimi | Paid | Kimi Code plan |
 | Grok | Paid | SuperGrok / X Premium+ |

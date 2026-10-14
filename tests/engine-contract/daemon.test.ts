@@ -2,6 +2,7 @@
 // 来源列表、引擎 device 登录会话（拿链接与码后取消）、key 热生效、用量记录被统计到正确的 key 与来源。
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { createServer } from 'node:http'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -89,7 +90,7 @@ describe('daemon core against a real engine', () => {
 
   it('lists every source; engine sources start signed out', async () => {
     const list = await daemon.sources()
-    expect(list.map((s) => s.id)).toEqual(['workbuddy', 'workbuddy-ai', 'codex', 'claude', 'kimi', 'xai', 'meta', 'antigravity', 'devin', 'ollama', 'lmstudio', 'opencode'])
+    expect(list.map((s) => s.id)).toEqual(['workbuddy', 'workbuddy-ai', 'codex', 'claude', 'kimi', 'xai', 'meta', 'antigravity', 'devin', 'ollama', 'lmstudio', 'gemini', 'groq', 'openrouter', 'siliconflow', 'deepseek', 'custom', 'opencode'])
     expect(list.find((s) => s.id === 'kimi')).toMatchObject({ loggedIn: false, enabled: false })
     expect(list.find((s) => s.id === 'workbuddy')).toMatchObject({ loggedIn: true, enabled: true, models: 1 })
   })
@@ -123,15 +124,57 @@ describe('daemon core against a real engine', () => {
     expect(okNow).toBe(true)
   }, 30_000)
 
+  it('a custom OpenAI-compatible service: a wrong key is refused; the right one serves its models through the engine', async () => {
+    const fport = await findFreePort(20800 + Math.floor(Math.random() * 100))
+    const fake = createServer((req, res) => {
+      if (req.headers.authorization !== 'Bearer sk-test-12345678') {
+        res.writeHead(401, { 'content-type': 'application/json' }).end('{"error":{"message":"bad key"}}')
+        return
+      }
+      if (req.url === '/v1/models') {
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: 'fake-1', object: 'model' }] }))
+        return
+      }
+      req.resume()
+      req.on('end', () => res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ id: 'x', object: 'chat.completion', created: 1, model: 'fake-1', choices: [{ index: 0, message: { role: 'assistant', content: 'pong' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })))
+    })
+    await new Promise<void>((r) => fake.listen(fport, '127.0.0.1', () => r()))
+    try {
+      await expect(daemon.setSourceKey('custom', 'sk-wrong-12345678', `http://127.0.0.1:${fport}/v1`)).rejects.toMatchObject({ code: 'key_rejected' })
+      expect(await daemon.setSourceKey('custom', 'sk-test-12345678', `http://127.0.0.1:${fport}/v1`)).toEqual({ models: 1, free: 0 })
+      let served = false
+      for (let i = 0; i < 60 && !served; i++) {
+        served = (await listModels(port, dshKey).catch(() => [])).some((m) => m.id === 'custom/fake-1')
+        if (!served) await new Promise((r) => setTimeout(r, 250))
+      }
+      expect(served).toBe(true)
+      const chat = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${dshKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'custom/fake-1', messages: [{ role: 'user', content: 'ping' }] }) })
+      expect(chat.status).toBe(200)
+      expect(((await chat.json()) as { choices: { message: { content: string } }[] }).choices[0]!.message.content).toBe('pong')
+      expect((await daemon.sources()).find((x) => x.id === 'custom')).toMatchObject({ loggedIn: true, enabled: true, models: 1 })
+      await daemon.logout('custom')
+      let gone = false
+      for (let i = 0; i < 60 && !gone; i++) {
+        gone = !(await listModels(port, dshKey).catch(() => [])).some((m) => m.id === 'custom/fake-1')
+        if (!gone) await new Promise((r) => setTimeout(r, 250))
+      }
+      expect(gone).toBe(true)
+    } finally {
+      fake.close()
+    }
+  }, 60_000)
+
   it('collects usage records per key and source', async () => {
     const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${dshKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'workbuddy/m1', messages: [{ role: 'user', content: 'x' }] }) })
     expect(res.status).toBe(200)
     let snap = daemon.statsSnapshot()
-    for (let i = 0; i < 20 && !snap.byKey.dsh; i++) {
+    for (let i = 0; i < 20 && !snap.bySource.workbuddy; i++) {
       await new Promise((r) => setTimeout(r, 500))
       snap = daemon.statsSnapshot()
     }
-    expect(snap.byKey.dsh?.d1.requests).toBe(1)
+    // 上一个测试也用 dsh 的 key 调过一次 custom/fake-1：按 key 是 2 次，按来源各 1 次
+    expect(snap.byKey.dsh?.d1.requests).toBe(2)
     expect(snap.bySource.workbuddy?.d1.requests).toBe(1)
+    expect(snap.bySource.custom?.d1.requests).toBe(1)
   }, 30_000)
 })

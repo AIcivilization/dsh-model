@@ -9,6 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { latestVersion, selfJobLog } from '../commands/self.js';
 import { LOCAL_SERVERS, loadLocalCatalog, refreshLocalCatalog } from '../integrations/local.js';
+import { loadKeyCatalog, refreshKeyCatalogs, removeApiKey, setApiKey } from '../integrations/apikeys.js';
 import { adminInstalled, adminRequestPath } from '../service/admin.js';
 import { atomicWrite } from '../util/fs.js';
 import { lang } from '../i18n.js';
@@ -119,6 +120,9 @@ export class Daemon {
     }
     async refreshCatalogs() {
         let changed = await refreshLocalCatalog(this.ctx.paths.home, this.ctx.owner).catch(() => false);
+        const proxy = (await loadAll(this.ctx).catch(() => null))?.config.proxy;
+        if (await refreshKeyCatalogs(this.ctx, proxy).catch(() => false))
+            changed = true;
         for (const rt of this.runtimes) {
             try {
                 if (await refreshCatalog(this.ctx.paths.home, rt, this.ctx.owner))
@@ -177,6 +181,7 @@ export class Daemon {
         const cats = await loadCatalogs(this.ctx.paths.home);
         const secrets = await loadSecrets(this.ctx);
         const local = await loadLocalCatalog(this.ctx.paths.home);
+        const keyCat = await loadKeyCatalog(this.ctx.paths.home);
         // 订阅来源能服务的模型数：管理接口按凭据列模型（只数没停用的）
         const engineModels = new Map();
         try {
@@ -222,6 +227,19 @@ export class Daemon {
                     models: c?.signedIn ? c.models.length : 0,
                 };
             }
+            if (def.kind === 'apikey') {
+                const has = Boolean(secrets.apikeys?.[def.id]?.key);
+                const models = keyCat[def.id]?.models ?? [];
+                const free = models.filter((m) => m.free).length;
+                return {
+                    ...base,
+                    loggedIn: has,
+                    enabled: has && !disabled.has(def.id),
+                    ...(has ? { account: def.id === 'custom' ? (secrets.apikeys?.[def.id]?.base ?? '') : redactKey(secrets.apikeys[def.id].key) } : {}),
+                    ...(has && free ? { detail: L(`其中 ${free} 个免费`, `${free} of them free`) } : {}),
+                    models: has ? models.length : 0,
+                };
+            }
             if (def.kind === 'local') {
                 const st = local[def.id];
                 const srv = LOCAL_SERVERS.find((x) => x.id === def.id);
@@ -263,6 +281,9 @@ export class Daemon {
             const now = (await this.sourcesRaw()).find((s) => s.id === def.id);
             if (!now.loggedIn || !now.models)
                 throw new DshModelError('local_not_running', now.detail ?? L(`${def.label} 没在运行`, `${def.label} is not running`), L(`先装好并启动它：${def.subscribeUrl}`, `Install and start it first: ${def.subscribeUrl}`));
+        }
+        if (def.kind === 'apikey' && !state.loggedIn) {
+            throw new DshModelError('needs_key', L(`${def.label} 需要先填 API key`, `${def.label} needs an API key first`), def.subscribeUrl ? L(`在 ${def.subscribeUrl} 创建`, `Create one at ${def.subscribeUrl}`) : undefined);
         }
         if (def.kind === 'opencode' && !state.loggedIn) {
             throw new DshModelError('needs_key', L('OpenCode Zen 需要 API key：用 opencode/key 提交', 'OpenCode Zen needs an API key: submit it via opencode/key'));
@@ -308,6 +329,9 @@ export class Daemon {
             for (const c of credsFor(await m.credentials(), def))
                 await m.deleteCredential(c.name);
         }
+        else if (def.kind === 'apikey') {
+            await removeApiKey(this.ctx, def.id);
+        }
         else if (def.kind === 'local') {
             throw new DshModelError('no_logout', L(`${def.label} 不需要登录；不想用就关掉开关`, `${def.label} has no sign-in; turn the switch off instead`));
         }
@@ -320,6 +344,17 @@ export class Daemon {
             await removeOpencodeKey(this.ctx);
         }
         await this.resync();
+    }
+    /** 自带 API key 的来源：实测（拉模型列表）通过才保存，并打开它 */
+    async setSourceKey(id, key, baseUrl) {
+        const def = mustSource(id);
+        if (def.kind !== 'apikey')
+            throw new DshModelError('not_key_source', L(`${def.label} 不用 API key`, `${def.label} does not take an API key`));
+        const all = await loadAll(this.ctx);
+        const r = await setApiKey(this.ctx, def.id, key.trim(), baseUrl, all.config.proxy);
+        await this.setSourceDisabled(def.id, false);
+        await this.resync();
+        return r;
     }
     async setOpencodeKey(key, opts = {}) {
         validateKeyShape(key);
@@ -836,6 +871,9 @@ export class Daemon {
                     return ok(await this.sourceModels(seg[1]));
                 if (method === 'POST')
                     return ok(await this.setSourceModels(seg[1], b.models === null ? null : b.models));
+            }
+            if (method === 'POST' && seg[0] === 'apikey' && seg[1]) {
+                return ok(await this.setSourceKey(seg[1], String(b.key ?? ''), typeof b.baseUrl === 'string' ? b.baseUrl : undefined));
             }
             if (method === 'POST' && path === '/opencode/key') {
                 return ok(await this.setOpencodeKey(String(b.key ?? ''), { skipVerify: b.skipVerify === true }));

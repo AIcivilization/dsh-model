@@ -41,6 +41,7 @@ const ALLOWED = [
   ['POST', /^\/sources\/[a-z-]{2,20}\/models$/],
   ['POST', /^\/sources\/[a-z-]{2,20}\/(enable|disable|logout)$/],
   ['POST', /^\/opencode\/key$/],
+  ['POST', /^\/apikey\/[a-z-]{2,20}$/],
   ['GET', /^\/login\/[A-Za-z0-9._-]{1,120}$/],
   ['POST', /^\/login\/[A-Za-z0-9._-]{1,120}\/callback$/],
   ['DELETE', /^\/login\/[A-Za-z0-9._-]{1,120}$/],

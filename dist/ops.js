@@ -1,4 +1,5 @@
 // ops.ts — 各命令共用的流程：读全部状态、应用引擎配置、同步模型到 dsh
+import { COMPAT_PREFIXES } from './sources.js';
 import { connectDshGroups } from './dsh/connect.js';
 import { listModels, waitHealthy, waitModelsChange } from './engine/client.js';
 import { compatModelIndex, loadCompatUpstreams } from './engine/compat.js';
@@ -140,7 +141,7 @@ export async function dshCandidates(ctx, all, ids) {
 /** 引擎里带前缀（opencode/ workbuddy/ workbuddy-ai/）的模型是否正好等于期望：不能缺，也不能多（关掉的来源要消失） */
 function aliasesMatch(models, expected) {
     const want = new Set(expected);
-    const prefixes = ['opencode/', 'workbuddy/', 'workbuddy-ai/', 'ollama/', 'lmstudio/'];
+    const prefixes = COMPAT_PREFIXES;
     const have = models.map((m) => m.id).filter((id) => prefixes.some((p) => id.startsWith(p)));
     return have.length === want.size && have.every((id) => want.has(id));
 }

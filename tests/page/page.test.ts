@@ -81,6 +81,8 @@ function normal(extra: Handler = () => [404, {}]): Handler {
   }
 }
 
+const gemini = { id: 'gemini', label: 'Gemini（Google AI Studio）', kind: 'apikey', login: 'key', riskAck: false, risky: false, subscribeUrl: 'https://aistudio.google.com/apikey', pricing: { tier: 'limited', zh: '免费 key，每天有次数上限', en: 'free key with daily limits' }, loggedIn: false, enabled: false, models: 0 }
+
 describe('settings page', () => {
   it('service not set up: shows the set-up card, not a bare error line', async () => {
     handler = () => [503, { error: { code: 'daemon_not_configured', message: 'dsh-model daemon not configured (run dsh-model setup)' } }]
@@ -105,5 +107,31 @@ describe('settings page', () => {
     await click('选模型')
     await waitText('恢复推荐')
     expect(container.textContent).toContain('已选 1 / 2')
+  })
+
+  it('turning on an API-key source without a key opens the key dialog; saving posts the key', async () => {
+    const posted: unknown[] = []
+    handler = (c) => {
+      if (c.path === '/apikey/gemini') {
+        posted.push(c.body)
+        return [200, { models: 3, free: 3 }]
+      }
+      if (c.path.startsWith('/sources') && !c.path.includes('/models')) return [200, [workbuddy, gemini]]
+      return normal()(c)
+    }
+    await render()
+    await waitText('Gemini（Google AI Studio）')
+    const sw = container.querySelector('button[role="switch"][aria-label="Gemini（Google AI Studio）"]')!
+    await act(async () => sw.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await waitText('去创建 key')
+    const input = container.querySelector('input[type="password"]') as HTMLInputElement
+    await act(async () => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+      set.call(input, 'AIza-test-key-123456')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await click('保存')
+    await act(async () => new Promise((r) => setTimeout(r, 50)))
+    expect(posted).toEqual([{ key: 'AIza-test-key-123456' }])
   })
 })

@@ -289,20 +289,40 @@ window.__ModuleLoader__.load({
           s.status === 'pending' ? (msg || L('等待授权中…', 'Waiting for approval…')) : s.status === 'ok' ? L('已登录', 'Signed in') : `${L('登录没有完成', 'Login did not complete')}：${s.error || s.status}`))
     }
 
-    function KeyDialog({ onDone, onClose }) {
+    /** 填 API key：OpenCode Zen，以及 Gemini / Groq / OpenRouter / 硅基流动 / DeepSeek / 其他 OpenAI 兼容服务 */
+    function KeyDialog({ source, onDone, onClose }) {
+      const opencode = !source || source.kind === 'opencode'
+      const custom = source && source.id === 'custom'
       const [key, setKey] = useState('')
+      const [base, setBase] = useState('')
       const [busy, setBusy] = useState(false)
       const [msg, setMsg] = useState('')
       const submit = async () => {
         setBusy(true)
-        setMsg(L('正在用一个免费模型实测这把 key…', 'Testing the key against a free model…'))
-        try { await api('POST', '/opencode/key', { key: key.trim() }); onDone() } catch (e) { setMsg(e.message); setBusy(false) }
+        setMsg(opencode ? L('正在用一个免费模型实测这把 key…', 'Testing the key against a free model…') : L('正在用这把 key 读取模型列表…', 'Reading the model list with this key…'))
+        try {
+          if (opencode) await api('POST', '/opencode/key', { key: key.trim() })
+          else await api('POST', `/apikey/${source.id}`, { key: key.trim(), ...(custom ? { baseUrl: base.trim() } : {}) })
+          onDone()
+        } catch (e) {
+          setMsg(e.hint ? `${e.message}（${e.hint}）` : e.message)
+          setBusy(false)
+        }
       }
-      return h(Modal, { title: 'OpenCode Zen', onClose },
-        h('p', { style: S.note }, L('需要你的 OpenCode Zen API key（在 opencode.ai 免费注册）。写入前会先用一个免费模型实测。', 'Needs your OpenCode Zen API key (free sign-up at opencode.ai). It is tested against a free model first.')),
+      const label = opencode ? 'OpenCode Zen' : source.label
+      const link = opencode ? 'https://opencode.ai/auth' : source.subscribeUrl
+      return h(Modal, { title: label, onClose },
+        h('p', { style: S.note },
+          opencode
+            ? L('需要你的 OpenCode Zen API key（要先充值）。写入前会先用一个免费模型实测。', 'Needs your OpenCode Zen API key (top-up required). It is tested against a free model first.')
+            : custom
+              ? L('填服务的地址（以 /v1 结尾）和 API key。保存前会用它读取一次模型列表，读得到才保存。', 'Enter the service URL (ending in /v1) and the API key. It reads the model list once before saving.')
+              : L(`填 ${label} 的 API key。保存前会用它读取一次模型列表（不花额度），读得到才保存。${source.pricing ? source.pricing.zh + '。' : ''}`, `Enter your ${label} API key. It reads the model list once before saving (no quota used).${source.pricing ? ' ' + source.pricing.en + '.' : ''}`),
+          link ? h('a', { href: link, target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent, marginLeft: 6 } }, L('去创建 key ↗', 'Create a key ↗')) : null),
+        custom ? h('div', { style: { ...S.line, marginBottom: 8 } }, h('input', { style: { ...S.input, ...S.grow }, placeholder: 'https://api.example.com/v1', value: base, onChange: (e) => setBase(e.target.value) })) : null,
         h('div', { style: S.line },
           h('input', { type: 'password', style: { ...S.input, ...S.grow }, placeholder: 'API key', value: key, onChange: (e) => setKey(e.target.value) }),
-          h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !key.trim(), onClick: submit }, L('保存', 'Save'))),
+          h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !key.trim() || (custom && !base.trim()), onClick: submit }, L('保存', 'Save'))),
         msg ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null)
     }
 
@@ -377,7 +397,7 @@ window.__ModuleLoader__.load({
         setBusy((b) => ({ ...b, [s.id]: true }))
         try {
           if (!on) await api('POST', `/sources/${s.id}/disable`)
-          else if (s.kind === 'opencode' && !s.loggedIn) onKey()
+          else if ((s.kind === 'opencode' || s.kind === 'apikey') && !s.loggedIn) onKey(s)
           else {
             let r = await api('POST', `/sources/${s.id}/enable`, {})
             if (r.riskNotice) {
@@ -394,7 +414,7 @@ window.__ModuleLoader__.load({
         }
       }
       const logout = async (s) => {
-        if (!window.confirm(L(`退出 ${s.label} 的登录？（它的模型会从 dsh 里消失）`, `Sign out of ${s.label}? (its models disappear from dsh)`))) return
+        if (!window.confirm(s.kind === 'apikey' ? L(`删除 ${s.label} 的 key？（它的模型会从 dsh 里消失）`, `Remove the ${s.label} key? (its models disappear from dsh)`) : L(`退出 ${s.label} 的登录？（它的模型会从 dsh 里消失）`, `Sign out of ${s.label}? (its models disappear from dsh)`))) return
         try { await api('POST', `/sources/${s.id}/logout`); await reload() } catch (e) { setErr(e.message) }
       }
       return h('div', { style: S.section },
@@ -415,10 +435,11 @@ window.__ModuleLoader__.load({
               s.risky ? h('span', { style: { fontSize: 11, color: C.err, marginLeft: 6, border: `1px solid ${C.err}`, borderRadius: 4, padding: '0 4px' } }, L('高风险', 'High risk')) : null,
               h('span', { style: { ...S.meta, marginLeft: 8 } },
                 s.loggedIn ? (s.account || '') : s.kind === 'local' ? L('未运行', 'Not running') : L('未登录', 'Signed out'),
-                s.models ? ` · ${L(`${s.models} 个模型`, `${s.models} models`)}` : '')),
+                s.models ? ` · ${L(`${s.models} 个模型`, `${s.models} models`)}` : '',
+                s.loggedIn && s.kind === 'apikey' && s.detail ? ` · ${s.detail}` : '')),
             s.loggedIn && s.enabled && s.models && !s.usage?.noAccess ? h('button', { type: 'button', style: S.btn, onClick: () => setPicking(picking === s.id ? '' : s.id) }, L('选模型', 'Models')) : null,
-            s.loggedIn && s.kind !== 'opencode' && s.kind !== 'local' ? h('button', { type: 'button', style: S.btn, onClick: () => logout(s) }, L('退出登录', 'Sign out')) : null,
-            s.kind === 'opencode' && s.loggedIn ? h('button', { type: 'button', style: S.btn, onClick: onKey }, L('换 key', 'Change key')) : null),
+            s.loggedIn && s.kind !== 'opencode' && s.kind !== 'local' ? h('button', { type: 'button', style: S.btn, onClick: () => logout(s) }, s.kind === 'apikey' ? L('删除 key', 'Remove key') : L('退出登录', 'Sign out')) : null,
+            (s.kind === 'opencode' || s.kind === 'apikey') && s.loggedIn ? h('button', { type: 'button', style: S.btn, onClick: () => onKey(s) }, L('换 key', 'Change key')) : null),
           picking === s.id ? h(ModelPicker, { source: s, onClose: (saved) => { setPicking(''); if (saved) void reload() } }) : null,
           s.enabled ? h(Usage, { usage: s.usage, subscribeUrl: s.subscribeUrl }) : null,
           !s.loggedIn && s.pricing ? h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 4 } },
@@ -682,12 +703,12 @@ window.__ModuleLoader__.load({
       return h('div', { style: { color: C.text, maxWidth: 820 } },
         err ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 12 } }, err) : null,
         h(EndpointCard, { endpoints: data.endpoints }),
-        h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: () => setKeyDialog(true) }),
+        h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: (s) => setKeyDialog(s || true) }),
         h(KeysCard, { keys: data.keys, reload: () => load(false) }),
         h(ModelsCard, { stats: data.stats }),
         h(AboutCard, { onJob: setSelfJob }),
         login ? h(LoginDialog, { source: login.source, session: login.session, onDone: () => { setLogin(null); void load(true) }, onClose: () => { setLogin(null); void load(false) } }) : null,
-        keyDialog ? h(KeyDialog, { onDone: () => { setKeyDialog(false); void load(true) }, onClose: () => setKeyDialog(false) }) : null)
+        keyDialog ? h(KeyDialog, { source: keyDialog === true ? null : keyDialog, onDone: () => { setKeyDialog(false); void load(true) }, onClose: () => setKeyDialog(false) }) : null)
     }
 
     const name = 'dsh-model'

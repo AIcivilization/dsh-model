@@ -15,6 +15,13 @@ export const SOURCES = [
     { id: 'devin', label: 'Devin', kind: 'engine', login: 'paste', engineProvider: 'devin', filePrefix: 'devin-', subscribeUrl: 'https://devin.ai/pricing', probeModel: 'devin/swe-1-7-lightning', pricing: { tier: 'paid', zh: '需要 Devin Pro（$20 / 月）；免费档实测调用被拒（insufficient_quota）', en: 'Needs Devin Pro ($20/mo); the free tier is refused in testing (insufficient_quota)' } },
     { id: 'ollama', label: 'Ollama（本地）', kind: 'local', login: 'none', subscribeUrl: 'https://ollama.com/download', pricing: { tier: 'free', zh: '本机运行，免费；装好并启动 Ollama、拉一个模型后自动出现', en: 'Runs on this machine, free; appears once Ollama is installed, running and has a model' } },
     { id: 'lmstudio', label: 'LM Studio（本地）', kind: 'local', login: 'none', subscribeUrl: 'https://lmstudio.ai', pricing: { tier: 'free', zh: '本机运行，免费；在 LM Studio 里打开本地服务（Developer → Start Server）后自动出现', en: 'Runs on this machine, free; appears once the LM Studio local server is started (Developer → Start Server)' } },
+    // 自带 API key 的来源（2026-10 核实，见设计 §14.11）：免费的都有每日 / 每分钟上限
+    { id: 'gemini', label: 'Gemini（Google AI Studio）', kind: 'apikey', login: 'key', subscribeUrl: 'https://aistudio.google.com/apikey', pricing: { tier: 'limited', zh: '免费 key，每天有次数上限；免费档的对话可能被用来训练模型', en: 'Free key with daily limits; free-tier prompts may be used for training' } },
+    { id: 'groq', label: 'Groq', kind: 'apikey', login: 'key', subscribeUrl: 'https://console.groq.com/keys', pricing: { tier: 'limited', zh: '免费 key，每个模型每分钟 / 每天有上限', en: 'Free key with per-model per-minute / per-day limits' } },
+    { id: 'openrouter', label: 'OpenRouter', kind: 'apikey', login: 'key', subscribeUrl: 'https://openrouter.ai/keys', pricing: { tier: 'limited', zh: '名字带 :free 的模型免费（每天约 50 次，充值 10 美元后约 1000 次）；其余按量付费', en: ':free models are free (about 50/day, about 1,000/day after a $10 top-up); others pay as you go' } },
+    { id: 'siliconflow', label: '硅基流动 SiliconFlow', kind: 'apikey', login: 'key', subscribeUrl: 'https://cloud.siliconflow.cn/account/ak', pricing: { tier: 'limited', zh: '实名认证后部分小模型免费（限速）；其余按量付费', en: 'Some small models are free after identity verification (rate limited); others pay as you go' } },
+    { id: 'deepseek', label: 'DeepSeek 官方', kind: 'apikey', login: 'key', subscribeUrl: 'https://platform.deepseek.com/api_keys', pricing: { tier: 'paid', zh: '按量付费（价格低）', en: 'Pay as you go (low prices)' } },
+    { id: 'custom', label: '其他 OpenAI 兼容服务', kind: 'apikey', login: 'key', pricing: { tier: 'paid', zh: '填地址和 key，接入任意 OpenAI 兼容服务', en: 'Enter a URL and a key for any OpenAI-compatible service' } },
     { id: 'opencode', label: 'OpenCode Zen', kind: 'opencode', login: 'key', subscribeUrl: 'https://opencode.ai/zen', pricing: { tier: 'paid', zh: '要先充值拿 key 按量计费；它的免费模型只能在 OpenCode 软件里用', en: 'Top up for a pay-as-you-go key; its free models only work inside the OpenCode app' } },
 ];
 const ALIASES = { grok: 'xai', muse: 'meta', chatgpt: 'codex', openai: 'codex', 'workbuddy-cn': 'workbuddy', wb: 'workbuddy', 'wb-ai': 'workbuddy-ai' };
@@ -36,3 +43,5 @@ export function paymentRequired(cred) {
     const cooldowns = cred.cooldowns;
     return Array.isArray(cooldowns) && cooldowns.some((c) => c?.reason === 'payment_required');
 }
+/** 引擎里作为 openai-compatibility 上游的来源：模型名前缀就是来源 id（同步时据此核对引擎是否已热重载） */
+export const COMPAT_PREFIXES = SOURCES.filter((s) => s.kind !== 'engine').map((s) => `${s.variant ?? s.id}/`);

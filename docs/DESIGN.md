@@ -537,3 +537,12 @@ dsh-model 只是转接口，不产出额度：一个来源能不能用，取决�
 **还没覆盖的**（要在真的 Windows 电脑上测）：装了 dsh 桌面版时找到它的命令行、装插件；在管理页一键安装（以 Electron 运行）；系统代理检测；Codex 用验证码登录（`.exe`）；杀毒软件拦截。
 
 **已知风险**：微软计划逐步停用 VBScript（Windows 11 24H2 起变成可选组件，计划以后默认关闭）。到时候改用 `conhost.exe --headless` 启动。
+
+### 14.11 自带 API key 的来源
+
+Gemini（Google AI Studio 的 OpenAI 兼容接口 `…/v1beta/openai`）、Groq、OpenRouter、硅基流动、DeepSeek 官方，加上一个「其他 OpenAI 兼容服务」（自己填地址）。做法和 OpenCode 一样：
+
+- key 存 `secrets.json` 的 `apikeys`，由引擎作为 openai-compatibility 上游持有，模型前缀就是来源 id，走出站代理。
+- **保存前实测**：带 key 请求一次 `GET /models`，拿到列表才保存（不花额度）。401 / 403 直接报 key 无效。
+- 模型目录存 `apikey-models.json`，每 30 分钟刷新一次。Gemini 去掉 `models/` 前缀；OpenRouter 价格为 0 或名字带 `:free` 的标「Free」、排在前面，默认挑选时优先选它们。
+- 费用标签（2026-10 核实）：Gemini、Groq、OpenRouter、硅基流动是「免费·额度少」，DeepSeek 和其他服务是「需付费」。Cerebras 最近的说法是已经没有长期免费档，所以没放进来。

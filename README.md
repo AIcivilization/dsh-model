@@ -74,6 +74,10 @@ dsh-model setup
 |---|---|---|
 | WorkBuddy / WorkBuddy AI | 免费 | 账号自带积分 |
 | Ollama / LM Studio | 免费 | 本机运行的模型。装好并启动后自动出现，不用登录 |
+| Gemini（Google AI Studio）、Groq | 免费·额度少 | 填免费 API key 即可，每天 / 每分钟有上限 |
+| OpenRouter | 免费·额度少 | 名字带 `:free` 的模型免费（每天约 50 次） |
+| 硅基流动 | 免费·额度少 | 实名认证后部分小模型免费 |
+| DeepSeek 官方、其他 OpenAI 兼容服务 | 需付费 | 填 API key（其他服务还要填地址） |
 | Codex | 需付费 | ChatGPT Plus / Pro |
 | Kimi | 需付费 | Kimi Code 套餐 |
 | Grok | 需付费 | SuperGrok / X Premium+ |
