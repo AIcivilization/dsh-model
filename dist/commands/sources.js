@@ -213,3 +213,26 @@ export async function failures(ctx) {
     }
     return 0;
 }
+/** dsh-model checkin：现在签到一次（WorkBuddy 国内版、Qoder），显示每家的结果 */
+export async function checkin(ctx) {
+    const st = await control(ctx, 'POST', '/checkin', {}, 120_000);
+    if (isJsonMode()) {
+        printJson(st);
+        return 0;
+    }
+    if (!st.available.length) {
+        warn(L('没有能签到的：登录 WorkBuddy 国内版，或在 dsh 管理页的签到卡片里添加 Qoder', 'Nothing to check in: sign in to WorkBuddy (China), or add Qoder in the check-in card of the dsh page'));
+        return 1;
+    }
+    let failed = 0;
+    for (const r of st.results) {
+        if (r.state === 'failed') {
+            failed++;
+            warn(`${r.label}：${L('失败', 'failed')}：${r.message ?? ''}${r.advice ? ` — ${r.advice}` : ''}`);
+        }
+        else
+            ok(`${r.label}：${r.state === 'signed' ? L(`签到成功${r.credit ? ` +${r.credit} 积分` : ''}`, `checked in${r.credit ? ` +${r.credit} credits` : ''}`) : L('今天已签过', 'already checked in today')}`);
+    }
+    info(dim(L(`自动签到：${st.auto ? '开' : '关'}（北京时间 ${st.date}）`, `Auto check-in: ${st.auto ? 'on' : 'off'} (Beijing date ${st.date})`)));
+    return failed ? 1 : 0;
+}

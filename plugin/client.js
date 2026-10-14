@@ -838,6 +838,104 @@ window.__ModuleLoader__.load({
         h('div', { style: { ...S.line, marginTop: 6, justifyContent: 'flex-end' } }, h('button', { type: 'button', style: S.btn, onClick: dismiss }, L('知道了', 'Got it'))))
     }
 
+    // —— 每日签到 ——
+    const CHECKIN_TEXT = (r) => (r.state === 'signed' ? L(`成功${r.credit ? ` +${r.credit} 积分` : ''}`, `done${r.credit ? ` +${r.credit} credits` : ''}`) : r.state === 'already' ? L('今天已签过', 'already today') : L(`失败：${r.message || ''}`, `failed: ${r.message || ''}`))
+
+    function QoderDialog({ onDone, onClose }) {
+      const [pat, setPat] = useState('')
+      const [region, setRegion] = useState('cn')
+      const [busy, setBusy] = useState(false)
+      const [msg, setMsg] = useState('')
+      const save = async () => {
+        setBusy(true)
+        setMsg(L('正在验证这个令牌并签到…', 'Checking the token and checking in…'))
+        try { await api('POST', '/checkin/qoder', { pat: pat.trim(), region }); onDone() } catch (e) { setMsg(e.message); setBusy(false) }
+      }
+      return h(Modal, { title: L('添加 Qoder 签到', 'Add Qoder check-in'), onClose },
+        h('p', { style: S.note }, L('在 Qoder 的账号设置里创建一个个人访问令牌（Personal Access Token），粘贴到这里。只用来每天领签到积分，保存在本机。', 'Create a Personal Access Token in your Qoder account settings and paste it here. It is only used to claim the daily credits, and stays on this machine.')),
+        h('div', { style: { ...S.line, marginBottom: 8 } },
+          ['cn', 'intl'].map((r) => h('label', { key: r, style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' } },
+            h('input', { type: 'radio', name: 'qoder-region', checked: region === r, onChange: () => setRegion(r) }), r === 'cn' ? L('国内版', 'China') : L('国际版', 'International')))),
+        h('div', { style: S.line },
+          h('input', { type: 'password', style: { ...S.input, ...S.grow }, placeholder: L('个人访问令牌', 'Personal access token'), value: pat, onChange: (e) => setPat(e.target.value) }),
+          h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !pat.trim(), onClick: () => void save() }, L('保存', 'Save'))),
+        msg ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null)
+    }
+
+    /** 签到卡片：平时一行"今日已完成签到：…"；没签完的列出来，一键签到；自动签到开关 */
+    function CheckinCard() {
+      const [st, setSt] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [open, setOpen] = useState(false)
+      const [qoder, setQoder] = useState(false)
+      const [err, setErr] = useState('')
+      const refresh = useCallback(() => api('GET', '/checkin').then(setSt, () => {}), [])
+      useEffect(() => { void refresh(); const t = setInterval(refresh, 5 * 60 * 1000); return () => clearInterval(t) }, [refresh])
+      if (!st) return null
+      const byId = new Map(st.results.map((r) => [r.id, r]))
+      const done = st.available.filter((a) => { const r = byId.get(a.id); return r && r.state !== 'failed' })
+      const pending = st.available.filter((a) => !done.includes(a))
+      const run = async () => {
+        setBusy(true)
+        setErr('')
+        try { setSt(await api('POST', '/checkin')); setOpen(true) } catch (e) { setErr(e.message) } finally { setBusy(false) }
+      }
+      const toggleAuto = async (on) => {
+        try { setSt(await api('POST', '/checkin/auto', { on })) } catch (e) { setErr(e.message) }
+      }
+      if (!st.available.length && st.qoder.configured === false) {
+        // 没有能签到的：只留一个很小的入口
+        return h('div', { style: { ...S.section, marginBottom: 16 } },
+          h('div', { style: { ...S.meta } }, L('每日签到：登录 WorkBuddy 国内版，或', 'Daily check-in: sign in to WorkBuddy (China), or '),
+            h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setQoder(true) }, L('添加 Qoder', 'Add Qoder'))),
+          qoder ? h(QoderDialog, { onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null)
+      }
+      return h('div', { style: S.section },
+        h('div', { style: { ...S.card, padding: '10px 14px' } },
+          h('div', { style: S.line },
+            h('span', { style: { ...S.grow, fontSize: 13 } },
+              done.length ? h('span', { style: { color: C.ok } }, L(`今日已完成签到：${done.map((a) => a.label).join('、')}`, `Checked in today: ${done.map((a) => a.label).join(', ')}`)) : null,
+              done.length && pending.length ? h('span', { style: { color: C.sub } }, L('；', '; ')) : null,
+              pending.length ? h('span', { style: { color: C.text } }, L(`还没签：${pending.map((a) => a.label).join('、')}`, `Not yet: ${pending.map((a) => a.label).join(', ')}`)) : null),
+            pending.length ? h('button', { type: 'button', style: S.btnPrimary, disabled: busy, onClick: () => void run() }, busy ? L('签到中…', 'Checking in…') : L('一键签到', 'Check in all')) : null,
+            st.results.length ? h('button', { type: 'button', style: S.btn, onClick: () => setOpen(!open) }, open ? L('收起', 'Hide') : L('详情', 'Details')) : null,
+            h('label', { style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap' } },
+              h('input', { type: 'checkbox', checked: st.auto, onChange: (e) => void toggleAuto(e.target.checked) }), L('自动签到', 'Auto'))),
+          open ? h('div', { style: { marginTop: 8 } },
+            st.results.map((r) => h('div', { key: r.id, style: { fontSize: 12, lineHeight: 1.8, color: r.state === 'failed' ? C.err : C.text } },
+              `${r.label}：${CHECKIN_TEXT(r)}`, r.advice ? h('span', { style: { color: C.sub, marginLeft: 6 } }, r.advice) : null)),
+            h('div', { style: { ...S.line, marginTop: 6 } },
+              st.qoder.configured
+                ? h('button', { type: 'button', style: S.btn, onClick: () => { if (window.confirm(L('删除 Qoder 的令牌？之后不再给 Qoder 签到。', 'Remove the Qoder token? Qoder will no longer be checked in.'))) void api('DELETE', '/checkin/qoder').then(setSt, (e) => setErr(e.message)) } }, L('删除 Qoder 令牌', 'Remove Qoder token'))
+                : h('button', { type: 'button', style: S.btn, onClick: () => setQoder(true) }, L('添加 Qoder', 'Add Qoder')))) : null,
+          !open && !st.qoder.configured ? h('div', { style: { ...S.meta, marginTop: 4 } }, h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, onClick: () => setQoder(true) }, L('+ 添加 Qoder', '+ Add Qoder'))) : null,
+          err ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, err) : null),
+        qoder ? h(QoderDialog, { onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null)
+    }
+
+    /** 签完在 dsh 右下角提示一次（成功或失败），一天一次 */
+    const CHECKIN_SEEN = 'dsh-model.checkinSeen'
+    function CheckinNotice() {
+      const [st, setSt] = useState(null)
+      const [seen, setSeen] = useState(() => { try { return window.localStorage.getItem(CHECKIN_SEEN) || '' } catch { return '' } })
+      useEffect(() => {
+        let stop = false
+        const tick = () => api('GET', '/checkin').then((r) => { if (!stop) setSt(r) }, () => {})
+        void tick()
+        const t = setInterval(tick, 15 * 60 * 1000)
+        return () => { stop = true; clearInterval(t) }
+      }, [])
+      if (!st || !st.results.length) return null
+      const key = `${st.date}:${st.results.map((r) => `${r.id}=${r.state}`).join(',')}`
+      if (seen === key) return null
+      const failed = st.results.filter((r) => r.state === 'failed')
+      const hide = () => { setSeen(key); try { window.localStorage.setItem(CHECKIN_SEEN, key) } catch { /* 无痕模式 */ } }
+      return h('div', { role: 'status', style: { position: 'fixed', right: 16, bottom: 120, zIndex: 900, maxWidth: 360, background: C.base, color: C.text, border: `1px solid ${failed.length ? C.err : C.ok}`, borderRadius: 10, padding: '10px 12px', boxShadow: 'var(--dsw-elevation-soft, 0 8px 30px rgba(0,0,0,.2))', fontSize: 13 } },
+        h('div', { style: { fontWeight: 600, marginBottom: 4, color: failed.length ? C.err : C.ok } }, failed.length ? L('dsh-model：有签到没成功', 'dsh-model: a check-in failed') : L('dsh-model：今日签到完成', 'dsh-model: checked in for today')),
+        st.results.map((r) => h('div', { key: r.id, style: { lineHeight: 1.6 } }, `${r.label}：${CHECKIN_TEXT(r)}`)),
+        h('div', { style: { ...S.line, marginTop: 6, justifyContent: 'flex-end' } }, h('button', { type: 'button', style: S.btn, onClick: hide }, L('知道了', 'Got it'))))
+    }
+
     // —— 首次使用向导 ——
     const GUIDE_KEY = 'dsh-model.guideDone'
     const readGuideDone = () => {
@@ -926,6 +1024,7 @@ window.__ModuleLoader__.load({
       return h('div', { style: { color: C.text, maxWidth: 820 } },
         banner,
         h(Guide, { sources: data.sources, onConnect: (s) => void connect(s) }),
+        h(CheckinCard, null),
         err ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 12 } }, err) : null,
         h(EndpointCard, { endpoints: data.endpoints }),
         h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: (s) => setKeyDialog(s || true) }),
@@ -952,6 +1051,11 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dsh-model-quota' }, QuotaNotice))
       } catch (error) {
         console.warn('[dsh-model] 额度提醒注册失败', error)
+      }
+      try {
+        ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dsh-model-checkin' }, CheckinNotice))
+      } catch (error) {
+        console.warn('[dsh-model] 签到提示注册失败', error)
       }
     }
 

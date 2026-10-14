@@ -810,6 +810,24 @@ export class WorkBuddyUpstreamClient {
    * `enterpriseId` must stay on the measured personal path instead of being
    * moved onto an unmeasured one.
    */
+  /**
+   * 每日签到（只有国内版有）。dsh-model 加：接口与"已签到"的判断照 corrinehu/dsh-buddy-checkin（MIT）。
+   * 返回 signed（这次签上了，credit 是送的积分）或 already（今天已经签过）；其他情况抛错。
+   */
+  async dailyCheckin(credential: WorkBuddyCredential): Promise<{ state: 'signed' | 'already'; credit?: number }> {
+    const response = await fetch(`${billingBase(credential)}/v2/billing/meter/daily-checkin`, {
+      method: 'POST',
+      headers: billingHeaders(credential),
+      body: '{}',
+      signal: AbortSignal.timeout(JSON_TIMEOUT_MS),
+    })
+    const envelope = await readEnvelope(response)
+    if (envelope.msg.includes('已签到')) return { state: 'already' }
+    if (!response.ok || (envelope.code !== undefined && envelope.code !== 0)) throw envelopeError(response.status, envelope)
+    const data = typeof envelope.data === 'object' && envelope.data !== null ? envelope.data as Record<string, unknown> : {}
+    return { state: 'signed', ...(typeof data['credit'] === 'number' ? { credit: data['credit'] } : {}) }
+  }
+
   async fetchCredits(credential: WorkBuddyCredential): Promise<WorkBuddyCredits> {
     if (regionOf(credential.domain) === 'cn'
       && credential.enterpriseId !== undefined && credential.enterpriseId !== '') {

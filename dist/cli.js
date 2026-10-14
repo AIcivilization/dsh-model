@@ -14,7 +14,7 @@ import { supervise } from './service/windows.js';
 import { opencode } from './commands/opencode.js';
 import { workbuddy } from './commands/workbuddy.js';
 import { bridge } from './commands/bridge.js';
-import { enableInteractive, failures, source, sources, stats } from './commands/sources.js';
+import { checkin, enableInteractive, failures, source, sources, stats } from './commands/sources.js';
 import { createContext } from './context.js';
 import { isDshModelError } from './errors.js';
 import { L, initLang } from './i18n.js';
@@ -69,6 +69,7 @@ function help() {
   login <来源> / logout <来源>          同 source enable / source logout
   stats                                按 key / 来源 / 模型的成功率、延迟、速度
   failures                             最近 24 小时失败的请求，以及该怎么办
+  checkin                              现在签到一次（WorkBuddy 国内版、Qoder；默认每天自动签）
   status                               一屏总览
   doctor [--e2e] [--all] [--model M]   逐项自检；--e2e 实测流式与工具调用
   connect-dsh [--dry-run] [--force]    写入 / 刷新 dsh 配置
@@ -101,6 +102,7 @@ Usage: dsh-model <command> [options]
   login <source> / logout <source>     Same as source enable / source logout
   stats                                Success rate, latency and speed by key / source / model
   failures                             Failed requests in the last 24 hours, and what to do
+  checkin                              Check in now (WorkBuddy China, Qoder; automatic daily by default)
   status                               Overview
   doctor [--e2e] [--all] [--model M]   Health checks; --e2e tests streaming and tool calls
   connect-dsh [--dry-run] [--force]    Write / refresh dsh config
@@ -171,6 +173,8 @@ export async function main(argv) {
                 return await stats(ctx);
             case 'failures':
                 return await failures(ctx);
+            case 'checkin':
+                return await checkin(ctx);
             case 'status':
                 return await status(ctx);
             case 'doctor':

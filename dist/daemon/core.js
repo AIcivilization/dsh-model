@@ -16,6 +16,8 @@ import { lang } from '../i18n.js';
 import { which } from '../util/exec.js';
 import { spawnDetached } from '../util/detach.js';
 import { classify, recentFailures } from './failures.js';
+import { autoDue, beijingNow, checkinAdvice, ensureJitter, loadCheckin, runCheckin, setAuto, todayResults } from '../checkin/index.js';
+import { QODER_REGIONS, exchangePat, qoderCheckin } from '../checkin/qoder.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
 import { randomBytes } from 'node:crypto';
 import { currentBinary } from '../engine/install.js';
@@ -31,7 +33,7 @@ import { riskNotice as workbuddyRiskNotice } from '../integrations/workbuddy.js'
 import { DSH_KEY_NAME, addKey, loadKeys, revokeKey, rotateKey, saveKeys } from '../keys.js';
 import { applyEngineConfig, dshCandidates, dshKey, loadAll, saveAll, syncAll } from '../ops.js';
 import { defaultPick, pickedFor } from '../dsh/pick.js';
-import { loadSecrets } from '../secrets.js';
+import { loadSecrets, saveSecrets } from '../secrets.js';
 import { SOURCES, credsFor, findSource, paymentRequired } from '../sources.js';
 import { withLock } from '../state.js';
 import { riskNotice as upstreamRiskNotice } from '../upstreams.js';
@@ -84,6 +86,9 @@ export class Daemon {
         if (await this.refreshCatalogs())
             void this.resync();
         this.timers.push(setInterval(() => void this.refreshCatalogs().then((c) => (c ? this.resync() : undefined)), CATALOG_REFRESH_MS));
+        // 每日签到：每 15 分钟看一眼该不该签（到点、有没签上的）；启动一分钟后先看一次（错过的补签）
+        this.timers.push(setInterval(() => void this.autoCheckin().catch(() => { }), 15 * 60 * 1000));
+        setTimeout(() => void this.autoCheckin().catch(() => { }), 60_000);
         // 本机模型服务（Ollama、LM Studio）随时可能启动或退出：两分钟问一次，变了就同步
         this.timers.push(setInterval(() => void refreshLocalCatalog(this.ctx.paths.home, this.ctx.owner).then((c) => (c ? this.resync() : undefined), () => { }), 2 * 60 * 1000));
         this.timers.push(setInterval(() => void this.pollUsage(), USAGE_POLL_MS));
@@ -705,6 +710,69 @@ export class Daemon {
             .filter((k) => !k.revokedAt)
             .map((k) => ({ name: k.name, key: redactKey(k.key), createdAt: k.createdAt, ...(snap.byKey[k.name] ? { stats: snap.byKey[k.name] } : {}) }));
     }
+    // —— 每日签到 ——
+    /** 现在能签到的：WorkBuddy 国内版（已登录）、Qoder（填了个人访问令牌） */
+    async checkers() {
+        const out = [];
+        for (const rt of this.runtimes) {
+            if (rt.variant.id !== 'workbuddy')
+                continue; // 国际版没有签到
+            const st = await rt.wbStore.status().catch(() => null);
+            if (st?.state !== 'signed-in')
+                continue;
+            out.push({ id: 'workbuddy', label: rt.label, run: async () => rt.wbClient.dailyCheckin(await rt.wbStore.resolve()) });
+        }
+        const q = (await loadSecrets(this.ctx)).checkin?.qoder;
+        if (q?.pat)
+            out.push({ id: 'qoder', label: QODER_REGIONS[q.region].label, run: () => qoderCheckin(q.pat, q.region) });
+        return out;
+    }
+    async checkinStatus() {
+        const file = await loadCheckin(this.ctx.paths.home);
+        const checkers = await this.checkers();
+        const q = (await loadSecrets(this.ctx)).checkin?.qoder;
+        return {
+            auto: file.auto !== false,
+            date: beijingNow().date,
+            results: todayResults(file).map((r) => (r.state === 'failed' ? { ...r, advice: checkinAdvice(r.id, r.message ?? '') } : r)),
+            available: checkers.map((c) => ({ id: c.id, label: c.label })),
+            qoder: { configured: Boolean(q?.pat), ...(q ? { region: q.region } : {}) },
+        };
+    }
+    checkinInflight;
+    /** 一键签到（force：今天已成功的也再确认一遍） */
+    async checkinNow(force = true) {
+        this.checkinInflight ??= runCheckin(this.ctx.paths.home, await this.checkers(), { force, ...(this.ctx.owner ? { owner: this.ctx.owner } : {}) }).finally(() => (this.checkinInflight = undefined));
+        await this.checkinInflight;
+        return this.checkinStatus();
+    }
+    /** 自动签到：到点且有没签上的就签 */
+    async autoCheckin() {
+        const file = await ensureJitter(this.ctx.paths.home, this.ctx.owner).catch(() => null);
+        if (!file)
+            return;
+        const checkers = await this.checkers();
+        if (!autoDue(file, checkers))
+            return;
+        const results = await this.checkinNow(false).catch(() => null);
+        if (results)
+            log_(`daemon: auto check-in ${results.results.map((r) => `${r.id}=${r.state}`).join(' ')}`);
+    }
+    async setQoderPat(pat, region) {
+        if (!pat || /\s/.test(pat) || pat.length < 8)
+            throw new DshModelError('invalid_key', L('这看起来不是 Qoder 的个人访问令牌', 'That does not look like a Qoder access token'));
+        await exchangePat(pat, region); // 换得到短期 token 才算可用
+        const secrets = await loadSecrets(this.ctx);
+        secrets.checkin = { ...secrets.checkin, qoder: { pat, region, savedAt: new Date().toISOString() } };
+        await saveSecrets(this.ctx, secrets);
+    }
+    async removeQoderPat() {
+        const secrets = await loadSecrets(this.ctx);
+        if (secrets.checkin?.qoder) {
+            delete secrets.checkin.qoder;
+            await saveSecrets(this.ctx, secrets);
+        }
+    }
     // —— 更新 / 卸载（管理页的按钮）——
     selfJob;
     /** 版本与能不能在页面上自管理（VPS 上要 root，只给命令） */
@@ -952,6 +1020,22 @@ export class Daemon {
                 return ok(await this.endpoints());
             if (method === 'GET' && path === '/self')
                 return ok(await this.selfInfo());
+            if (method === 'GET' && path === '/checkin')
+                return ok(await this.checkinStatus());
+            if (method === 'POST' && path === '/checkin')
+                return ok(await this.checkinNow(true));
+            if (method === 'POST' && path === '/checkin/auto') {
+                await setAuto(this.ctx.paths.home, b.on !== false, this.ctx.owner);
+                return ok(await this.checkinStatus());
+            }
+            if (method === 'POST' && path === '/checkin/qoder') {
+                await this.setQoderPat(String(b.pat ?? '').trim(), b.region === 'intl' ? 'intl' : 'cn');
+                return ok(await this.checkinNow(true));
+            }
+            if (method === 'DELETE' && path === '/checkin/qoder') {
+                await this.removeQoderPat();
+                return ok(await this.checkinStatus());
+            }
             if (method === 'GET' && path === '/failures')
                 return ok(await recentFailures(this.ctx.paths.logs));
             if (method === 'POST' && path === '/models/test')

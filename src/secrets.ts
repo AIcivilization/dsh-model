@@ -9,6 +9,8 @@ export interface Secrets {
   opencode?: { key: string; verifiedAt?: string; verifiedModel?: string }
   /** 自带 API key 的来源（gemini / groq / openrouter / siliconflow / deepseek / custom）；custom 还有地址 */
   apikeys?: Record<string, { key: string; base?: string; verifiedAt?: string }>
+  /** 每日签到要用的登录（WorkBuddy 用 bridge 已有的登录，不在这里） */
+  checkin?: { qoder?: { pat: string; region: 'cn' | 'intl'; savedAt?: string } }
 }
 
 export function secretsPath(ctx: Ctx): string {

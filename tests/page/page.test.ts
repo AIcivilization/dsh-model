@@ -14,6 +14,7 @@ let hostInfo: unknown = { running: '1.0.0', installed: '1.0.0', restart: 'deskto
 let setupReplies: unknown[] = []
 let Section: React.ComponentType
 let Overlay: React.ComponentType
+let CheckinOverlay: React.ComponentType
 let root: Root | undefined
 let container: HTMLElement
 
@@ -35,7 +36,7 @@ beforeAll(async () => {
   w.__ModuleLoader__ = {
     load({ factory }: { factory: (req: (n: string) => unknown) => { apply: (ctx: unknown) => void } }) {
       const mod = factory((n) => (n === 'react' ? React : null))
-      mod.apply({ slots: { inject: (_n: string, fn: () => void) => fn(), register: (d: { name: string }, C: React.ComponentType) => (d.name === 'shell.overlay' ? (Overlay = C) : (Section = C)) } })
+      mod.apply({ slots: { inject: (_n: string, fn: () => void) => fn(), register: (d: { name: string; id: string }, C: React.ComponentType) => (d.id === 'dsh-model-checkin' ? (CheckinOverlay = C) : d.name === 'shell.overlay' ? (Overlay = C) : (Section = C)) } })
     },
   }
   await import('../../plugin/client.js')
@@ -251,5 +252,32 @@ describe('settings page', () => {
     await render()
     await waitText('还没有接入任何来源')
     expect(container.querySelector('button[role="switch"][aria-label="Gemini（Google AI Studio）"]')).toBeTruthy()
+  })
+
+  it('check-in card: lists what is left, "Check in all" shows the results; auto switch is on', async () => {
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    const status = (results: unknown[]) => ({ auto: true, date: '2026-10-14', results, available: [{ id: 'workbuddy', label: 'WorkBuddy' }, { id: 'qoder', label: 'Qoder（国内版）' }], qoder: { configured: true, region: 'cn' } })
+    handler = normal((c) => {
+      if (c.path === '/checkin' && c.method === 'GET') return [200, status([])]
+      if (c.path === '/checkin' && c.method === 'POST') return [200, status([{ id: 'workbuddy', label: 'WorkBuddy', state: 'signed', credit: 30, at: 'x' }, { id: 'qoder', label: 'Qoder（国内版）', state: 'already', at: 'x' }])]
+      return [404, {}]
+    })
+    await render()
+    await waitText('还没签：WorkBuddy、Qoder（国内版）')
+    expect((container.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked).toBe(true)
+    await click('一键签到')
+    await waitText('今日已完成签到：WorkBuddy、Qoder（国内版）')
+    expect(container.textContent).toContain('WorkBuddy：成功 +30 积分')
+    expect(container.textContent).toContain('Qoder（国内版）：今天已签过')
+  })
+
+  it('check-in notice: shows today once, with failures called out', async () => {
+    window.localStorage.clear()
+    handler = (c) => (c.path === '/checkin' ? [200, { auto: true, date: '2026-10-14', results: [{ id: 'workbuddy', label: 'WorkBuddy', state: 'signed', credit: 30, at: 'x' }, { id: 'qoder', label: 'Qoder', state: 'failed', message: '令牌过期', at: 'x' }], available: [], qoder: { configured: true } }] : [404, {}])
+    await render(CheckinOverlay)
+    await waitText('dsh-model：有签到没成功')
+    expect(container.textContent).toContain('Qoder：失败：令牌过期')
+    await click('知道了')
+    expect(container.textContent).toBe('')
   })
 })
