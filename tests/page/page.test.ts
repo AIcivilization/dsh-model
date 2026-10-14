@@ -125,8 +125,10 @@ describe('settings page', () => {
       if (c.path.startsWith('/sources') && !c.path.includes('/models')) return [200, [workbuddy, gemini]]
       return normal()(c)
     }
+    window.localStorage.clear()
     await render()
-    await waitText('Gemini（Google AI Studio）')
+    await waitText('未登录的来源（1 个）')
+    await click('▸ 未登录的来源（1 个）')
     const sw = container.querySelector('button[role="switch"][aria-label="Gemini（Google AI Studio）"]')!
     await act(async () => sw.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await waitText('去创建 key')
@@ -226,5 +228,28 @@ describe('settings page', () => {
     await render()
     await waitText('WorkBuddy')
     expect(container.textContent).not.toContain('开始使用')
+  })
+
+  it('signed-in sources are listed; signed-out ones are folded away (and the choice is remembered)', async () => {
+    window.localStorage.clear()
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    handler = (c) => (c.path.startsWith('/sources') && !c.path.includes('/models') ? [200, [workbuddy, gemini]] : normal()(c))
+    await render()
+    await waitText('WorkBuddy')
+    expect(container.querySelector('button[role="switch"][aria-label="WorkBuddy"]')).toBeTruthy()
+    expect(container.querySelector('button[role="switch"][aria-label="Gemini（Google AI Studio）"]')).toBeNull()
+    await click('▸ 未登录的来源（1 个）')
+    expect(container.querySelector('button[role="switch"][aria-label="Gemini（Google AI Studio）"]')).toBeTruthy()
+    await act(async () => root?.unmount())
+    await render()
+    await waitText('收起未登录的来源（1 个）')
+  })
+
+  it('nothing signed in yet: the signed-out list starts open', async () => {
+    window.localStorage.clear()
+    handler = (c) => (c.path.startsWith('/sources') && !c.path.includes('/models') ? [200, [{ ...workbuddy, loggedIn: false, enabled: false }, gemini]] : normal()(c))
+    await render()
+    await waitText('还没有接入任何来源')
+    expect(container.querySelector('button[role="switch"][aria-label="Gemini（Google AI Studio）"]')).toBeTruthy()
   })
 })

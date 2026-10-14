@@ -328,6 +328,16 @@ window.__ModuleLoader__.load({
 
     // —— 来源 ——
     const RISKY_KEY = 'dsh-model.showRisky'
+    const REST_KEY = 'dsh-model.showSignedOut'
+    /** 用户选过就按他选的；没选过返回 null（由是否已有登录的来源决定） */
+    const readShowRest = () => {
+      try {
+        const v = window.localStorage.getItem(REST_KEY)
+        return v === '1' ? true : v === '0' ? false : null
+      } catch {
+        return null
+      }
+    }
     const readRisky = () => {
       try { return window.localStorage.getItem(RISKY_KEY) === '1' } catch { return false }
     }
@@ -430,16 +440,16 @@ window.__ModuleLoader__.load({
         if (!window.confirm(s.kind === 'apikey' ? L(`删除 ${s.label} 的 key？（它的模型会从 dsh 里消失）`, `Remove the ${s.label} key? (its models disappear from dsh)`) : L(`退出 ${s.label} 的登录？（它的模型会从 dsh 里消失）`, `Sign out of ${s.label}? (its models disappear from dsh)`))) return
         try { await api('POST', `/sources/${s.id}/logout`); await reload() } catch (e) { setErr(e.message) }
       }
-      return h('div', { style: S.section },
-        h('div', { style: S.line },
-          h('div', { style: { ...S.h, ...S.grow, margin: 0 } }, L('来源', 'Sources')),
-          h('label', { style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' } },
-            h('input', { type: 'checkbox', checked: showRisky, onChange: (e) => toggleRisky(e.target.checked) }),
-            L(`显示高风险来源${!showRisky && hidden ? `（${hidden}）` : ''}`, `Show high-risk sources${!showRisky && hidden ? ` (${hidden})` : ''}`))),
-        h('p', { style: S.note }, L('打开就接入，没登录会弹出登录；关闭只停用，登录保留。标「需付费」的来源，要先在那家开通套餐，登录后才能用。', 'Turn on to connect (signs in if needed); turning off keeps the sign-in. Sources marked Paid need a plan from that provider before they work.')),
-        err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
-        showRisky ? h('p', { style: { ...S.note, color: C.warn } }, L('高风险来源（Claude、Antigravity）：服务商有封禁第三方使用订阅的先例，账号可能被封。仅在你清楚风险时使用。', 'High-risk sources (Claude, Antigravity): the providers have banned third-party use of subscriptions before; your account may be suspended. Use only if you accept the risk.')) : null,
-        h('div', { style: S.card }, visible.map((s, i) => h('div', { key: s.id, style: i ? S.row : S.rowFirst },
+      // 已登录的照常列出；没登录的收进一个可折叠的列表（默认收起；一个都没登录时默认展开）
+      const signedIn = visible.filter((s) => s.loggedIn)
+      const rest = visible.filter((s) => !s.loggedIn)
+      const [restPref, setRestPref] = useState(readShowRest)
+      const openRest = restPref ?? signedIn.length === 0
+      const toggleRest = (v) => {
+        setRestPref(v)
+        try { window.localStorage.setItem(REST_KEY, v ? '1' : '0') } catch { /* 无痕模式：只在本次生效 */ }
+      }
+      const row = (s, i) => h('div', { key: s.id, style: i ? S.row : S.rowFirst },
           h('div', { style: S.line },
             h(Switch, { on: s.enabled, busy: busy[s.id], label: s.label, onChange: (on) => toggle(s, on) }),
             h('div', { style: S.grow },
@@ -459,7 +469,20 @@ window.__ModuleLoader__.load({
             L(s.pricing.zh, s.pricing.en),
             s.subscribeUrl && s.kind === 'local' ? h('a', { href: s.subscribeUrl, target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent, marginLeft: 8 } }, L('去下载 ↗', 'Download ↗')) : null,
             s.subscribeUrl && s.pricing.tier !== 'free' ? h('a', { href: s.subscribeUrl, target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent, marginLeft: 8 } }, s.kind === 'opencode' ? L('去充值 ↗', 'Top up ↗') : L('看套餐 ↗', 'Plans ↗')) : null) : null,
-          !s.loggedIn && s.detail ? h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 4 } }, s.detail) : null))))
+          !s.loggedIn && s.detail ? h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 4 } }, s.detail) : null)
+      return h('div', { style: S.section },
+        h('div', { style: S.line },
+          h('div', { style: { ...S.h, ...S.grow, margin: 0 } }, L('来源', 'Sources')),
+          h('label', { style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' } },
+            h('input', { type: 'checkbox', checked: showRisky, onChange: (e) => toggleRisky(e.target.checked) }),
+            L(`显示高风险来源${!showRisky && hidden ? `（${hidden}）` : ''}`, `Show high-risk sources${!showRisky && hidden ? ` (${hidden})` : ''}`))),
+        h('p', { style: S.note }, L('打开就接入，没登录会弹出登录；关闭只停用，登录保留。标「需付费」的来源，要先在那家开通套餐，登录后才能用。', 'Turn on to connect (signs in if needed); turning off keeps the sign-in. Sources marked Paid need a plan from that provider before they work.')),
+        err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
+        showRisky ? h('p', { style: { ...S.note, color: C.warn } }, L('高风险来源（Claude、Antigravity）：服务商有封禁第三方使用订阅的先例，账号可能被封。仅在你清楚风险时使用。', 'High-risk sources (Claude, Antigravity): the providers have banned third-party use of subscriptions before; your account may be suspended. Use only if you accept the risk.')) : null,
+        signedIn.length ? h('div', { style: S.card }, signedIn.map(row)) : h('div', { style: { ...S.note, margin: '0 0 8px' } }, L('还没有接入任何来源：展开下面的列表挑一个。', 'No source connected yet: open the list below and pick one.')),
+        rest.length ? h('button', { type: 'button', style: { ...S.btn, marginTop: 10 }, 'aria-expanded': openRest, onClick: () => toggleRest(!openRest) },
+          openRest ? L(`▾ 收起未登录的来源（${rest.length} 个）`, `▾ Hide signed-out sources (${rest.length})`) : L(`▸ 未登录的来源（${rest.length} 个）`, `▸ Signed-out sources (${rest.length})`)) : null,
+        openRest && rest.length ? h('div', { style: { ...S.card, marginTop: 8 } }, rest.map(row)) : null)
     }
 
     /** 费用标签：免费 / 免费·额度少 / 需付费 */
