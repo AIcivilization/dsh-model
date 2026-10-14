@@ -2,7 +2,7 @@
 //
 // 守护进程以 dsh 用户运行，而更新（npm 全局目录、系统服务）和卸载（Caddy、防火墙、系统服务）要 root。
 // 所以 setup（root）装一个 systemd path 单元：守护进程在 <home>/admin/request 写一张请求单，
-// systemd 以 root 运行 `dsh-model admin-run`，它只认三件固定的事：更新到 npm 最新版、卸载、重启 dsh（插件更新后要重启才生效）。别的一律拒绝。
+// systemd 以 root 运行 `dsh-model admin-run`，它只认四件固定的事：更新到 npm 最新版、卸载、重启 dsh（插件更新后要重启才生效）、修复（重跑 setup）。别的一律拒绝。
 
 import { chown, mkdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -15,7 +15,7 @@ export const ADMIN_PATH_UNIT = '/etc/systemd/system/dsh-model-admin.path'
 export const ADMIN_SERVICE_UNIT = '/etc/systemd/system/dsh-model-admin.service'
 
 export interface AdminRequest {
-  action: 'update' | 'uninstall' | 'restart-dsh'
+  action: 'update' | 'uninstall' | 'restart-dsh' | 'repair'
   keepAuth?: boolean
   lang?: 'zh' | 'en'
 }
@@ -86,7 +86,7 @@ export async function takeAdminRequest(ctx: Ctx): Promise<AdminRequest | null> {
   await rm(file, { force: true })
   try {
     const r = JSON.parse(raw) as Partial<AdminRequest>
-    if (r.action !== 'update' && r.action !== 'uninstall' && r.action !== 'restart-dsh') return null
+    if (r.action !== 'update' && r.action !== 'uninstall' && r.action !== 'restart-dsh' && r.action !== 'repair') return null
     return { action: r.action, keepAuth: r.keepAuth === true, lang: r.lang === 'en' ? 'en' : 'zh' }
   } catch {
     return null

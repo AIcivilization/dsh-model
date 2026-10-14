@@ -238,7 +238,19 @@ export function apply(ctx) {
           } catch {
             return json(res, 400, { error: { code: 'invalid_json', message: 'invalid JSON' } })
           }
-          if (await exists(VPS_ROOT)) return json(res, 200, { vps: true })
+          if (await exists(VPS_ROOT)) {
+            // dsh-vps：安装要 root。管理员小服务还在（setup 装的）就交给它跑 setup，页面照样看进度；不在就只能给命令
+            if (!(await exists(ADMIN_PATH_UNIT))) return json(res, 200, { vps: true })
+            const log = join(home(), 'repair.log')
+            if (body.poll) {
+              const text = await readFile(log, 'utf8').catch(() => '')
+              const m = /^\[dsh-model\] exit (-?\d+)$/m.exec(text)
+              return json(res, 200, { running: !m, output: text.replace(/\n?\[dsh-model\] exit -?\d+\n?$/, '').replace(/\x1b\[[0-9;]*m/g, ''), code: m ? Number(m[1]) : null, action: 'repair' })
+            }
+            await writeFile(log, '', { mode: 0o600 }).catch(() => {})
+            await writeFile(join(home(), 'admin', 'request'), JSON.stringify({ action: 'repair', lang: body.lang === 'en' ? 'en' : 'zh' }), { mode: 0o600 })
+            return json(res, 200, { running: true, output: '', code: null, action: 'repair' })
+          }
           // { poll: true }：只取进度；否则开始（已经在跑就接着看同一个）
           if (body.poll) return json(res, 200, job ? { running: job.running, output: job.output, code: job.code, action: job.action } : { running: false, output: '', code: null })
           const action = body.action === 'repair' ? 'repair' : 'setup'

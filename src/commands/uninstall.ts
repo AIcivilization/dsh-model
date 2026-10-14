@@ -58,9 +58,13 @@ export async function uninstall(ctx: Ctx, opts: { yes?: boolean; keepAuth?: bool
   await step('remote', async () => {
     if (all.state.remote && all.state.remote.mode !== 'off') await disableRemote(ctx, all)
   })
-  await step('dsh-plugin', async () => {
+  // 移除插件只是尽力而为：dsh 的 pnpm 可能因"新版本要等一天"的规则拒绝改动（2026-10-14 实测，连删除也会被拦）。
+  // 这一步失败不该让卸载停在半路：服务、配置照样清掉，home 照样删，插件请用户在 dsh 的插件页手动删。
+  try {
     if (await removeDshPlugin(ctx, all, { force: opts.removePlugin })) ok(L('已从 dsh 移除 dsh-model 插件', 'Removed the dsh-model plugin from dsh'))
-  })
+  } catch (error) {
+    warn(L(`没能自动从 dsh 移除 dsh-model 插件（${(error as Error).message}）：请在 dsh 的插件页里手动删掉它`, `Could not remove the dsh-model plugin from dsh automatically (${(error as Error).message}); remove it on the dsh Plugins page`))
+  }
   await step('workbuddy', async () => {
     if (await removeWorkbuddyPlugin(ctx, all)) ok(L('已移除上一版安装的 WorkBuddy 插件', 'Removed the WorkBuddy plugin installed by a previous version'))
     if (await disableWorkbuddy(ctx, all)) ok(L('WorkBuddy bridge 服务已移除', 'WorkBuddy bridge service removed'))

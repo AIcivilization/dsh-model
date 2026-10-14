@@ -614,7 +614,8 @@ window.__ModuleLoader__.load({
         }
       }
       const cmds = notInstalled ? ['npm install -g dsh-model', 'dsh-model setup'] : ['dsh-model repair']
-      const vpsCmds = notInstalled ? ['sudo npm install -g dsh-model', 'sudo dsh-model setup'] : ['sudo dsh-model repair']
+      // setup 什么缺了补什么（卸载到一半、服务被删了也能救回来），比 repair 稳
+      const vpsCmds = notInstalled ? ['sudo npm install -g dsh-model', 'sudo dsh-model setup'] : ['sudo dsh-model setup']
       const cmdBlock = (list) => h('div', { style: { ...S.card, padding: '8px 12px', marginTop: 8 } }, list.map((c) => h('div', { key: c, style: { ...S.line, minHeight: 30 } }, h('code', { style: { ...S.mono, ...S.grow } }, c), h(CopyButton, { get: c }))))
       return h('div', { style: { color: C.text, maxWidth: 820 } },
         h('div', { style: S.section },
@@ -623,7 +624,7 @@ window.__ModuleLoader__.load({
             ? L('这个页面只是管理界面；模型由 dsh-model 在本机运行的服务提供（统一端点、WorkBuddy bridge、登录与用量）。装好后，来源、key 和模型都在这里管理。', 'This page is only the control panel; models are served by dsh-model\'s local service (the unified endpoint, WorkBuddy bridge, sign-ins and usage). Once it is set up, manage sources, keys and models here.')
             : L('可能是电脑重启后服务没起来，或者刚升级。修复会按记录重新注册并启动服务。', 'The service may not have started after a reboot, or was just upgraded. Repair re-registers and starts it from the saved records.')),
           res?.vps ? h('div', null,
-            h('p', { style: { ...S.note, color: C.text } }, L('这是 dsh-vps 服务器：安装要 root 权限，请在服务器终端里执行：', 'This is a dsh-vps server: setup needs root, so run this in a server terminal:')),
+            h('p', { style: { ...S.note, color: C.text } }, L('这是 dsh-vps 服务器：这一步要 root 权限，而这台机器上还没有 dsh-model 的管理员服务。请在服务器终端里执行一次（之后页面上的按钮就能用）：', 'This is a dsh-vps server: this needs root, and dsh-model\'s admin service is not on this machine yet. Run this once in a server terminal (the page buttons work afterwards):')),
             cmdBlock(vpsCmds),
             h('p', { style: { ...S.note, marginTop: 8 } }, L('装好后刷新本页。', 'Reload this page when done.'))) : h('div', null,
             h('div', { style: S.line },

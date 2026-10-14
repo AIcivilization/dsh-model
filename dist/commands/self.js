@@ -5,7 +5,7 @@
 // 3. 用新版本执行一次 repair：重写服务文件、重启引擎与守护进程、同步模型。
 import { spawn } from 'node:child_process';
 import { closeSync, openSync } from 'node:fs';
-import { chown, realpath } from 'node:fs/promises';
+import { chown, realpath, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join } from 'node:path';
 import { requireRootInVps } from '../context.js';
 import { DshModelError, isDshModelError } from '../errors.js';
@@ -120,8 +120,12 @@ export async function selfUpdate(ctx, opts = {}) {
 }
 /** 管理页请求的日志：更新写在 home 里；卸载会删 home，写在它外面 */
 export function selfJobLog(ctx, action) {
-    return action === 'uninstall' ? join(dirname(ctx.paths.home), 'dsh-model-uninstall.log') : join(ctx.paths.home, 'update.log');
+    if (action === 'uninstall')
+        return join(dirname(ctx.paths.home), 'dsh-model-uninstall.log');
+    return join(ctx.paths.home, action === 'repair' ? 'repair.log' : 'update.log');
 }
+/** admin-run 跑完在日志最后写的一行：页面据此知道结束了、成没成 */
+export const ADMIN_DONE_RE = /^\[dsh-model\] exit (-?\d+)$/m;
 /** 由 dsh-model-admin.service（root）执行：取出管理页的请求单，只做 update / uninstall */
 export async function adminRun(ctx) {
     if (!ctx.isRoot)
@@ -138,7 +142,8 @@ export async function adminRun(ctx) {
     const out = openSync(log, 'w', 0o600);
     if (ctx.owner)
         await chown(log, ctx.owner.uid, ctx.owner.gid).catch(() => { });
-    const args = req.action === 'update' ? ['update'] : ['uninstall', '--yes', '--remove-plugin', ...(req.keepAuth ? ['--keep-auth'] : [])];
+    // repair 就是重跑 setup（幂等，什么缺了补什么；比 repair 命令能修的多）
+    const args = req.action === 'update' ? ['update'] : req.action === 'repair' ? ['setup', '--skip-dsh-plugin'] : ['uninstall', '--yes', '--remove-plugin', ...(req.keepAuth ? ['--keep-auth'] : [])];
     const code = await new Promise((resolve) => {
         const child = spawn(process.execPath, [join(PKG_ROOT, 'bin', 'dsh-model.js'), ...args, '--lang', req.lang ?? 'zh'], {
             stdio: ['ignore', out, out],
@@ -149,5 +154,6 @@ export async function adminRun(ctx) {
         child.on('exit', (c) => resolve(c ?? -1));
     });
     closeSync(out);
+    await writeFile(log, `\n[dsh-model] exit ${code}\n`, { flag: 'a' }).catch(() => { });
     return code;
 }
