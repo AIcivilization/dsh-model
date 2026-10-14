@@ -1039,7 +1039,11 @@ export class Daemon {
         await this.removeQoderPat()
         return ok(await this.checkinStatus())
       }
-      if (method === 'GET' && path === '/failures') return ok(await recentFailures(this.ctx.paths.logs))
+      if (method === 'GET' && path === '/failures') {
+        // 失败之后同一个模型又成功调用过（例如限流过一会儿就好了）：已经自己恢复，不再显示
+        const list = await recentFailures(this.ctx.paths.logs)
+        return ok(list.filter((f) => !f.model || !((this.stats.lastSuccessAt(f.model) ?? 0) > Date.parse(f.at))))
+      }
       if (method === 'POST' && path === '/models/test') return ok(await this.testModel(String(b.model ?? '')))
       if (method === 'POST' && path === '/self/update') return ok(await this.startSelfJob('update'))
       if (method === 'POST' && path === '/self/uninstall') return ok(await this.startSelfJob('uninstall', { keepAuth: b.keepAuth === true }))

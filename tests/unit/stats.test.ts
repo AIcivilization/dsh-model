@@ -38,3 +38,20 @@ describe('stats', () => {
     expect(sourceOf({ timestamp: '', latency_ms: 0, failed: false, alias: 'gpt-5', provider: 'codex' })).toBe('codex')
   })
 })
+
+describe('last success per model (to hide failures that recovered)', () => {
+  it('reports the latest successful call of a model', async () => {
+    const { Stats } = await import('../../src/daemon/stats.js')
+    const { mkdtemp } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const st = new Stats(join(await mkdtemp(join(tmpdir(), 'dsh-model-stats-')), 'stats.json'))
+    const now = Date.now()
+    st.add([
+      { timestamp: new Date(now - 60_000).toISOString(), model: 'a/x', alias: 'a/x', failed: true, latency_ms: 10, tokens: { output: 0 } },
+      { timestamp: new Date(now - 30_000).toISOString(), model: 'a/x', alias: 'a/x', failed: false, latency_ms: 10, tokens: { output: 3 } },
+    ] as never, () => 'dsh')
+    expect(Math.abs((st.lastSuccessAt('a/x') ?? 0) - (now - 30_000))).toBeLessThan(1500)
+    expect(st.lastSuccessAt('b/y')).toBeUndefined()
+  })
+})

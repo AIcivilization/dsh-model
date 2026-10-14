@@ -540,23 +540,52 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', style: S.btnPrimary, disabled: !name.trim(), onClick: add }, L('新增 key', 'Add key'))))
     }
 
-    /** 最近 24 小时失败的请求：哪个模型、为什么、该怎么办（只有出过错才显示） */
+    /**
+     * 最近失败的请求：平时一行"最近 24 小时失败 N 次（多是…）▸"，点开看明细；「知道了」之后这一批不再显示，有新的失败才重新出现。
+     * 已经自己恢复的（同一个模型之后又成功过）守护进程那边就去掉了。
+     */
+    const FAIL_ACK = 'dsh-model.failuresSeenAt'
+    const readAck = () => {
+      try { return Number(window.localStorage.getItem(FAIL_ACK)) || 0 } catch { return 0 }
+    }
+    const KIND_LABEL = {
+      rate: () => L('限流', 'rate limits'),
+      quota: () => L('额度或套餐不足', 'quota or plan'),
+      auth: () => L('登录或 key 失效', 'sign-in or key'),
+      model: () => L('模型不存在', 'missing models'),
+      upstream: () => L('上游或网络问题', 'upstream or network'),
+      other: () => L('其他原因', 'other causes'),
+    }
     function FailuresCard({ failures }) {
-      const [all, setAll] = useState(false)
-      if (!failures || !failures.length) return null
+      const [open, setOpen] = useState(false)
+      const [ack, setAck] = useState(readAck)
+      const fresh = (failures || []).filter((f) => Date.parse(f.at) > ack)
+      if (!fresh.length) return null
+      const counts = {}
+      for (const f of fresh) counts[f.kind] = (counts[f.kind] || 0) + 1
+      const top = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0]
       const color = (k) => (k === 'rate' || k === 'upstream' ? C.warn : C.err)
-      const shown = all ? failures : failures.slice(0, 5)
+      const dismiss = () => {
+        const latest = Math.max(...fresh.map((f) => Date.parse(f.at)))
+        setAck(latest)
+        setOpen(false)
+        try { window.localStorage.setItem(FAIL_ACK, String(latest)) } catch { /* 无痕模式：只在本次生效 */ }
+      }
       return h('div', { style: S.section },
-        h('div', { style: S.h }, L(`最近失败（24 小时内 ${failures.length} 次）`, `Recent failures (${failures.length} in 24 hours)`)),
-        h('p', { style: S.note }, L('经统一端点失败的请求。只记录模型和报错，不记录对话内容。', 'Requests that failed through the endpoint. Only the model and the error are kept, never the conversation.')),
-        h('div', { style: S.card }, shown.map((f, i) => h('div', { key: `${f.at}-${i}`, style: i ? S.row : S.rowFirst },
+        h('div', { style: { ...S.card, padding: '10px 14px' } },
           h('div', { style: S.line },
-            h('span', { style: { ...S.label, ...S.mono, ...S.grow, fontSize: 13 } }, f.model || L('（未知模型）', '(unknown model)')),
-            h('span', { style: { fontSize: 12, color: color(f.kind) } }, `HTTP ${f.status}`),
-            h('span', { style: S.meta }, ago(f.at))),
-          h('div', { style: { fontSize: 13, color: color(f.kind), marginTop: 2 } }, f.advice),
-          f.message ? h('div', { style: { ...S.meta, ...S.mono, marginTop: 2, wordBreak: 'break-all' } }, f.message) : null))),
-        failures.length > 5 ? h('button', { type: 'button', style: { ...S.btn, marginTop: 8 }, onClick: () => setAll(!all) }, all ? L('收起', 'Show less') : L(`全部 ${failures.length} 条`, `All ${failures.length}`)) : null)
+            h('button', { type: 'button', 'aria-expanded': open, onClick: () => setOpen(!open), style: { ...S.grow, textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: color(top) } },
+              `${open ? '▾' : '▸'} ${L(`最近 24 小时失败 ${fresh.length} 次（多是${(KIND_LABEL[top] || KIND_LABEL.other)()}）`, `${fresh.length} failed request${fresh.length > 1 ? 's' : ''} in 24 hours (mostly ${(KIND_LABEL[top] || KIND_LABEL.other)()})`)}`),
+            h('button', { type: 'button', style: S.btn, onClick: dismiss }, L('知道了', 'Got it'))),
+          open ? h('div', { style: { marginTop: 8 } },
+            h('div', { style: { ...S.meta, marginBottom: 4 } }, L('经统一端点失败、之后也没再成功的请求。只记录模型和报错，不记录对话内容。', 'Requests that failed through the endpoint and have not succeeded since. Only the model and the error are kept, never the conversation.')),
+            fresh.slice(0, 20).map((f, i) => h('div', { key: `${f.at}-${i}`, style: { borderTop: i ? `1px solid ${C.border}` : 'none', padding: '6px 0' } },
+              h('div', { style: S.line },
+                h('span', { style: { ...S.mono, ...S.grow, fontSize: 12, color: C.text } }, f.model || L('（未知模型）', '(unknown model)')),
+                h('span', { style: { fontSize: 12, color: color(f.kind) } }, `HTTP ${f.status}`),
+                h('span', { style: S.meta }, ago(f.at))),
+              h('div', { style: { fontSize: 12, color: color(f.kind) } }, f.advice),
+              f.message ? h('div', { style: { ...S.meta, ...S.mono, wordBreak: 'break-all' } }, f.message) : null))) : null))
     }
 
     function ModelsCard({ stats }) {
@@ -1031,9 +1060,9 @@ window.__ModuleLoader__.load({
         err ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 12 } }, err) : null,
         h(EndpointCard, { endpoints: data.endpoints }),
         h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: (s) => setKeyDialog(s || true) }),
-        h(FailuresCard, { failures: data.failures }),
         h(KeysCard, { keys: data.keys, reload: () => load(false) }),
         h(ModelsCard, { stats: data.stats }),
+        h(FailuresCard, { failures: data.failures }),
         h(AboutCard, { onJob: setSelfJob }),
         login ? h(LoginDialog, { source: login.source, session: login.session, onDone: () => { setLogin(null); void load(true) }, onClose: () => { setLogin(null); void load(false) } }) : null,
         keyDialog ? h(KeyDialog, { source: keyDialog === true ? null : keyDialog, onDone: () => { setKeyDialog(false); void load(true) }, onClose: () => setKeyDialog(false) }) : null)

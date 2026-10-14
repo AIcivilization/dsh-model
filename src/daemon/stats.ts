@@ -97,6 +97,13 @@ export class Stats {
   }
 
   /** 收进一批用量记录；keyName 把客户端 key 映射成名字（未知的记为 unknown） */
+  /** 这个模型最近一次成功调用的时间（毫秒）；24 小时内没成功过返回 undefined */
+  lastSuccessAt(model: string): number | undefined {
+    let last: number | undefined
+    for (const r of this.recs) if (r.m === model && r.f === 0 && (last === undefined || r.t > last)) last = r.t
+    return last
+  }
+
   add(batch: UsageRecord[], keyName: (key: string | undefined) => string): void {
     for (const r of batch) {
       const t = Date.parse(r.timestamp) || Date.now()

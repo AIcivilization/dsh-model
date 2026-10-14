@@ -164,12 +164,23 @@ describe('settings page', () => {
     expect(container.textContent).not.toContain('已更新到')
   })
 
-  it('shows recent failures with advice', async () => {
-    handler = normal((c) => (c.path === '/failures' ? [200, [{ at: new Date().toISOString(), model: 'workbuddy-ai/deepseek-v4.1-flash', source: 'workbuddy-ai', status: 429, code: 'model_cooldown', message: '请求过于频繁，请稍后重试。', kind: 'rate', advice: '被限流：请求太频繁' }]] : [404, {}]))
+  it('recent failures: one line by default, details on click; "Got it" hides them until a newer failure', async () => {
+    window.localStorage.clear()
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    const fail = (at: string, kind: string, advice: string) => ({ at, model: 'workbuddy-ai/deepseek-v4.1-flash', source: 'workbuddy-ai', status: 429, code: 'model_cooldown', message: '请求过于频繁，请稍后重试。', kind, advice })
+    let list = [fail('2026-10-14T01:00:00Z', 'rate', '被限流：请求太频繁'), fail('2026-10-14T01:05:00Z', 'rate', '被限流：请求太频繁'), fail('2026-10-14T01:06:00Z', 'quota', '额度用完')]
+    handler = normal((c) => (c.path === '/failures' ? [200, list] : [404, {}]))
     await render()
-    await waitText('最近失败（24 小时内 1 次）')
-    expect(container.textContent).toContain('被限流：请求太频繁')
-    expect(container.textContent).toContain('workbuddy-ai/deepseek-v4.1-flash')
+    await waitText('▸ 最近 24 小时失败 3 次（多是限流）')
+    expect(container.textContent).not.toContain('被限流：请求太频繁')
+    await click('▸ 最近 24 小时失败 3 次（多是限流）')
+    await waitText('被限流：请求太频繁')
+    await click('知道了')
+    expect(container.textContent).not.toContain('最近 24 小时失败')
+    await act(async () => root?.unmount())
+    list = [...list, fail('2026-10-14T02:00:00Z', 'auth', '登录过期')]
+    await render()
+    await waitText('▸ 最近 24 小时失败 1 次（多是登录或 key 失效）')
   })
 
   it('model picker: "Test" shows whether the model works', async () => {
