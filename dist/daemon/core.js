@@ -15,7 +15,7 @@ import { atomicWrite } from '../util/fs.js';
 import { lang } from '../i18n.js';
 import { which } from '../util/exec.js';
 import { spawnDetached } from '../util/detach.js';
-import { recentFailures } from './failures.js';
+import { classify, recentFailures } from './failures.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
 import { randomBytes } from 'node:crypto';
 import { currentBinary } from '../engine/install.js';
@@ -762,6 +762,50 @@ export class Daemon {
         log_(`daemon: started ${action}${pid ? ` (pid ${pid})` : ''}`);
         return { started: true, log };
     }
+    /** 「测一下」：经引擎发一句很短的话，看能不能用、多久回复（会用掉一点点额度） */
+    async testModel(model) {
+        if (!model || model.length > 200)
+            throw new DshModelError('bad_model', L('model 不合法', 'invalid model'));
+        const all = await loadAll(this.ctx);
+        const started = Date.now();
+        let res;
+        try {
+            res = await fetch(`http://127.0.0.1:${all.config.port}/v1/chat/completions`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${dshKey(all.keys)}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model, max_tokens: 256, stream: false, messages: [{ role: 'user', content: L('只回复一个字：好', 'Reply with one word: ok') }] }),
+                signal: AbortSignal.timeout(90_000),
+            });
+        }
+        catch (error) {
+            return { ok: false, ms: Date.now() - started, advice: L('请求没有完成（超时或网络问题）', 'The request did not finish (timeout or network)'), message: String(error.message ?? error) };
+        }
+        const ms = Date.now() - started;
+        const text = await res.text();
+        if (res.ok) {
+            let reply = '';
+            try {
+                const m = JSON.parse(text).choices?.[0]?.message;
+                reply = (m?.content || (m?.reasoning_content ? L('（只返回了思考过程）', '(only reasoning returned)') : '')).trim().slice(0, 80);
+            }
+            catch {
+                // 不是 JSON 也算通了
+            }
+            return { ok: true, ms, reply };
+        }
+        let message = text.slice(0, 300);
+        let code;
+        try {
+            const e = JSON.parse(text).error ?? {};
+            code = e.code;
+            message = String(e.last_upstream_error || e.message || message).slice(0, 300);
+        }
+        catch {
+            // 原样
+        }
+        const c = classify({ status: res.status, ...(code ? { code } : {}), message });
+        return { ok: false, ms, status: res.status, advice: c.advice, message };
+    }
     /** 这个来源的全部模型，以及哪些显示在 dsh 里 */
     async sourceModels(id) {
         const def = mustSource(id);
@@ -909,6 +953,8 @@ export class Daemon {
                 return ok(await this.selfInfo());
             if (method === 'GET' && path === '/failures')
                 return ok(await recentFailures(this.ctx.paths.logs));
+            if (method === 'POST' && path === '/models/test')
+                return ok(await this.testModel(String(b.model ?? '')));
             if (method === 'POST' && path === '/self/update')
                 return ok(await this.startSelfJob('update'));
             if (method === 'POST' && path === '/self/uninstall')

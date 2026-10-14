@@ -165,4 +165,15 @@ describe('settings page', () => {
     expect(container.textContent).toContain('被限流：请求太频繁')
     expect(container.textContent).toContain('workbuddy-ai/deepseek-v4.1-flash')
   })
+
+  it('model picker: "Test" shows whether the model works', async () => {
+    handler = normal((c) => (c.path === '/models/test' ? [200, { ok: true, ms: 1234, reply: '好' }] : [404, {}]))
+    await render()
+    await waitText('WorkBuddy')
+    await click('选模型')
+    await waitText('恢复推荐')
+    const btn = [...container.querySelectorAll('button')].find((b) => b.textContent === '测一下')!
+    await act(async () => btn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await waitText('可用 · 1.2 秒 · 好')
+  })
 })

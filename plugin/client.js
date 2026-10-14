@@ -338,6 +338,16 @@ window.__ModuleLoader__.load({
       const [q, setQ] = useState('')
       const [msg, setMsg] = useState('')
       const [saving, setSaving] = useState(false)
+      const [tests, setTests] = useState({})
+      const test = async (id) => {
+        setTests((t) => ({ ...t, [id]: { running: true } }))
+        try {
+          const r = await api('POST', '/models/test', { model: id })
+          setTests((t) => ({ ...t, [id]: r }))
+        } catch (e) {
+          setTests((t) => ({ ...t, [id]: { ok: false, advice: e.message } }))
+        }
+      }
       useEffect(() => {
         let alive = true
         api('GET', `/sources/${source.id}/models`).then((r) => {
@@ -369,7 +379,10 @@ window.__ModuleLoader__.load({
         h('div', { style: { maxHeight: 300, overflowY: 'auto' } }, shown.map((m) => h('label', { key: m.id, style: { ...S.line, minHeight: 26, fontSize: 13, cursor: 'pointer' } },
           h('input', { type: 'checkbox', checked: sel.has(m.id), onChange: () => flip(m.id) }),
           h('span', { style: S.grow }, m.name),
-          m.recommended ? h('span', { style: { fontSize: 11, color: C.accent } }, L('推荐', 'Suggested')) : null))),
+          m.recommended ? h('span', { style: { fontSize: 11, color: C.accent } }, L('推荐', 'Suggested')) : null,
+          tests[m.id] ? h('span', { style: { fontSize: 11, color: tests[m.id].running ? C.sub : tests[m.id].ok ? C.ok : C.err, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: tests[m.id].message || tests[m.id].reply || '' },
+            tests[m.id].running ? L('测试中…', 'Testing…') : tests[m.id].ok ? L(`可用 · ${(tests[m.id].ms / 1000).toFixed(1)} 秒${tests[m.id].reply ? ` · ${tests[m.id].reply}` : ''}`, `OK · ${(tests[m.id].ms / 1000).toFixed(1)}s${tests[m.id].reply ? ` · ${tests[m.id].reply}` : ''}`) : (tests[m.id].advice || L('不可用', 'Not working'))) : null,
+          h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, disabled: tests[m.id]?.running, onClick: (e) => { e.preventDefault(); void test(m.id) } }, L('测一下', 'Test'))))),
         msg ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, msg) : null,
         h('div', { style: { ...S.line, marginTop: 8, flexWrap: 'wrap' } },
           h('button', { type: 'button', style: S.btnPrimary, disabled: saving, onClick: () => save([...sel]) }, saving ? L('保存中…', 'Saving…') : L('保存', 'Save')),

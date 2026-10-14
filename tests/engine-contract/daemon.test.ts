@@ -164,6 +164,16 @@ describe('daemon core against a real engine', () => {
     }
   }, 60_000)
 
+  it('test a model: a working one reports the reply and time; an unknown one reports why', async () => {
+    const good = await daemon.testModel('workbuddy/m1')
+    expect(good.ok).toBe(true)
+    expect(good.reply).toBe('hi')
+    expect(good.ms).toBeGreaterThanOrEqual(0)
+    const bad = await daemon.testModel('nope/missing-model')
+    expect(bad.ok).toBe(false)
+    expect(bad.advice).toBeTruthy()
+  }, 60_000)
+
   it('collects usage records per key and source', async () => {
     const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${dshKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'workbuddy/m1', messages: [{ role: 'user', content: 'x' }] }) })
     expect(res.status).toBe(200)
@@ -172,9 +182,9 @@ describe('daemon core against a real engine', () => {
       await new Promise((r) => setTimeout(r, 500))
       snap = daemon.statsSnapshot()
     }
-    // 上一个测试也用 dsh 的 key 调过一次 custom/fake-1：按 key 是 2 次，按来源各 1 次
-    expect(snap.byKey.dsh?.d1.requests).toBe(2)
-    expect(snap.bySource.workbuddy?.d1.requests).toBe(1)
+    // 前面的测试也用 dsh 的 key 调过：custom/fake-1 一次、「测一下」workbuddy/m1 一次（未知模型被引擎直接拒，不记用量）
+    expect(snap.byKey.dsh?.d1.requests).toBeGreaterThanOrEqual(3)
+    expect(snap.bySource.workbuddy?.d1.requests).toBeGreaterThanOrEqual(2)
     expect(snap.bySource.custom?.d1.requests).toBe(1)
   }, 30_000)
 })

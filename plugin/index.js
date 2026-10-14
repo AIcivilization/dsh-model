@@ -62,6 +62,7 @@ const ALLOWED = [
   ['GET', /^\/endpoints$/],
   ['GET', /^\/self$/],
   ['GET', /^\/failures$/],
+  ['POST', /^\/models\/test$/],
   ['POST', /^\/self\/(update|uninstall)$/],
   ['GET', /^\/sources\/[a-z-]{2,20}\/models$/],
   ['POST', /^\/sources\/[a-z-]{2,20}\/models$/],
