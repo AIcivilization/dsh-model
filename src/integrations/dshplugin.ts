@@ -7,7 +7,7 @@
 import { lstat, realpath, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Ctx } from '../context.js'
-import { dshPlugin, profileHasDependency } from '../dsh/cli.js'
+import { dshPlugin, dshPluginTee, profileHasDependency } from '../dsh/cli.js'
 import { resolveProfile } from '../dsh/locate.js'
 import { DshModelError } from '../errors.js'
 import { L } from '../i18n.js'
@@ -68,10 +68,19 @@ export async function installDshPlugin(ctx: Ctx, all: All, opts: { version?: str
   } catch {
     // 不存在
   }
-  const code = await dshPlugin(ctx, profile, ['add', want.install, '--config.strict-dep-builds=false'], all.config.proxy)
+  const { code, output } = await dshPluginTee(ctx, profile, ['add', want.install, '--config.strict-dep-builds=false'], all.config.proxy)
   const installed = await profileHasDependency(ctx, profile, PLUGIN_NAME)
   if (code !== 0 || !installed) {
-    throw new DshModelError('plugin_install_failed', L(`把 dsh-model 装进 dsh 失败（退出码 ${code}）`, `Failed to install dsh-model into dsh (exit code ${code})`), L('可以在 dsh 的插件市场搜索 dsh-model 安装', 'You can install it from the dsh plugin marketplace (search dsh-model)'))
+    const blocked = releaseAgeBlocked(output)
+    if (blocked.length) {
+      // dsh 的 pnpm 不装"发布不满一天"的版本，而且整份插件清单一起查：别的插件刚更新也会把这次拦下
+      throw new DshModelError(
+        'plugin_release_age',
+        L(`dsh 的插件安全规则（新发布的版本要等一天）拦下了这次安装：${blocked.join('、')}`, `dsh's plugin safety rule (new versions wait a day) blocked this install: ${blocked.join(', ')}`),
+        L('这条规则检查 dsh 里的全部插件，不只是 dsh-model。等上面列出的版本发布满一天后，再执行一次 dsh-model setup 即可', 'It checks every plugin in dsh, not just dsh-model. Run dsh-model setup again once the versions above are a day old'),
+      )
+    }
+    throw new DshModelError('plugin_install_failed', L(`把 dsh-model 装进 dsh 失败（退出码 ${code}）`, `Failed to install dsh-model into dsh (exit code ${code})`), L('可以在 dsh 的「添加插件」里填 dsh-model@<版本> 安装', 'You can add it in dsh with "Add plugin": dsh-model@<version>'))
   }
   all.state.plugins = [...(all.state.plugins ?? []).filter((p) => p.name !== PLUGIN_NAME), { name: PLUGIN_NAME, version: installed, installedByUs: true, installedAt: new Date().toISOString() }]
   ok(L(`dsh 插件已安装（${installed}）：重启一次 dsh，在「设置 → dsh-model」里管理来源、用量和 key`, `dsh plugin installed (${installed}): restart dsh once, then manage sources, usage and keys in Settings → dsh-model`))
@@ -88,4 +97,10 @@ export async function removeDshPlugin(ctx: Ctx, all: All, opts: { force?: boolea
   }
   all.state.plugins = (all.state.plugins ?? []).filter((p) => p.name !== PLUGIN_NAME)
   return true
+}
+
+/** pnpm 的 ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION：哪些包、什么时候发布的。导出给测试 */
+export function releaseAgeBlocked(output: string): string[] {
+  if (!/MINIMUM_RELEASE_AGE_VIOLATION/.test(output)) return []
+  return [...output.matchAll(/^\s*(\S+@\S+) was published at (\S+?),/gm)].map((m) => `${m[1]}（${m[2]!.replace('T', ' ').slice(0, 16)} 发布）`)
 }

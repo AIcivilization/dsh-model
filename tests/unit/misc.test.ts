@@ -104,3 +104,14 @@ describe('same-name models: auto/ failover entries', () => {
     ])
   })
 })
+
+describe('dsh plugin install blocked by pnpm minimumReleaseAge', () => {
+  it('names the packages that blocked it', async () => {
+    const { releaseAgeBlocked } = await import('../../src/integrations/dshplugin.js')
+    const out = `[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 2 lockfile entries failed verification:
+  dsh-cpamc@0.1.0-alpha.0 was published at 2026-10-13T10:59:17.060Z, within the minimumReleaseAge cutoff (2026-10-13T02:02:57.288Z)
+  dsh-vpn@0.1.7 was published at 2026-10-13T02:28:16.215Z, within the minimumReleaseAge cutoff (2026-10-13T02:02:57.288Z)`
+    expect(releaseAgeBlocked(out)).toEqual(['dsh-cpamc@0.1.0-alpha.0（2026-10-13 10:59 发布）', 'dsh-vpn@0.1.7（2026-10-13 02:28 发布）'])
+    expect(releaseAgeBlocked('ok')).toEqual([])
+  })
+})

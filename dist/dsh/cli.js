@@ -5,7 +5,7 @@ import { join, win32 } from 'node:path';
 import { VPS_ROOT } from '../context.js';
 import { DshModelError } from '../errors.js';
 import { L } from '../i18n.js';
-import { run, runInherit, which } from '../util/exec.js';
+import { run, runTee, which } from '../util/exec.js';
 import { exists } from '../util/fs.js';
 const MAC_APPS = ['/Applications/DeepSeek Harness.app', join(homedir(), 'Applications/DeepSeek Harness.app')];
 /** Windows 上 DeepSeek Harness 桌面版可能装在的目录 */
@@ -109,10 +109,14 @@ async function profileStoreDir(ctx, profile) {
 }
 /** dsh plugin --profile <p> <pnpm-args...>，输出直接给用户看（pnpm 进度） */
 export async function dshPlugin(ctx, profile, pnpmArgs, proxy) {
+    return (await dshPluginTee(ctx, profile, pnpmArgs, proxy)).code;
+}
+/** 同 dshPlugin，另外返回输出（安装失败时要认出原因） */
+export async function dshPluginTee(ctx, profile, pnpmArgs, proxy) {
     const cli = await locateDshCli(ctx);
     const store = await profileStoreDir(ctx, profile);
     const w = wrap(ctx, cli, ['plugin', '--profile', profile, ...pnpmArgs, ...(store ? [`--config.store-dir=${store}`] : [])], proxy);
-    return runInherit(w.cmd, w.args, { env: { ...dshEnv(ctx, proxy), ...cli.env } });
+    return runTee(w.cmd, w.args, { env: { ...dshEnv(ctx, proxy), ...cli.env } });
 }
 /** profile 的 package.json 里有没有这个依赖（有就是用户或 dsh 已经装了） */
 export async function profileHasDependency(ctx, profile, name) {

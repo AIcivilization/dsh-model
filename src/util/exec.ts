@@ -69,6 +69,18 @@ export function runInherit(cmd: string, args: string[], options: { cwd?: string;
   })
 }
 
+/** 像 runInherit 一样把输出原样给用户看，同时留一份（要从输出里认出具体错误时用） */
+export function runTee(cmd: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<{ code: number; output: string }> {
+  return new Promise((resolve) => {
+    let output = ''
+    const child = spawn(...spawnArgs(cmd, args, { cwd: options.cwd, env: options.env ?? process.env, stdio: ['inherit', 'pipe', 'pipe'] }))
+    child.stdout?.on('data', (d: Buffer) => { process.stdout.write(d); output = (output + d.toString()).slice(-20000) })
+    child.stderr?.on('data', (d: Buffer) => { process.stderr.write(d); output = (output + d.toString()).slice(-20000) })
+    child.on('error', () => resolve({ code: 127, output }))
+    child.on('close', (code) => resolve({ code: code ?? 1, output }))
+  })
+}
+
 /** 在 PATH 里找命令 */
 export async function which(cmd: string): Promise<string | null> {
   if (WIN) {
