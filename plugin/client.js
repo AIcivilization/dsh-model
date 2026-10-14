@@ -853,7 +853,9 @@ window.__ModuleLoader__.load({
         try { await api('POST', '/checkin/qoder', { pat: pat.trim(), region }); onDone() } catch (e) { setMsg(e.message); setBusy(false) }
       }
       return h(Modal, { title: L('添加 Qoder 签到', 'Add Qoder check-in'), onClose },
-        h('p', { style: S.note }, L('在 Qoder 的账号设置里创建一个个人访问令牌（Personal Access Token），粘贴到这里。只用来每天领签到积分，保存在本机。', 'Create a Personal Access Token in your Qoder account settings and paste it here. It is only used to claim the daily credits, and stays on this machine.')),
+        h('p', { style: S.note },
+          L('登录 Qoder 后，在「账号 → 集成」里创建一个个人访问令牌（Personal Access Token，以 pt- 开头，只在创建时显示一次），粘贴到这里。只用来每天领签到积分，保存在本机。', 'Sign in to Qoder and create a Personal Access Token under Account → Integrations (it starts with pt- and is shown only once), then paste it here. It is only used to claim the daily credits, and stays on this machine.'),
+          h('a', { href: region === 'cn' ? 'https://qoder.com.cn/account/integrations' : 'https://qoder.com/account/integrations', target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent, marginLeft: 6 } }, region === 'cn' ? L('去 Qoder 国内版创建 ↗', 'Create on Qoder China ↗') : L('去 Qoder 国际版创建 ↗', 'Create on Qoder ↗'))),
         h('div', { style: { ...S.line, marginBottom: 8 } },
           ['cn', 'intl'].map((r) => h('label', { key: r, style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' } },
             h('input', { type: 'radio', name: 'qoder-region', checked: region === r, onChange: () => setRegion(r) }), r === 'cn' ? L('国内版', 'China') : L('国际版', 'International')))),

@@ -280,4 +280,18 @@ describe('settings page', () => {
     await click('知道了')
     expect(container.textContent).toBe('')
   })
+
+  it('Qoder dialog links to the token page of the chosen edition', async () => {
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    handler = normal((c) => (c.path === '/checkin' ? [200, { auto: true, date: '2026-10-14', results: [], available: [{ id: 'workbuddy', label: 'WorkBuddy' }], qoder: { configured: false } }] : [404, {}]))
+    await render()
+    await waitText('+ 添加 Qoder')
+    await click('+ 添加 Qoder')
+    await waitText('去 Qoder 国内版创建 ↗')
+    const link = () => [...container.querySelectorAll('a')].find((a) => a.textContent?.startsWith('去 Qoder'))!
+    expect(link().getAttribute('href')).toBe('https://qoder.com.cn/account/integrations')
+    const intl = [...container.querySelectorAll('input[type="radio"]')][1] as HTMLInputElement
+    await act(async () => intl.click())
+    expect(link().getAttribute('href')).toBe('https://qoder.com/account/integrations')
+  })
 })
