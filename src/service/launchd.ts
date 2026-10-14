@@ -1,6 +1,7 @@
 // service/launchd.ts — macOS 用户级 LaunchAgent（RunAtLoad + KeepAlive）
 
 import { rm } from 'node:fs/promises'
+import { info } from '../util/output.js'
 import { DshModelError } from '../errors.js'
 import { L } from '../i18n.js'
 import { run } from '../util/exec.js'
@@ -47,11 +48,24 @@ export function launchd(spec: ServiceSpec): ServiceManager {
   const domain = `gui/${process.getuid?.() ?? 501}`
   const target = `${domain}/${spec.label}`
 
+  /**
+   * 被关掉的后台服务（系统设置「登录项 → 允许在后台」被关，或清理软件关的）重新允许：
+   * 只动 dsh-model 自己的两个服务，用户点「修复」/ 执行 setup 就是要它们跑起来（2026-10-14 实测：被关后 bootstrap 报 5: Input/output error）。
+   */
+  const reenable = async (): Promise<boolean> => {
+    const r = await run('launchctl', ['print-disabled', domain])
+    if (!new RegExp(`"${spec.label.replace(/\./g, '\\.')}" => (disabled|true)`).test(r.stdout)) return false
+    await run('launchctl', ['enable', target])
+    info(L(`${spec.label} 之前被 macOS 关掉了后台运行，已重新允许`, `${spec.label} had background running turned off in macOS; allowed it again`))
+    return true
+  }
+  const loaded = async () => (await run('launchctl', ['print', target])).code === 0
   const bootstrap = async () => {
+    await reenable()
     const r = await run('launchctl', ['bootstrap', domain, spec.file])
-    // 已加载时返回 5 / 37（"service already loaded"），当成功
-    if (r.code !== 0 && !/already|in progress|5:|37:/i.test(r.stderr)) {
-      throw new DshModelError('service_failed', L(`launchctl bootstrap 失败：${r.stderr.trim()}`, `launchctl bootstrap failed: ${r.stderr.trim()}`))
+    // 已经加载过会报错（5 / 37 等）：不看错误码，直接看它到底加载上没有
+    if (r.code !== 0 && !(await loaded())) {
+      throw new DshModelError('service_failed', L(`后台服务 ${spec.label} 没能加载：${r.stderr.trim()}`, `Could not load background service ${spec.label}: ${r.stderr.trim()}`), L('看一下「系统设置 → 通用 → 登录项与扩展 → 允许在后台」里它是否被关掉了', 'Check System Settings → General → Login Items & Extensions → Allow in the Background'))
     }
   }
   const bootout = async () => {
