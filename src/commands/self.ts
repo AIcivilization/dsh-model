@@ -125,6 +125,11 @@ export async function adminRun(ctx: Ctx): Promise<number> {
   if (!ctx.isRoot) throw new DshModelError('needs_root', L('admin-run 只由 dsh-model-admin 服务以 root 执行', 'admin-run is run by the dsh-model-admin service as root'))
   const req = await takeAdminRequest(ctx)
   if (!req) return 0
+  if (req.action === 'restart-dsh') {
+    // dsh-vps 的 dsh 由 dsh-gate 管着：重启它（会断开当前会话，页面会自己重连）
+    const r = await run('systemctl', ['restart', 'dsh-gate'])
+    return r.code
+  }
   const log = selfJobLog(ctx, req.action)
   const out = openSync(log, 'w', 0o600)
   if (ctx.owner) await chown(log, ctx.owner.uid, ctx.owner.gid).catch(() => {})

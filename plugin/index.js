@@ -9,7 +9,8 @@
 
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { access, readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { access, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,6 +18,30 @@ import { fileURLToPath } from 'node:url'
 /** 本包根目录：插件就是完整的 dsh-model 包，自带命令行 */
 const PKG_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const VPS_ROOT = '/opt/dsh-vps'
+const ADMIN_PATH_UNIT = '/etc/systemd/system/dsh-model-admin.path'
+
+/** 这份代码加载时的版本：插件装了新版但 dsh 没重启时，它和磁盘上的版本不一样 */
+const RUNNING_VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(join(PKG_ROOT, 'package.json'), 'utf8')).version
+  } catch {
+    return ''
+  }
+})()
+
+async function installedVersion() {
+  try {
+    return JSON.parse(await readFile(join(PKG_ROOT, 'package.json'), 'utf8')).version
+  } catch {
+    return RUNNING_VERSION
+  }
+}
+
+/** 页面能不能直接重启 dsh：只在 dsh-vps 上（交给 root 的 dsh-model-admin 执行 systemctl restart dsh-gate）；其他环境提示手动重启 */
+async function restartMode() {
+  if ((await exists(VPS_ROOT)) && (await exists(ADMIN_PATH_UNIT))) return 'vps'
+  return process.versions.electron ? 'desktop' : 'manual'
+}
 
 export const name = 'dsh-model'
 export const inject = []
@@ -165,6 +190,30 @@ export function apply(ctx) {
           } catch {
             return json(res, 503, { error: { code: 'daemon_unreachable', message: 'dsh-model daemon is not running (run dsh-model repair)' } })
           }
+        },
+      }),
+    )
+
+    // 插件版本与重启：装了新版但 dsh 还在跑旧代码时，页面提示（VPS 上可一键重启）
+    track(
+      ws.register({
+        kind: 'exact',
+        path: '/api-dsh-model/host',
+        handler: async (req, res) => {
+          const bad = check(req, token)
+          if (bad) return json(res, bad.code, { error: { code: 'refused', message: bad.error } })
+          let body
+          try {
+            body = JSON.parse((await readBody(req)) || '{}')
+          } catch {
+            return json(res, 400, { error: { code: 'invalid_json', message: 'invalid JSON' } })
+          }
+          const mode = await restartMode()
+          if (body.action !== 'restart') return json(res, 200, { running: RUNNING_VERSION, installed: await installedVersion(), restart: mode })
+          if (mode !== 'vps') return json(res, 409, { error: { code: 'restart_unsupported', message: 'restart dsh manually' } })
+          // 写给 root 的 dsh-model-admin：它只认几件固定的事，这里是 restart-dsh
+          await writeFile(join(home(), 'admin', 'request'), JSON.stringify({ action: 'restart-dsh' }), { mode: 0o600 })
+          return json(res, 200, { restarting: true })
         },
       }),
     )

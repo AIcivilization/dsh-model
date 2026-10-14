@@ -673,12 +673,71 @@ window.__ModuleLoader__.load({
           state.phase === 'done' && upd ? h('button', { type: 'button', style: { ...S.btn, marginTop: 10 }, onClick: onDone }, L('返回', 'Back')) : null))
     }
 
+    /** 调宿主自己的接口（不经守护进程）：/api-dsh-model/host */
+    async function hostCall(body, retried) {
+      const r = await fetch('/api-dsh-model/host', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json', 'x-dsh-model-token': token },
+        body: JSON.stringify(body),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (r.status === 403 && !retried && j?.error?.code === 'refused') {
+        await refreshToken()
+        return hostCall(body, true)
+      }
+      if (!r.ok) throw new Error(j?.error?.message || `HTTP ${r.status}`)
+      return j
+    }
+
+    /** 插件已更新、但 dsh 还在跑旧代码：顶部提示，VPS 上可一键重启 */
+    function RestartBanner({ host }) {
+      const [state, setState] = useState('')
+      if (!host || !host.installed || !host.running || host.installed === host.running) return null
+      const restart = async () => {
+        if (!window.confirm(L('重启 dsh？正在进行的对话会中断，大约十几秒后自动恢复。', 'Restart dsh? Ongoing conversations are interrupted; it comes back in about ten seconds.'))) return
+        setState('restarting')
+        try {
+          await hostCall({ action: 'restart' })
+        } catch (e) {
+          setState(e.message)
+          return
+        }
+        // 等它停下再起来：先连不上，再连得上，就刷新页面
+        let wasDown = false
+        for (let i = 0; i < 120; i++) {
+          await new Promise((r) => setTimeout(r, 1000))
+          const up = await fetch('/', { credentials: 'same-origin', cache: 'no-store' }).then((r) => r.ok || r.status === 401 || r.status === 302, () => false)
+          if (!up) wasDown = true
+          else if (wasDown) { window.location.reload(); return }
+        }
+        window.location.reload()
+      }
+      return h('div', { style: { ...S.card, padding: '10px 14px', marginBottom: 16, borderColor: C.warn } },
+        h('div', { style: S.line },
+          h('span', { style: { ...S.grow, fontSize: 13, color: C.text } },
+            L(`dsh-model 已更新到 ${host.installed}，但 dsh 还在运行 ${host.running} 的代码，重启 dsh 后生效。`, `dsh-model was updated to ${host.installed}, but dsh is still running ${host.running}; restart dsh to apply it.`),
+            host.restart === 'desktop' ? h('span', { style: { color: C.sub } }, L('请完全退出 dsh（Windows 上连同右下角托盘的图标）再打开。', ' Quit dsh completely (on Windows, the tray icon too) and open it again.')) : null,
+            host.restart === 'manual' ? h('span', { style: { color: C.sub } }, L('请重启 dsh。', ' Please restart dsh.')) : null),
+          host.restart === 'vps' ? h('button', { type: 'button', style: S.btnPrimary, disabled: state === 'restarting', onClick: () => void restart() }, state === 'restarting' ? L('正在重启…', 'Restarting…') : L('重启 dsh', 'Restart dsh')) : null),
+        state && state !== 'restarting' ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, state) : null)
+    }
+
     // —— 整页 ——
     function SettingsSection() {
       const [data, setData] = useState(null)
       const [err, setErr] = useState('')
       const [errCode, setErrCode] = useState('')
       const [selfJob, setSelfJob] = useState(null)
+      const [host, setHost] = useState(null)
+      useEffect(() => {
+        let stop = false
+        const check = () => hostCall({}).then((r) => { if (!stop) setHost(r) }, () => {})
+        void check()
+        const t = setInterval(check, 60_000)
+        return () => { stop = true; clearInterval(t) }
+      }, [])
+      const banner = h(RestartBanner, { host })
       const [login, setLogin] = useState(null)
       const [keyDialog, setKeyDialog] = useState(false)
       const alive = useRef(true)
@@ -698,9 +757,10 @@ window.__ModuleLoader__.load({
       }, [load])
       // 更新 / 卸载进行中、服务没装或没在运行：整页换成对应的卡片（不能只显示一行错误）
       if (selfJob) return h(SelfProgress, { job: selfJob, onDone: () => { setSelfJob(null); void load(true) } })
-      if (errCode === 'daemon_not_configured' || errCode === 'daemon_unreachable') return h(Onboarding, { code: errCode, onDone: () => void load(true) })
+      if (errCode === 'daemon_not_configured' || errCode === 'daemon_unreachable') return h('div', null, banner, h(Onboarding, { code: errCode, onDone: () => void load(true) }))
       if (!data) return h('div', { style: { fontSize: 13, color: err ? C.err : C.sub, padding: '8px 0' } }, err || L('加载中…', 'Loading…'))
       return h('div', { style: { color: C.text, maxWidth: 820 } },
+        banner,
         err ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 12 } }, err) : null,
         h(EndpointCard, { endpoints: data.endpoints }),
         h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: (s) => setKeyDialog(s || true) }),

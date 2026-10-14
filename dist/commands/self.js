@@ -129,6 +129,11 @@ export async function adminRun(ctx) {
     const req = await takeAdminRequest(ctx);
     if (!req)
         return 0;
+    if (req.action === 'restart-dsh') {
+        // dsh-vps 的 dsh 由 dsh-gate 管着：重启它（会断开当前会话，页面会自己重连）
+        const r = await run('systemctl', ['restart', 'dsh-gate']);
+        return r.code;
+    }
     const log = selfJobLog(ctx, req.action);
     const out = openSync(log, 'w', 0o600);
     if (ctx.owner)

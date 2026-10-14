@@ -10,6 +10,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 type Handler = (call: { method: string; path: string; body?: unknown }) => [number, unknown]
 let handler: Handler = () => [404, {}]
+let hostInfo: unknown = { running: '1.0.0', installed: '1.0.0', restart: 'desktop' }
 let Section: React.ComponentType
 let root: Root | undefined
 let container: HTMLElement
@@ -23,6 +24,7 @@ beforeAll(async () => {
   w.__DSH_MODEL_TOKEN__ = 't'
   w.fetch = async (url: string, opts: { body: string }) => {
     if (url === '/api-dsh-model/token') return reply(200, { token: 't' })
+    if (url === '/api-dsh-model/host') return reply(200, hostInfo)
     const [status, body] = handler(JSON.parse(opts.body))
     return reply(status, body)
   }
@@ -38,6 +40,7 @@ beforeAll(async () => {
 })
 
 afterEach(async () => {
+  hostInfo = { running: '1.0.0', installed: '1.0.0', restart: 'desktop' }
   await act(async () => root?.unmount())
   root = undefined
   container?.remove()
@@ -133,5 +136,25 @@ describe('settings page', () => {
     await click('保存')
     await act(async () => new Promise((r) => setTimeout(r, 50)))
     expect(posted).toEqual([{ key: 'AIza-test-key-123456' }])
+  })
+
+  it('updated but not restarted: shows the restart banner (button only on dsh-vps)', async () => {
+    handler = normal()
+    hostInfo = { running: '1.0.0', installed: '1.1.0', restart: 'desktop' }
+    await render()
+    await waitText('dsh-model 已更新到 1.1.0')
+    expect(container.textContent).toContain('完全退出 dsh')
+    expect([...container.querySelectorAll('button')].some((b) => b.textContent === '重启 dsh')).toBe(false)
+    await act(async () => root?.unmount())
+    hostInfo = { running: '1.0.0', installed: '1.1.0', restart: 'vps' }
+    await render()
+    await waitText('重启 dsh')
+  })
+
+  it('no banner when the running code is the installed one', async () => {
+    handler = normal()
+    await render()
+    await waitText('WorkBuddy')
+    expect(container.textContent).not.toContain('已更新到')
   })
 })
