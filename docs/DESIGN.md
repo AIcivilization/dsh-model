@@ -91,7 +91,7 @@ bridge 的职责只有一件：把"WorkBuddy 私有接口 + App 登录态"变成
 ### 1.3.3 运行形态的变化
 
 - 常驻进程从一个变成两个：引擎（launchd `com.dsh-model.engine`）和 bridge（`com.dsh-model.bridge`，仅在检测到 WorkBuddy App 时注册）。两者都只绑回环地址。
-- `setup` 默认安装引擎（OpenCode 也要走引擎），并接入 OpenCode Zen 和 WorkBuddy；订阅上游照旧用 `login`。
+- `setup` 默认安装引擎（OpenCode 也要走引擎）并接入 WorkBuddy；安装时不问任何 key，OpenCode Zen 等要 key 的来源已配置过的会刷新，没配置的跳过，需要时在管理页打开。订阅上游照旧用 `login`。
 - dsh 插件版 WorkBuddy 的界面能力（积分卡片、徽章、模型显隐）不再提供，改由 `dsh-model status` 显示账号和积分。
 
 ## 2. 架构

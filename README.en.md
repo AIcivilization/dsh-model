@@ -42,7 +42,7 @@ On a dsh-vps server, use `sudo dsh-model setup`. On Windows, run it in a normal 
 `setup` is safe to re-run. It:
 
 1. downloads and verifies the engine and runs it on `127.0.0.1:8317/v1`, with key auth enforced;
-2. connects OpenCode Zen (enter your key; it is tested before being saved) and WorkBuddy (dsh-model's own bridge);
+2. connects WorkBuddy (dsh-model's own bridge). Setup asks for no keys: turn on OpenCode Zen and other key-based sources from the management page when you need them;
 3. installs the management page into dsh and syncs the models into dsh;
 4. on a VPS, also opens a public address `https://<dsh's domain>:9443/v1` (or `<IP>.sslip.io` when there is no domain).
 

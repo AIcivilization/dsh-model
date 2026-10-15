@@ -17,7 +17,7 @@ import { ensureDir } from '../util/fs.js';
 import { bold, info, next, ok, skip, warn } from '../util/output.js';
 import { findFreePort, isPortFree } from '../util/port.js';
 import { detectProxy, normalizeProxyUrl, redactProxy } from '../util/proxy.js';
-import { askOpencodeKey, configureOpencode } from './opencode.js';
+import { configureOpencode } from './opencode.js';
 import { opencodeConfigured } from '../integrations/opencode.js';
 import { ensureDaemon } from '../daemon/service.js';
 import { installDshPlugin } from '../integrations/dshplugin.js';
@@ -26,8 +26,6 @@ import { installAdmin } from '../service/admin.js';
 import { DEFAULT_PUBLIC_PORT, publicHost } from '../remote/public.js';
 export async function setup(ctx, opts) {
     requireRootInVps(ctx);
-    // 要问的先问完再拿锁：等你输入时不占着锁，dsh 管理页照常能用（实测：卡在问 key 时页面新增 key 报"另一个命令正在运行"）
-    const opencodeKey = opts.skipOpencode || (await opencodeConfigured(ctx)) ? undefined : await askOpencodeKey();
     return withLock(ctx, async () => {
         const all = await loadAll(ctx);
         await ensureDir(ctx.paths.home, { owner: ctx.owner });
@@ -75,8 +73,11 @@ export async function setup(ctx, opts) {
         info(bold('OpenCode Zen'));
         if (opts.skipOpencode)
             skip(L('已跳过（--skip-opencode）', 'Skipped (--skip-opencode)'));
+        // 安装时不问 key：要用的话在 dsh「设置 → dsh-model → 来源」里填，或执行 dsh-model opencode key
+        else if (await opencodeConfigured(ctx))
+            await step('opencode', () => configureOpencode(ctx, all));
         else
-            await step('opencode', () => configureOpencode(ctx, all, opencodeKey !== undefined ? { key: opencodeKey } : {}));
+            skip(L('没填 key，跳过；需要时在 dsh「设置 → dsh-model → 来源」里打开它（或执行 dsh-model opencode key）', 'No key, skipped; when you need it, turn it on in dsh Settings → dsh-model → Sources (or run dsh-model opencode key)'));
         info('');
         info(bold('WorkBuddy'));
         if (opts.skipWorkbuddy)
