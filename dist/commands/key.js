@@ -2,8 +2,8 @@
 import { requireRootInVps } from '../context.js';
 import { DshModelError } from '../errors.js';
 import { L } from '../i18n.js';
-import { DSH_KEY_NAME, addKey, revokeKey, rotateKey, saveKeys } from '../keys.js';
-import { applyEngineConfig, dshKey, loadAll, syncModels } from '../ops.js';
+import { DSH_KEY_NAME, addKey, findActive, revokeKey, rotateKey, saveKeys } from '../keys.js';
+import { applyKeyChange, dshKey, loadAll, syncModels } from '../ops.js';
 import { withLock } from '../state.js';
 import { baseUrl } from '../engine/client.js';
 import { bold, info, isJsonMode, ok, printJson, table, warn } from '../util/output.js';
@@ -20,7 +20,7 @@ export async function key(ctx, sub, name) {
         if (sub === 'add') {
             const entry = addKey(all.keys, name);
             await saveKeys(ctx, all.keys);
-            await applyEngineConfig(ctx, all);
+            await applyKeyChange(ctx, all, { accepts: entry.key });
             if (isJsonMode())
                 printJson({ ok: true, name, key: entry.key, baseURL: `${baseUrl(all.config.port)}/v1` });
             ok(L(`已新增 key：${name}（只显示这一次，请妥善保存）`, `Key added: ${name} (shown only once; keep it safe)`));
@@ -32,19 +32,19 @@ export async function key(ctx, sub, name) {
             if (name === DSH_KEY_NAME) {
                 throw new DshModelError('cannot_revoke_dsh', L('dsh 用的 key 不能吊销，只能轮换', 'The dsh key cannot be revoked, only rotated'), L('dsh-model key rotate dsh', 'dsh-model key rotate dsh'));
             }
+            const old = findActive(all.keys, name)?.key;
             revokeKey(all.keys, name);
             await saveKeys(ctx, all.keys);
-            await applyEngineConfig(ctx, all);
+            await applyKeyChange(ctx, all, { rejects: old });
             ok(L(`已吊销 key：${name}`, `Key revoked: ${name}`));
             return 0;
         }
         if (sub === 'rotate') {
             const entry = rotateKey(all.keys, name);
             await saveKeys(ctx, all.keys);
-            await applyEngineConfig(ctx, all);
+            // 等新 key 在引擎里生效后再改 dsh
+            await applyKeyChange(ctx, all, { accepts: entry.key });
             if (name === DSH_KEY_NAME) {
-                // 引擎热重载约 1s：等新 key 生效后再改 dsh
-                await new Promise((r) => setTimeout(r, 1500));
                 await syncModels(ctx, all, { quiet: true });
                 ok(L('已轮换 dsh 用的 key，并同步到 dsh', 'Rotated the dsh key and updated dsh'));
             }

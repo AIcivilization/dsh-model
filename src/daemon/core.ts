@@ -35,8 +35,8 @@ import { DshModelError, isDshModelError } from '../errors.js'
 import { L } from '../i18n.js'
 import { refreshOpencodeModels, removeOpencodeKey, saveOpencodeKey, validateKeyShape, verifyOpencodeKey } from '../integrations/opencode.js'
 import { riskNotice as workbuddyRiskNotice } from '../integrations/workbuddy.js'
-import { DSH_KEY_NAME, addKey, loadKeys, revokeKey, rotateKey, saveKeys } from '../keys.js'
-import { applyEngineConfig, dshCandidates, dshKey, loadAll, saveAll, syncAll } from '../ops.js'
+import { DSH_KEY_NAME, addKey, findActive, loadKeys, revokeKey, rotateKey, saveKeys } from '../keys.js'
+import { applyKeyChange, dshCandidates, dshKey, loadAll, saveAll, syncAll } from '../ops.js'
 import { defaultPick, pickedFor } from '../dsh/pick.js'
 import { loadSecrets, saveSecrets } from '../secrets.js'
 import { SOURCES, credsFor, findSource, paymentRequired, type SourceDef } from '../sources.js'
@@ -942,7 +942,7 @@ export class Daemon {
       const all = await loadAll(this.ctx)
       const entry = addKey(all.keys, name)
       await saveKeys(this.ctx, all.keys)
-      await applyEngineConfig(this.ctx, all)
+      await applyKeyChange(this.ctx, all, { accepts: entry.key })
       await this.reloadKeyNames()
       return { name: entry.name, key: entry.key }
     })
@@ -952,9 +952,10 @@ export class Daemon {
     if (name === DSH_KEY_NAME) throw new DshModelError('cannot_revoke_dsh', L('dsh 用的 key 不能吊销，只能轮换', 'The dsh key cannot be revoked, only rotated'))
     await withLock(this.ctx, async () => {
       const all = await loadAll(this.ctx)
+      const old = findActive(all.keys, name)?.key
       revokeKey(all.keys, name)
       await saveKeys(this.ctx, all.keys)
-      await applyEngineConfig(this.ctx, all)
+      await applyKeyChange(this.ctx, all, { rejects: old })
     })
     await this.reloadKeyNames()
   }
@@ -964,7 +965,7 @@ export class Daemon {
       const all = await loadAll(this.ctx)
       const e = rotateKey(all.keys, name)
       await saveKeys(this.ctx, all.keys)
-      await applyEngineConfig(this.ctx, all)
+      await applyKeyChange(this.ctx, all, { accepts: e.key })
       return e
     })
     await this.reloadKeyNames()

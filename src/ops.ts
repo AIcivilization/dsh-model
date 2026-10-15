@@ -14,6 +14,7 @@ import { DSH_KEY_NAME, findActive, loadKeys, type KeyStore } from './keys.js'
 import { serviceFor } from './service/index.js'
 import { loadConfig, loadState, saveConfig, saveState, type Config, type State } from './state.js'
 import { ok, skip, warn } from './util/output.js'
+import { readText, writeInPlace } from './util/fs.js'
 
 export interface All {
   config: Config
@@ -44,6 +45,32 @@ export function dshKey(keys: KeyStore): string {
  */
 export async function applyEngineConfig(ctx: Ctx, all: All): Promise<boolean> {
   return writeEngineConfig(ctx, all.config, all.keys)
+}
+
+/**
+ * 改 key 后确认引擎真的换上了：热重载偶尔会漏掉一次变化（CI 上 macOS、Windows 都见过等 15 秒仍没生效）。
+ * 没生效就原样再写一次配置文件，还不行就重启引擎。引擎没在运行时只写文件。
+ */
+export async function applyKeyChange(ctx: Ctx, all: All, probe: { accepts?: string; rejects?: string }): Promise<void> {
+  await writeEngineConfig(ctx, all.config, all.keys)
+  const port = all.config.port
+  if (!(await waitHealthy(port, 1000))) return
+  const works = (key: string) => listModels(port, key).then(() => true, () => false)
+  const effective = async () => (!probe.accepts || (await works(probe.accepts))) && (!probe.rejects || !(await works(probe.rejects)))
+  const wait = async (ms: number) => {
+    const deadline = Date.now() + ms
+    while (Date.now() < deadline) {
+      if (await effective()) return true
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    return effective()
+  }
+  if (await wait(5000)) return
+  const text = await readText(ctx.paths.engineYaml)
+  if (text !== null) await writeInPlace(ctx.paths.engineYaml, text, { owner: ctx.owner })
+  if (await wait(5000)) return
+  if ((await restartEngineBestEffort(ctx, all)) && (await wait(5000))) return
+  warn(L('引擎还没换上这次的 key 改动；稍后执行 dsh-model repair', 'The engine has not picked up this key change yet; run dsh-model repair later'))
 }
 
 /**
