@@ -111,6 +111,18 @@ export interface WorkBuddyCreditAccount {
   remain: number
   size: number
   unlimited?: true
+  /** 本周期结束时间（ISO）；renews = 还有后续周期（到时重置），否则到时作废 */
+  cycleEndAt?: string
+  renews?: boolean
+}
+
+/** "2026-10-18 01:24:08"（北京时间）→ ISO；认不出就 undefined */
+export function beijingTimeToIso(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(value.trim())
+  if (!m) return undefined
+  const t = Date.parse(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}+08:00`)
+  return Number.isFinite(t) ? new Date(t).toISOString() : undefined
 }
 
 /** Aggregated credit answer for one credential. */
@@ -884,10 +896,12 @@ export class WorkBuddyUpstreamClient {
       else remain = capacityRemain
       if (remain < 0) remain = 0
       total += remain
+      const cycleEndAt = beijingTimeToIso(account['CycleEndTime'])
       accounts.push({
         packageName: typeof account['PackageName'] === 'string' ? account['PackageName'] : '(unnamed)',
         remain,
         size: size > 0 ? size : numberField('CapacitySize'),
+        ...(cycleEndAt ? { cycleEndAt, renews: numberField('RemainCycles') > 0 } : {}),
       })
     }
     return { total, accounts }

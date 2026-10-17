@@ -100,7 +100,8 @@ export async function syncModels(ctx: Ctx, all: All, opts: { before?: string[]; 
   // 每个来源只把挑中的模型写进 dsh（管理页勾选，或默认挑选）；统一端点照常提供全部
   const groups: DshGroup[] = []
   for (const c of candidates.values()) {
-    const picked = new Set(pickedFor(c.models.map((m) => ({ id: m.id, name: m.name, rate: m.rate })), all.config.dshModels?.[c.source]))
+    // 组合是自己建的：全部显示
+    const picked = new Set(c.source === 'combo' ? c.models.map((m) => m.id) : pickedFor(c.models.map((m) => ({ id: m.id, name: m.name, rate: m.rate })), all.config.dshModels?.[c.source]))
     const models = c.models.filter((m) => picked.has(m.id)).map(({ rate: _r, ...m }) => m)
     if (models.length) groups.push({ providerId: c.providerId, displayName: c.label, models })
   }

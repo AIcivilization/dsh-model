@@ -10,6 +10,7 @@ import { loadSecrets } from '../secrets.js'
 import { readJson } from '../util/fs.js'
 import { LOCAL_SERVERS, loadLocalCatalog } from '../integrations/local.js'
 import { keyProvider, loadKeyCatalog } from '../integrations/apikeys.js'
+import { COMBO_PREFIX, type Combo } from '../combo.js'
 
 export const OPENCODE_BASE = 'https://opencode.ai/zen/v1'
 export const OPENCODE_PREFIX = 'opencode'
@@ -53,7 +54,8 @@ export function opencodeModelsPath(ctx: Ctx): string {
 export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
   const out: CompatUpstream[] = []
   const secrets = await loadSecrets(ctx)
-  const disabled = new Set((await readJson<{ disabledSources?: string[] }>(join(ctx.paths.home, 'config.json')))?.disabledSources ?? [])
+  const cfg = await readJson<{ disabledSources?: string[]; combos?: Combo[] }>(join(ctx.paths.home, 'config.json'))
+  const disabled = new Set(cfg?.disabledSources ?? [])
   if (secrets.opencode?.key && !disabled.has('opencode')) {
     const list = await readJson<OpencodeModelsFile>(opencodeModelsPath(ctx))
     const models = (list?.models ?? []).map((m) => ({
@@ -131,7 +133,34 @@ export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
       models: st.models.map((id) => ({ name: id, alias: `${s.id}/${id}`, displayName: `${s.label} · ${id}`, dshName: `${id} · 本地免费`, rate: 0, group: s.id, groupLabel: `${s.label}（本地）` })),
     })
   }
-  return addAutoModels(out)
+  addAutoModels(out)
+  // 组合切换：守护进程按顺序逐个调引擎里的真实模型
+  if (bridge && cfg?.combos?.length) out.push(comboUpstream(cfg.combos, bridge, compatModelIndex(out)))
+  return out
+}
+
+export function comboUpstream(combos: Combo[], bridge: Pick<BridgeConfig, 'port' | 'secret'>, meta: Map<string, CompatModel>): CompatUpstream {
+  return {
+    name: COMBO_PREFIX,
+    label: '组合切换',
+    baseUrl: `http://127.0.0.1:${bridge.port}/${COMBO_PREFIX}/v1`,
+    apiKey: bridge.secret,
+    direct: true,
+    models: combos.map((c) => {
+      // 上下文取成员里最小的（知道的才算），免得 dsh 按大的塞内容、换到小的就超长
+      const ctxs = c.models.map((m) => meta.get(m)?.contextWindow).filter((n): n is number => typeof n === 'number' && n > 0)
+      return {
+        name: c.id,
+        alias: `${COMBO_PREFIX}/${c.id}`,
+        displayName: `${c.name}（${c.models.join(' → ')}）`,
+        dshName: `${c.name} · ${c.models.length} 个模型轮换`,
+        group: COMBO_PREFIX,
+        groupLabel: '组合切换',
+        ...(ctxs.length ? { contextWindow: Math.min(...ctxs) } : {}),
+        image: c.models.every((m) => meta.get(m)?.image === true),
+      }
+    }),
+  }
 }
 
 export const AUTO_PREFIX = 'auto'

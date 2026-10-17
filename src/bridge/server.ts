@@ -33,6 +33,10 @@ export interface BridgeOptions {
   onRefresh?: () => Promise<unknown>
   /** /control/*：守护进程的控制接口（来源开关、登录、key、统计），给 CLI 与 dsh 插件用 */
   onControl?: (method: string, path: string, body: unknown, query: URLSearchParams) => Promise<{ status: number; body: unknown }>
+  /** /combo/v1/*：组合切换（引擎把 combo/<id> 转到这里）；返回 false = 没有这个组合 */
+  onCombo?: (id: string, raw: string, res: ServerResponse, signal: AbortSignal) => Promise<boolean>
+  /** /combo/v1/models 列出的组合 id */
+  comboIds?: () => Promise<string[]>
 }
 
 const BODY_LIMIT = 64 * 1024 * 1024
@@ -130,6 +134,27 @@ export function createBridge(options: BridgeOptions): { server: Server; ready: P
     if (req.method === 'POST' && url === '/refresh') {
       if (!options.onRefresh) return oaiError(res, 404, 'not_found', 'refresh not supported')
       return json(res, 200, { ok: true, result: await options.onRefresh() })
+    }
+
+    if (url.startsWith('/combo/v1/') && options.onCombo) {
+      if (req.method === 'GET' && url === '/combo/v1/models') {
+        const ids = (await options.comboIds?.()) ?? []
+        return json(res, 200, { object: 'list', data: ids.map((id) => ({ id, object: 'model', created: 0, owned_by: 'dsh-model-combo' })) })
+      }
+      if (req.method === 'POST' && url === '/combo/v1/chat/completions') {
+        const raw = (await readBody(req)).toString('utf8')
+        let id = ''
+        try {
+          id = String((JSON.parse(raw) as { model?: unknown }).model ?? '')
+        } catch {
+          return oaiError(res, 400, 'invalid_json', 'request body is not JSON')
+        }
+        const controller = new AbortController()
+        res.on('close', () => controller.abort())
+        if (!(await options.onCombo(id.replace(/^combo\//, ''), raw, res, controller.signal))) return oaiError(res, 404, 'no_combo', `no such combo: ${id}`)
+        return
+      }
+      return oaiError(res, 404, 'not_found', `no such route: ${req.method} ${url}`)
     }
 
     const m = /^\/([a-z]+)\/v1\/(models|chat\/completions)$/.exec(url)

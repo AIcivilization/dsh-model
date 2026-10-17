@@ -13,6 +13,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Runtime } from '../bridge/runtime.js'
 import type { Ctx } from '../context.js'
+import { beijingTimeToIso } from '../bridge/workbuddy/upstream.js'
 import type { CredentialEntry } from '../engine/mgmt.js'
 import type { SourceDef } from '../sources.js'
 
@@ -30,7 +31,14 @@ export interface SourceUsage {
   source: string
   plan?: string
   windows: UsageWindow[]
-  credits?: { remaining: number; total?: number; label?: string; unlimited?: boolean }
+  credits?: {
+    remaining: number
+    total?: number
+    label?: string
+    unlimited?: boolean
+    /** 最近一批要变动的积分：amount 积分在 at 到期作废（renews=false）或重置（renews=true） */
+    next?: { amount: number; at: string; renews: boolean }
+  }
   fetchedAt: string
   error?: string
   /** 这个来源暂时查不了用量 */
@@ -199,11 +207,32 @@ export async function fetchWorkbuddyUsage(rt: Runtime): Promise<Omit<SourceUsage
   const credits = await rt.wbClient.fetchCredits(credential)
   const unlimited = credits.accounts.some((a) => a.unlimited)
   const size = credits.accounts.reduce((s, a) => s + (Number.isFinite(a.size) ? a.size : 0), 0)
+  const next = nextCreditChange(credits.accounts, credits.cycleResetTime)
   return {
     windows: [],
-    credits: { remaining: credits.total, ...(size > 0 ? { total: size } : {}), ...(unlimited ? { unlimited: true } : {}), label: 'credits' },
+    credits: { remaining: credits.total, ...(size > 0 ? { total: size } : {}), ...(unlimited ? { unlimited: true } : {}), label: 'credits', ...(next ? { next } : {}) },
     ...(credits.accounts.length ? { plan: packageSummary(credits.accounts.map((a) => a.packageName)) } : {}),
   }
+}
+
+/**
+ * 最近一批要变动的积分：还有剩余的包里，周期最早结束的那个时间点；同一天（24 小时内）结束的合在一起算。
+ * 作废的优先于重置的提醒（作废了就真没了）。企业版只有一个周期重置时间。
+ */
+export function nextCreditChange(accounts: readonly { remain: number; cycleEndAt?: string; renews?: boolean }[], cycleResetTime?: string, now = Date.now()): { amount: number; at: string; renews: boolean } | undefined {
+  const live = accounts.filter((a) => a.remain > 0 && a.cycleEndAt && Date.parse(a.cycleEndAt) > now)
+  const pick = (list: typeof live) => {
+    if (!list.length) return undefined
+    const first = Math.min(...list.map((a) => Date.parse(a.cycleEndAt!)))
+    const amount = list.filter((a) => Date.parse(a.cycleEndAt!) - first < 86_400_000).reduce((s, a) => s + a.remain, 0)
+    return { amount: Math.round(amount * 100) / 100, at: new Date(first).toISOString() }
+  }
+  const expiring = pick(live.filter((a) => !a.renews))
+  if (expiring) return { ...expiring, renews: false }
+  const renewing = pick(live.filter((a) => a.renews))
+  if (renewing) return { ...renewing, renews: true }
+  const reset = cycleResetTime ? (beijingTimeToIso(cycleResetTime) ?? (Number.isFinite(Date.parse(cycleResetTime)) ? new Date(Date.parse(cycleResetTime)).toISOString() : undefined)) : undefined
+  return reset && Date.parse(reset) > now ? { amount: 0, at: reset, renews: true } : undefined
 }
 
 /** 套餐名去重计数："个人版 + 加量包 ×38"（账号下常有几十个同名加量包，实测） */

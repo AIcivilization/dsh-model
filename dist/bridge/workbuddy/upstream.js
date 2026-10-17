@@ -12,6 +12,16 @@
 import { appUserAgent, resolveAppVersion } from './app-version.js';
 import { chatUserAgent, fallbackChatIdentity, resolveChatIdentity } from './client-identity.js';
 import { PROBE_MAX_TOKENS, PROBE_PROMPT } from './probe.js';
+/** "2026-10-18 01:24:08"（北京时间）→ ISO；认不出就 undefined */
+export function beijingTimeToIso(value) {
+    if (typeof value !== 'string')
+        return undefined;
+    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(value.trim());
+    if (!m)
+        return undefined;
+    const t = Date.parse(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}+08:00`);
+    return Number.isFinite(t) ? new Date(t).toISOString() : undefined;
+}
 const CN_CHAT_BASE = 'https://copilot.tencent.com';
 const CN_BILLING_BASE = 'https://www.codebuddy.cn';
 const GLOBAL_BASE = 'https://www.workbuddy.ai';
@@ -724,10 +734,12 @@ export class WorkBuddyUpstreamClient {
             if (remain < 0)
                 remain = 0;
             total += remain;
+            const cycleEndAt = beijingTimeToIso(account['CycleEndTime']);
             accounts.push({
                 packageName: typeof account['PackageName'] === 'string' ? account['PackageName'] : '(unnamed)',
                 remain,
                 size: size > 0 ? size : numberField('CapacitySize'),
+                ...(cycleEndAt ? { cycleEndAt, renews: numberField('RemainCycles') > 0 } : {}),
             });
         }
         return { total, accounts };

@@ -106,16 +106,32 @@ window.__ModuleLoader__.load({
         h('span', { style: { display: 'block', width: `${p}%`, height: '100%', background: color } }))
     }
 
-    const until = (iso) => {
-      if (!iso) return ''
-      const ms = Date.parse(iso) - Date.now()
-      if (!(ms > 0)) return L('即将重置', 'resetting')
-      const m = Math.round(ms / 60000)
+    /** 距离 iso 还有多久："2 天 3 小时" / "3 小时 5 分" / "12 分"；已过去返回 '' */
+    const dur = (iso) => {
+      const ms = iso ? Date.parse(iso) - Date.now() : NaN
+      if (!(ms > 0)) return ''
+      const m = Math.max(1, Math.round(ms / 60000))
       const d = Math.floor(m / 1440)
       const hh = Math.floor((m % 1440) / 60)
       const mm = m % 60
-      const t = d ? L(`${d} 天 ${hh} 小时`, `${d}d ${hh}h`) : hh ? L(`${hh} 小时 ${mm} 分`, `${hh}h ${mm}m`) : L(`${mm} 分`, `${mm}m`)
-      return L(`${t}后重置`, `resets in ${t}`)
+      return d ? L(`${d} 天 ${hh} 小时`, `${d}d ${hh}h`) : hh ? L(`${hh} 小时 ${mm} 分`, `${hh}h ${mm}m`) : L(`${mm} 分`, `${mm}m`)
+    }
+    const until = (iso) => {
+      if (!iso) return ''
+      const t = dur(iso)
+      return t ? L(`${t}后重置`, `resets in ${t}`) : L('即将重置', 'resetting')
+    }
+    /** 额度用完了吗：用完的窗口里最晚恢复的那个时间（全部恢复才能用）；积分用完也算 */
+    const exhausted = (usage) => {
+      if (!usage || usage.noAccess) return null
+      const full = (usage.windows || []).filter((w) => w.usedPercent != null && w.usedPercent >= 100)
+      if (full.length) {
+        const at = full.map((w) => w.resetAt).filter(Boolean).sort().pop()
+        return { at }
+      }
+      const c = usage.credits
+      if (c && !c.unlimited && c.remaining <= 0) return { at: c.next && c.next.renews ? c.next.at : undefined }
+      return null
     }
     const winLabel = (w) => ({ '5h': L('5 小时', '5 hours'), '7d': L('每周', 'Weekly'), '30d': L('每月', 'Monthly'), quota: L('总额度', 'Quota'), 'Opus 7d': L('Opus 每周', 'Opus weekly'), 'Sonnet 7d': L('Sonnet 每周', 'Sonnet weekly') }[w.label] || w.label)
     const pct = (x) => (x == null ? '-' : `${Math.round(x * 100)}%`)
@@ -150,7 +166,11 @@ window.__ModuleLoader__.load({
         lines.push(h('div', { key: 'credits', style: { ...S.line, minHeight: 22, fontSize: 12 } },
           h('span', { style: { width: 72, color: C.sub } }, L('积分', 'Credits')),
           c.total ? h(Bar, { pct: 100 - (c.remaining / c.total) * 100 }) : null,
-          h('span', null, c.unlimited ? L('不限量', 'Unlimited') : L(`剩余 ${c.remaining.toLocaleString()}${c.total ? ` / ${c.total.toLocaleString()}` : ''}`, `${c.remaining.toLocaleString()} left${c.total ? ` of ${c.total.toLocaleString()}` : ''}`))))
+          h('span', null, c.unlimited ? L('不限量', 'Unlimited') : L(`剩余 ${c.remaining.toLocaleString()}${c.total ? ` / ${c.total.toLocaleString()}` : ''}`, `${c.remaining.toLocaleString()} left${c.total ? ` of ${c.total.toLocaleString()}` : ''}`)),
+          c.next && dur(c.next.at) ? h('span', { style: { color: !c.next.renews && Date.parse(c.next.at) - Date.now() < 3 * 86400000 ? C.warn : C.faint } },
+            c.next.renews
+              ? (c.next.amount ? L(`${c.next.amount.toLocaleString()} 积分 ${dur(c.next.at)}后重置`, `${c.next.amount.toLocaleString()} reset in ${dur(c.next.at)}`) : L(`${dur(c.next.at)}后重置`, `resets in ${dur(c.next.at)}`))
+              : L(`${c.next.amount.toLocaleString()} 积分 ${dur(c.next.at)}后到期，先用这些`, `${c.next.amount.toLocaleString()} expire in ${dur(c.next.at)}; use them first`)) : null))
       }
       if (usage.error) lines.push(h('div', { key: 'err', style: { fontSize: 12, color: C.warn, marginTop: 4 } }, `${L('用量暂不可用', 'Usage unavailable')}：${usage.error}`))
       return h('div', { style: { marginTop: 4, paddingLeft: 46 } }, lines)
@@ -456,6 +476,12 @@ window.__ModuleLoader__.load({
               h('span', { style: S.label }, s.label),
               h(PriceTag, { pricing: s.pricing }),
               s.risky ? h('span', { style: { fontSize: 11, color: C.err, marginLeft: 6, border: `1px solid ${C.err}`, borderRadius: 4, padding: '0 4px' } }, L('高风险', 'High risk')) : null,
+              (() => {
+                const x = s.enabled ? exhausted(s.usage) : null
+                if (!x) return null
+                const t = dur(x.at)
+                return h('span', { style: { fontSize: 11, color: C.err, marginLeft: 6, border: `1px solid ${C.err}`, borderRadius: 4, padding: '0 4px' } }, t ? L(`已用完 · ${t}后恢复`, `Used up · back in ${t}`) : L('已用完', 'Used up'))
+              })(),
               h('span', { style: { ...S.meta, marginLeft: 8 } },
                 s.loggedIn ? (s.account || '') : s.kind === 'local' ? L('未运行', 'Not running') : L('未登录', 'Signed out'),
                 s.models ? ` · ${L(`${s.models} 个模型`, `${s.models} models`)}` : '',
@@ -556,6 +582,90 @@ window.__ModuleLoader__.load({
       upstream: () => L('上游或网络问题', 'upstream or network'),
       other: () => L('其他原因', 'other causes'),
     }
+    /** 组合切换：几个模型按顺序排好，在 dsh 里就是一个模型；一个不行自动换下一个 */
+    function CombosCard() {
+      const [data, setData] = useState(null)
+      const [editing, setEditing] = useState(null)
+      const [err, setErr] = useState('')
+      const load = useCallback(() => api('GET', '/combos').then((d) => { setData(d); setErr('') }, (e) => setErr(e.message)), [])
+      useEffect(() => { void load() }, [load])
+      if (!data) return err ? h('div', { style: S.section }, h('div', { style: { ...S.h } }, L('组合切换', 'Combos')), h('div', { style: { fontSize: 12, color: C.err } }, err)) : null
+      const byId = new Map(data.models.map((m) => [m.id, m]))
+      const pretty = (id) => { const m = byId.get(id); return m ? `${m.groupLabel} · ${m.name.split(' · ')[0]}` : id }
+      const remove = async (c) => {
+        if (!window.confirm(L(`删除组合「${c.name}」？（它会从 dsh 里消失）`, `Delete combo "${c.name}"? (it disappears from dsh)`))) return
+        try { await api('DELETE', `/combos/${c.id}`); await load() } catch (e) { setErr(e.message) }
+      }
+      const canBuild = data.models.length >= 2
+      return h('div', { style: S.section },
+        h('div', { style: S.line },
+          h('div', { style: { ...S.h, ...S.grow, margin: 0 } }, L('组合切换', 'Combos')),
+          canBuild ? h('button', { type: 'button', style: S.btn, onClick: () => setEditing('new') }, L('新建组合', 'New combo')) : null),
+        h('p', { style: S.note }, L('把几个模型按顺序排好，它在 dsh 里就是一个模型（「组合切换」分组）：先用第一个，限流、额度用完或出错就自动换下一个；已经开始回答后不再换。其他软件用模型名 combo/<id>。', 'Put a few models in order and it becomes one model in dsh (the "Combos" group): the first one is used, and on a rate limit, used-up quota or error the next one takes over; once an answer has started it stays put. Other tools use the model name combo/<id>.')),
+        err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
+        data.combos.length
+          ? h('div', { style: S.card }, data.combos.map((c, i) => h('div', { key: c.id, style: i ? S.row : S.rowFirst },
+              h('div', { style: S.line },
+                h('div', { style: S.grow },
+                  h('span', { style: S.label }, c.name),
+                  h('span', { style: { ...S.meta, ...S.mono, marginLeft: 8 } }, `combo/${c.id}`)),
+                h(CopyButton, { get: `combo/${c.id}`, label: L('复制模型名', 'Copy name') }),
+                h('button', { type: 'button', style: S.btn, onClick: () => setEditing(c) }, L('编辑', 'Edit')),
+                h('button', { type: 'button', style: S.btn, onClick: () => void remove(c) }, L('删除', 'Delete'))),
+              h('div', { style: { ...S.meta, marginTop: 4, lineHeight: 1.7 } }, c.models.map((m, j) => h('span', { key: m },
+                j ? ' → ' : '',
+                h('span', { title: byId.has(m) ? m : L(`${m}：现在用不了（来源关了或没登录），会被跳过`, `${m}: not available now (source off or signed out); it is skipped`), style: byId.has(m) ? undefined : { color: C.err, textDecoration: 'line-through' } }, pretty(m))))))))
+          : h('div', { style: S.meta }, canBuild ? L('还没有组合。例如「主力」：Codex → Kimi → WorkBuddy，订阅额度用完自动换到免费的。', 'No combos yet. For example "Main": Codex → Kimi → WorkBuddy, moving to a free source when the subscription quota runs out.') : L('至少接入两个模型后才能建组合。', 'Connect at least two models to build a combo.')),
+        editing ? h(ComboDialog, { combo: editing === 'new' ? null : editing, models: data.models, onClose: (saved) => { setEditing(null); if (saved) void load() } }) : null)
+    }
+
+    function ComboDialog({ combo, models, onClose }) {
+      const [name, setName] = useState(combo ? combo.name : '')
+      const [list, setList] = useState(combo ? combo.models : [])
+      const [busy, setBusy] = useState(false)
+      const [msg, setMsg] = useState('')
+      const byId = new Map(models.map((m) => [m.id, m]))
+      const groups = []
+      for (const m of models) {
+        let g = groups.find((x) => x.label === m.groupLabel)
+        if (!g) groups.push((g = { label: m.groupLabel, models: [] }))
+        g.models.push(m)
+      }
+      const MAX = 8
+      const move = (i, d) => { const n = [...list]; const [x] = n.splice(i, 1); n.splice(i + d, 0, x); setList(n) }
+      const save = async () => {
+        setBusy(true)
+        setMsg('')
+        try {
+          if (combo) await api('PUT', `/combos/${combo.id}`, { name: name.trim(), models: list })
+          else await api('POST', '/combos', { name: name.trim(), models: list })
+          onClose(true)
+        } catch (e) {
+          setMsg(e.message)
+          setBusy(false)
+        }
+      }
+      return h(Modal, { title: combo ? L('编辑组合', 'Edit combo') : L('新建组合', 'New combo'), onClose: () => onClose(false) },
+        h('div', { style: { ...S.line, marginBottom: 10 } },
+          h('input', { style: { ...S.input, ...S.grow }, placeholder: L('名字，如：主力', 'Name, e.g. Main'), maxLength: 30, value: name, onChange: (e) => setName(e.target.value), 'aria-label': L('组合名字', 'Combo name') })),
+        h('div', { style: { ...S.meta, marginBottom: 6 } }, L(`按尝试顺序排（第一个最先用），2–${MAX} 个：`, `In the order to try (the first goes first), 2–${MAX} models:`)),
+        list.length ? h('div', { style: { ...S.card, marginBottom: 10 } }, list.map((id, i) => h('div', { key: id, style: { ...(i ? S.row : S.rowFirst), padding: '6px 10px' } },
+          h('div', { style: S.line },
+            h('span', { style: { ...S.meta, width: 18 } }, `${i + 1}.`),
+            h('span', { style: { ...S.grow, fontSize: 13 } }, byId.has(id) ? `${byId.get(id).groupLabel} · ${byId.get(id).name}` : id),
+            h('button', { type: 'button', style: S.btn, disabled: i === 0, onClick: () => move(i, -1), 'aria-label': L('上移', 'Move up') }, '↑'),
+            h('button', { type: 'button', style: S.btn, disabled: i === list.length - 1, onClick: () => move(i, 1), 'aria-label': L('下移', 'Move down') }, '↓'),
+            h('button', { type: 'button', style: S.btn, onClick: () => setList(list.filter((x) => x !== id)), 'aria-label': L('移除', 'Remove') }, '✕'))))) : null,
+        list.length < MAX ? h('div', { style: { ...S.line, marginBottom: 12 } },
+          h('select', { style: { ...S.input, ...S.grow }, value: '', 'aria-label': L('加一个模型', 'Add a model'), onChange: (e) => { const v = e.target.value; if (v && !list.includes(v)) setList([...list, v]) } },
+            h('option', { value: '' }, L('加一个模型…', 'Add a model…')),
+            groups.map((g) => h('optgroup', { key: g.label, label: g.label }, g.models.filter((m) => !list.includes(m.id)).map((m) => h('option', { key: m.id, value: m.id }, m.name)))))) : null,
+        h('div', { style: S.line },
+          msg ? h('span', { style: { ...S.grow, fontSize: 12, color: C.err } }, msg) : h('span', { style: S.grow }),
+          h('button', { type: 'button', style: S.btn, onClick: () => onClose(false) }, L('取消', 'Cancel')),
+          h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !name.trim() || list.length < 2, onClick: () => void save() }, busy ? L('保存中…', 'Saving…') : L('保存', 'Save'))))
+    }
+
     function FailuresCard({ failures }) {
       const [open, setOpen] = useState(false)
       const [ack, setAck] = useState(readAck)
@@ -883,7 +993,7 @@ window.__ModuleLoader__.load({
       }
       return h(Modal, { title: L('添加 Qoder 签到', 'Add Qoder check-in'), onClose },
         h('p', { style: S.note },
-          L('登录 Qoder 后，在「账号 → 集成」里创建一个个人访问令牌（Personal Access Token，以 pt- 开头，只在创建时显示一次），粘贴到这里。只用来每天领签到积分，保存在本机。', 'Sign in to Qoder and create a Personal Access Token under Account → Integrations (it starts with pt- and is shown only once), then paste it here. It is only used to claim the daily credits, and stays on this machine.'),
+          L('登录 Qoder 网站，在「设置 → API 令牌」（有的版本叫「账号 → 集成」）里点「创建令牌」，复制生成的个人访问令牌（以 pt- 开头，只显示一次），粘贴到这里。只用来每天领签到积分，保存在本机。', 'Sign in on the Qoder website, open Settings → API Tokens (Account → Integrations in some versions), click Create token, then paste the personal access token here (it starts with pt- and is shown only once). It is only used to claim the daily credits, and stays on this machine.'),
           h('a', { href: region === 'cn' ? 'https://qoder.com.cn/account/integrations' : 'https://qoder.com/account/integrations', target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent, marginLeft: 6 } }, region === 'cn' ? L('去 Qoder 国内版创建 ↗', 'Create on Qoder China ↗') : L('去 Qoder 国际版创建 ↗', 'Create on Qoder ↗'))),
         h('div', { style: { ...S.line, marginBottom: 8 } },
           ['cn', 'intl'].map((r) => h('label', { key: r, style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' } },
@@ -1060,6 +1170,7 @@ window.__ModuleLoader__.load({
         err ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 12 } }, err) : null,
         h(EndpointCard, { endpoints: data.endpoints }),
         h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: (s) => setKeyDialog(s || true) }),
+        h(CombosCard, null),
         h(KeysCard, { keys: data.keys, reload: () => load(false) }),
         h(ModelsCard, { stats: data.stats }),
         h(FailuresCard, { failures: data.failures }),

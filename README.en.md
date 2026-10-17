@@ -28,8 +28,8 @@ dsh-model turns them into **one address and one kind of key**:
 - 🔌 **Connect once, use everywhere**: every model shows up in dsh, grouped by source; any other tool uses the same address and key.
 - 🆓 **Get the most from free tiers**: WorkBuddy credits, free Gemini / Groq / OpenRouter keys and local models; every source is tagged Free / Free · limited / Paid.
 - 📅 **Daily check-in, credits claimed for you**: WorkBuddy (China), Qoder and Trae are checked in automatically every day.
-- 🔁 **Rate limits are not the end**: when a model is offered by several sources, requests move to another one when the first is limited.
-- 📊 **Know where you stand**: plan usage, remaining credits, success rate and speed per model, recent failures with advice, and a notice when quota runs low.
+- 🔁 **Rate limits are not the end**: build a combo (say Codex → Kimi → WorkBuddy) and requests move to the next model on a rate limit or used-up quota; a model offered by several sources also switches automatically.
+- 📊 **Know where you stand**: plan usage with reset countdowns, remaining credits and when they expire, success rate and speed per model, recent failures with advice, and a notice when quota runs low.
 - 🔒 **Secure by default**: a key is always required, one per device, revocable at any time; every sign-in happens on your own machine.
 - 🖥️ **Laptop or server**: Windows, macOS, Linux; on a VPS (with [dsh-vps](https://github.com/AIcivilization/dsh-vps)) it opens an https address you can use from anywhere.
 - 🧹 **Installs in one command, uninstalls cleanly**: dsh's config is restored byte for byte.
@@ -57,8 +57,9 @@ On a dsh-vps server, use `sudo dsh-model setup`. On Windows, run it in a normal 
 | Section | What it holds |
 |---|---|
 | **Endpoint** | Local and public addresses, each with a Copy button |
-| **Sources** | One switch per provider: on connects (and signs in if needed), off pauses and keeps the sign-in. Each row is tagged Free / Free · limited / Paid and shows plan usage or remaining credits |
+| **Sources** | One switch per provider: on connects (and signs in if needed), off pauses and keeps the sign-in. Each row is tagged Free / Free · limited / Paid and shows plan usage with reset countdowns, or remaining credits and the next batch to expire; a used-up plan shows when it comes back |
 | **Models** | Pick which models of each source appear in dsh (5 suggested per source by default); the rest stay available through the endpoint; a "Test" button per model |
+| **Combos** | Put several models in order and it becomes one model in dsh: the first is used, and the next takes over on a rate limit, used-up quota or error. Other tools use the model name `combo/<id>` |
 | **Auto switch** | When a model is offered by several sources, dsh gets an "Auto switch (multiple sources)" group that moves to another source when one is rate-limited or failing |
 | **Daily check-in** | WorkBuddy (China), Qoder and Trae are checked in automatically every day (or with one click); the card shows what you got today |
 | **Recent failures** | Failed requests in the last 24 hours: which model, why, and what to do (no conversation content kept) |
@@ -106,6 +107,7 @@ dsh-model only connects; it provides no quota of its own.
 | `source enable\|disable\|logout <source>` | Turn on (signing in if needed) / off / sign out |
 | `key list\|add\|revoke\|rotate <name>` | Access keys, one per device |
 | `checkin` | Check in now (WorkBuddy China, Qoder, Trae; automatic daily by default) |
+| `combo list\|add <name> <model…>\|remove <id>` | Combos: try several models in order |
 | `failures` | Failed requests in the last 24 hours, with advice |
 | `stats` | Success rate, latency and speed by key, source and model |
 | `status` / `doctor [--e2e]` | Overview / health checks |

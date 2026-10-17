@@ -4,6 +4,7 @@
 import { createBridge } from '../bridge/server.js';
 import { loadBridgeConfig } from '../bridge/runtime.js';
 import { Daemon } from '../daemon/core.js';
+import { loadConfig } from '../state.js';
 import { DshModelError } from '../errors.js';
 import { L } from '../i18n.js';
 import { info, isJsonMode, printJson } from '../util/output.js';
@@ -54,6 +55,8 @@ async function run(ctx) {
             return { changed };
         },
         onControl: (method, path, body, query) => daemon.handle(method, path, body, query),
+        onCombo: (id, raw, res, signal) => daemon.runCombo(id, raw, res, signal, log),
+        comboIds: async () => ((await loadConfig(ctx)).combos ?? []).map((c) => c.id),
     });
     await server.ready;
     log(`daemon: listening on 127.0.0.1:${cfg.port}`);

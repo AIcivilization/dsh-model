@@ -106,6 +106,28 @@ export function createBridge(options) {
                 return oaiError(res, 404, 'not_found', 'refresh not supported');
             return json(res, 200, { ok: true, result: await options.onRefresh() });
         }
+        if (url.startsWith('/combo/v1/') && options.onCombo) {
+            if (req.method === 'GET' && url === '/combo/v1/models') {
+                const ids = (await options.comboIds?.()) ?? [];
+                return json(res, 200, { object: 'list', data: ids.map((id) => ({ id, object: 'model', created: 0, owned_by: 'dsh-model-combo' })) });
+            }
+            if (req.method === 'POST' && url === '/combo/v1/chat/completions') {
+                const raw = (await readBody(req)).toString('utf8');
+                let id = '';
+                try {
+                    id = String(JSON.parse(raw).model ?? '');
+                }
+                catch {
+                    return oaiError(res, 400, 'invalid_json', 'request body is not JSON');
+                }
+                const controller = new AbortController();
+                res.on('close', () => controller.abort());
+                if (!(await options.onCombo(id.replace(/^combo\//, ''), raw, res, controller.signal)))
+                    return oaiError(res, 404, 'no_combo', `no such combo: ${id}`);
+                return;
+            }
+            return oaiError(res, 404, 'not_found', `no such route: ${req.method} ${url}`);
+        }
         const m = /^\/([a-z]+)\/v1\/(models|chat\/completions)$/.exec(url);
         const variant = m ? options.variants.find((v) => v.key === m[1]) : undefined;
         if (!m || !variant)

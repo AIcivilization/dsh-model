@@ -305,4 +305,52 @@ describe('settings page', () => {
     await act(async () => intl.click())
     expect(link().getAttribute('href')).toBe('https://qoder.com/account/integrations')
   })
+
+  it('combos: lists the chain; a new combo is built from the dropdown and saved in order', async () => {
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    const posted: unknown[] = []
+    const models = [
+      { id: 'gpt-5', name: 'gpt-5 · 订阅', group: 'codex', groupLabel: 'Codex' },
+      { id: 'workbuddy/a', name: 'A · x0.00', group: 'workbuddy', groupLabel: 'WorkBuddy' },
+    ]
+    let combos = [{ id: 'main', name: '主力', models: ['gpt-5', 'workbuddy/a', 'gone/x'] }]
+    handler = normal((c) => {
+      if (c.path === '/combos' && c.method === 'GET') return [200, { combos, models }]
+      if (c.path === '/combos' && c.method === 'POST') {
+        posted.push(c.body)
+        combos = [...combos, { id: 'c1', name: '备用', models: (c.body as { models: string[] }).models }]
+        return [200, combos[1]]
+      }
+      return [404, {}]
+    })
+    await render()
+    await waitText('combo/main')
+    expect(container.textContent).toContain('Codex · gpt-5 → WorkBuddy · A → gone/x')
+    await click('新建组合')
+    await waitText('加一个模型…')
+    const setValue = async (el: HTMLInputElement | HTMLSelectElement, v: string) => {
+      const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
+      Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, v)
+      await act(async () => el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true })))
+    }
+    await setValue(container.querySelector('input[aria-label="组合名字"]') as HTMLInputElement, '备用')
+    await setValue(container.querySelector('select[aria-label="加一个模型"]') as HTMLSelectElement, 'workbuddy/a')
+    await setValue(container.querySelector('select[aria-label="加一个模型"]') as HTMLSelectElement, 'gpt-5')
+    expect(container.textContent).toContain('1.WorkBuddy · A · x0.00')
+    await click('保存')
+    await waitText('combo/c1')
+    expect(posted).toEqual([{ name: '备用', models: ['workbuddy/a', 'gpt-5'] }])
+  })
+
+  it('usage: expiring credits are called out; a used-up plan gets a badge with the time back', async () => {
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    const soon = new Date(Date.now() + (5 * 60 + 2) * 60000).toISOString()
+    const later = new Date(Date.now() + (2 * 60 + 30) * 60000).toISOString()
+    const wb = { ...workbuddy, usage: { source: 'workbuddy', windows: [], credits: { remaining: 3643, total: 3643, label: 'credits', next: { amount: 200, at: soon, renews: false } }, fetchedAt: 'x' } }
+    const codex = { ...workbuddy, id: 'codex', label: 'Codex', kind: 'engine', pricing: { tier: 'paid', zh: '需付费', en: 'paid' }, usage: { source: 'codex', windows: [{ id: '5h', label: '5h', usedPercent: 100, resetAt: later }], fetchedAt: 'x' } }
+    handler = (c) => (c.path.startsWith('/sources') ? [200, [wb, codex]] : normal()(c))
+    await render()
+    await waitText('200 积分 5 小时 2 分后到期，先用这些')
+    expect(container.textContent).toMatch(/已用完 · 2 小时 (29|30) 分后恢复/)
+  })
 })

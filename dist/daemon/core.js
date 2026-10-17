@@ -43,6 +43,7 @@ import { redactKey } from '../util/redact.js';
 import { Stats } from './stats.js';
 import { USAGE_UNSUPPORTED, probeEngineSource, fetchEngineUsage, fetchWorkbuddyUsage, usageFilePath } from './usage.js';
 import { writeJson } from '../util/fs.js';
+import { comboId, normalizeCombo, runCombo } from '../combo.js';
 const LOGIN_POLL_MS = 2000;
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000;
 const USAGE_POLL_MS = 5000;
@@ -910,6 +911,61 @@ export class Daemon {
         await this.resync();
         return { selected: models === null ? -1 : new Set(models).size };
     }
+    /** 组合切换：现有组合，以及能放进组合的模型（按来源分组，顺序同 dsh 下拉框） */
+    async combos() {
+        const all = await loadAll(this.ctx);
+        const cands = await dshCandidates(this.ctx, all);
+        const models = [...cands.values()]
+            .filter((c) => c.source !== 'combo')
+            .flatMap((c) => c.models.map((m) => ({ id: m.id, name: m.name, group: c.source, groupLabel: c.label })));
+        return { combos: all.config.combos ?? [], models };
+    }
+    /** 新建（id 为 null）或修改一个组合 */
+    async saveCombo(id, input) {
+        const { models: avail } = await this.combos();
+        const c = normalizeCombo(input, avail.map((m) => m.id));
+        const saved = await withLock(this.ctx, async () => {
+            const all = await loadAll(this.ctx);
+            const list = [...(all.config.combos ?? [])];
+            let combo;
+            if (id) {
+                const i = list.findIndex((x) => x.id === id);
+                if (i < 0)
+                    throw new DshModelError('no_combo', L(`没有这个组合：${id}`, `No such combo: ${id}`));
+                combo = { id, ...c };
+                list[i] = combo;
+            }
+            else {
+                combo = { id: comboId(c.name, list.map((x) => x.id)), ...c };
+                list.push(combo);
+            }
+            all.config.combos = list;
+            await saveAll(this.ctx, all);
+            return combo;
+        });
+        await this.resync();
+        return saved;
+    }
+    async deleteCombo(id) {
+        await withLock(this.ctx, async () => {
+            const all = await loadAll(this.ctx);
+            const list = (all.config.combos ?? []).filter((x) => x.id !== id);
+            if (list.length === (all.config.combos ?? []).length)
+                throw new DshModelError('no_combo', L(`没有这个组合：${id}`, `No such combo: ${id}`));
+            all.config.combos = list.length ? list : undefined;
+            await saveAll(this.ctx, all);
+        });
+        await this.resync();
+    }
+    /** 引擎转来的 combo/<id> 请求：按顺序逐个试 */
+    async runCombo(id, raw, res, signal, log) {
+        const all = await loadAll(this.ctx);
+        const combo = all.config.combos?.find((c) => c.id === id);
+        if (!combo)
+            return false;
+        await runCombo({ port: all.config.port, key: dshKey(all.keys), combo, raw, res, signal, ...(log ? { log } : {}) });
+        return true;
+    }
     /** 管理页"复制"用：取一把未吊销 key 的完整值（只经同源、带页面 token 的插件路由转发） */
     async revealKey(name) {
         const entry = (await loadKeys(this.ctx)).keys.find((k) => k.name === name && !k.revokedAt);
@@ -978,6 +1034,14 @@ export class Daemon {
                 }
                 return ok(await this.sources());
             }
+            if (method === 'GET' && path === '/combos')
+                return ok(await this.combos());
+            if (method === 'POST' && path === '/combos')
+                return ok(await this.saveCombo(null, b));
+            if (seg[0] === 'combos' && seg[1] && method === 'PUT')
+                return ok(await this.saveCombo(seg[1], b));
+            if (seg[0] === 'combos' && seg[1] && method === 'DELETE')
+                return ok(await this.deleteCombo(seg[1]).then(() => ({ deleted: true })));
             if (seg[0] === 'sources' && seg[1] && method === 'POST') {
                 if (seg[2] === 'enable')
                     return ok(await this.enable(seg[1], { acceptRisk: b.acceptRisk === true }));

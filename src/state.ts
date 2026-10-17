@@ -25,6 +25,8 @@ export interface Config {
   dshModels?: Record<string, string[]>
   /** 关掉的来源（workbuddy / workbuddy-ai / opencode；引擎来源的开关存在凭据的 disabled 上） */
   disabledSources?: string[]
+  /** 自定义组合切换（combo/<id>），见 combo.ts */
+  combos?: { id: string; name: string; models: string[] }[]
   /** WorkBuddy bridge（统一端点下的自有组件） */
   bridge?: { port: number; riskNoticeAt?: string }
 }

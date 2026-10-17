@@ -55,6 +55,8 @@ describe('daemon core against a real engine', () => {
     bridge = createBridge({
       port: bport,
       secret: 'dshb_s',
+      onCombo: (id, raw, res, signal) => daemon.runCombo(id, raw, res, signal),
+      comboIds: async () => (await daemon.combos()).combos.map((c) => c.id),
       variants: [
         {
           key: 'cn',
@@ -187,4 +189,41 @@ describe('daemon core against a real engine', () => {
     expect(snap.bySource.workbuddy?.d1.requests).toBeGreaterThanOrEqual(2)
     expect(snap.bySource.custom?.d1.requests).toBe(1)
   }, 30_000)
+
+  it('a combo saved through the daemon reaches dsh models and falls over from a rate-limited model', async () => {
+    const fport = await findFreePort(20900 + Math.floor(Math.random() * 90))
+    const fake = createServer((req, res) => {
+      if (req.url === '/v1/models') {
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: 'busy-1', object: 'model' }] }))
+        return
+      }
+      req.resume()
+      req.on('end', () => res.writeHead(429, { 'content-type': 'application/json' }).end('{"error":{"message":"rate limit"}}'))
+    })
+    await new Promise<void>((r) => fake.listen(fport, '127.0.0.1', () => r()))
+    const waitFor = async (pred: (ids: string[]) => boolean) => {
+      for (let i = 0; i < 60; i++) {
+        if (pred((await listModels(port, dshKey).catch(() => [])).map((m) => m.id))) return true
+        await new Promise((r) => setTimeout(r, 250))
+      }
+      return false
+    }
+    try {
+      await daemon.setSourceKey('custom', 'sk-test-12345678', `http://127.0.0.1:${fport}/v1`)
+      expect(await waitFor((ids) => ids.includes('custom/busy-1'))).toBe(true)
+      await expect(daemon.saveCombo(null, { name: 'x', models: ['custom/busy-1', 'nope/none'] })).rejects.toMatchObject({ code: 'bad_combo' })
+      const c = await daemon.saveCombo(null, { name: 'Main', models: ['custom/busy-1', 'workbuddy/m1'] })
+      expect(c.id).toBe('main')
+      expect(await waitFor((ids) => ids.includes('combo/main'))).toBe(true)
+      expect((await daemon.combos()).models.some((m) => m.id === 'combo/main')).toBe(false)
+      const chat = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${dshKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'combo/main', messages: [{ role: 'user', content: 'ping' }] }) })
+      expect(chat.status).toBe(200)
+      expect(((await chat.json()) as { choices: { message: { content: string } }[] }).choices[0]!.message.content).toBe('hi')
+      await daemon.deleteCombo('main')
+      expect(await waitFor((ids) => !ids.includes('combo/main'))).toBe(true)
+      await daemon.logout('custom')
+    } finally {
+      fake.close()
+    }
+  }, 90_000)
 })

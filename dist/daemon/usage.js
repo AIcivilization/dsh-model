@@ -10,6 +10,7 @@
 // 一律只读：不刷新、不改写任何凭据文件。查询失败只在那一行显示"用量暂不可用"。
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { beijingTimeToIso } from '../bridge/workbuddy/upstream.js';
 const TIMEOUT_MS = 15_000;
 /** 这几家暂不支持（见设计 §14.6） */
 export const USAGE_UNSUPPORTED = new Set(['antigravity', 'devin', 'meta', 'opencode', 'ollama', 'lmstudio', 'gemini', 'groq', 'openrouter', 'siliconflow', 'deepseek', 'custom']);
@@ -165,11 +166,34 @@ export async function fetchWorkbuddyUsage(rt) {
     const credits = await rt.wbClient.fetchCredits(credential);
     const unlimited = credits.accounts.some((a) => a.unlimited);
     const size = credits.accounts.reduce((s, a) => s + (Number.isFinite(a.size) ? a.size : 0), 0);
+    const next = nextCreditChange(credits.accounts, credits.cycleResetTime);
     return {
         windows: [],
-        credits: { remaining: credits.total, ...(size > 0 ? { total: size } : {}), ...(unlimited ? { unlimited: true } : {}), label: 'credits' },
+        credits: { remaining: credits.total, ...(size > 0 ? { total: size } : {}), ...(unlimited ? { unlimited: true } : {}), label: 'credits', ...(next ? { next } : {}) },
         ...(credits.accounts.length ? { plan: packageSummary(credits.accounts.map((a) => a.packageName)) } : {}),
     };
+}
+/**
+ * 最近一批要变动的积分：还有剩余的包里，周期最早结束的那个时间点；同一天（24 小时内）结束的合在一起算。
+ * 作废的优先于重置的提醒（作废了就真没了）。企业版只有一个周期重置时间。
+ */
+export function nextCreditChange(accounts, cycleResetTime, now = Date.now()) {
+    const live = accounts.filter((a) => a.remain > 0 && a.cycleEndAt && Date.parse(a.cycleEndAt) > now);
+    const pick = (list) => {
+        if (!list.length)
+            return undefined;
+        const first = Math.min(...list.map((a) => Date.parse(a.cycleEndAt)));
+        const amount = list.filter((a) => Date.parse(a.cycleEndAt) - first < 86_400_000).reduce((s, a) => s + a.remain, 0);
+        return { amount: Math.round(amount * 100) / 100, at: new Date(first).toISOString() };
+    };
+    const expiring = pick(live.filter((a) => !a.renews));
+    if (expiring)
+        return { ...expiring, renews: false };
+    const renewing = pick(live.filter((a) => a.renews));
+    if (renewing)
+        return { ...renewing, renews: true };
+    const reset = cycleResetTime ? (beijingTimeToIso(cycleResetTime) ?? (Number.isFinite(Date.parse(cycleResetTime)) ? new Date(Date.parse(cycleResetTime)).toISOString() : undefined)) : undefined;
+    return reset && Date.parse(reset) > now ? { amount: 0, at: reset, renews: true } : undefined;
 }
 /** 套餐名去重计数："个人版 + 加量包 ×38"（账号下常有几十个同名加量包，实测） */
 export function packageSummary(names) {
