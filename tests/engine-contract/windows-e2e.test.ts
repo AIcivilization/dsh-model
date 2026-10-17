@@ -1,7 +1,7 @@
 // 只在 Windows 上跑：真正的 setup —— 引擎和守护进程都注册成后台服务（Run 键 + 隐藏窗口 + supervise），
 // 能调到守护进程；uninstall 之后 Run 键和 home 都清掉。
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { main } from '../../src/cli.js'
@@ -24,7 +24,9 @@ async function cachedArchive(): Promise<string> {
     await mkdir(CACHE, { recursive: true })
     const res = await fetch(asset.url)
     if (!res.ok) throw new Error(`download ${asset.url}: ${res.status}`)
-    await writeFile(file, Buffer.from(await res.arrayBuffer()))
+    const tmp = `${file}.${process.pid}.${Date.now()}.part`
+    await writeFile(tmp, Buffer.from(await res.arrayBuffer()))
+    await rename(tmp, file)
   }
   return file
 }

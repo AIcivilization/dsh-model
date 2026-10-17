@@ -2,7 +2,7 @@
 // auto/<名字> 照样成功；只走那个坏的（带前缀的原名）就失败。
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile, rename } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -44,7 +44,7 @@ describe('same-name models fail over (real engine)', () => {
     const file = join(CACHE, asset.file)
     if (!existsSync(file)) {
       await mkdir(CACHE, { recursive: true })
-      await writeFile(file, Buffer.from(await (await fetch(asset.url)).arrayBuffer()))
+      { const tmp = `${file}.${process.pid}.${Date.now()}.part`; await writeFile(tmp, Buffer.from(await (await fetch(asset.url)).arrayBuffer())); await rename(tmp, file) }
     }
     ctx.env.DSH_MODEL_ENGINE_ARCHIVE = file
     await installVersion(ctx, manifest.version, asset)
