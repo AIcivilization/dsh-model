@@ -73,7 +73,7 @@ function help(): string {
   login <来源> / logout <来源>          同 source enable / source logout
   stats                                按 key / 来源 / 模型的成功率、延迟、速度
   failures                             最近 24 小时失败的请求，以及该怎么办
-  checkin                              现在签到一次（WorkBuddy 国内版、Qoder；默认每天自动签）
+  checkin                              现在签到一次（WorkBuddy 国内版、Qoder、Trae；默认每天自动签）
   status                               一屏总览
   doctor [--e2e] [--all] [--model M]   逐项自检；--e2e 实测流式与工具调用
   connect-dsh [--dry-run] [--force]    写入 / 刷新 dsh 配置
@@ -107,7 +107,7 @@ Usage: dsh-model <command> [options]
   login <source> / logout <source>     Same as source enable / source logout
   stats                                Success rate, latency and speed by key / source / model
   failures                             Failed requests in the last 24 hours, and what to do
-  checkin                              Check in now (WorkBuddy China, Qoder; automatic daily by default)
+  checkin                              Check in now (WorkBuddy China, Qoder, Trae; automatic daily by default)
   status                               Overview
   doctor [--e2e] [--all] [--model M]   Health checks; --e2e tests streaming and tool calls
   connect-dsh [--dry-run] [--force]    Write / refresh dsh config

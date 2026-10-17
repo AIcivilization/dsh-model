@@ -1,7 +1,7 @@
 {
   "name": "dsh-model",
-  "version": "0.21.4",
-  "description": "Many model sources behind one authenticated OpenAI-compatible endpoint for DeepSeek Harness (dsh) and your tools: WorkBuddy, OpenCode Zen and your CLI subscriptions (Codex, Kimi…), with a management page inside dsh. 多家模型汇成一个 OpenAI 兼容地址，dsh 和其他软件都能直接用。",
+  "version": "0.21.5",
+  "description": "One OpenAI-compatible address for all your models: subscriptions (Codex, Kimi…), free tiers (WorkBuddy, Gemini, Groq, OpenRouter), local models (Ollama, LM Studio), daily check-in credits, auto failover. Works with DeepSeek Harness (dsh) and any OpenAI-compatible tool. 一个地址用上你所有的模型。",
   "keywords": [
     "dsh-plugin",
     "dsh-plugins",
@@ -21,7 +21,20 @@
     "opencode",
     "cliproxyapi",
     "self-hosted",
-    "llm-tools"
+    "llm-tools",
+    "ai-gateway",
+    "llm-router",
+    "openai-proxy",
+    "free-llm",
+    "gemini",
+    "groq",
+    "openrouter",
+    "ollama",
+    "lm-studio",
+    "qoder",
+    "trae",
+    "daily-checkin",
+    "failover"
   ],
   "license": "MIT",
   "type": "module",

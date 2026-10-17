@@ -2,7 +2,9 @@
 
 # dsh-model
 
-**Many model sources behind one OpenAI-compatible endpoint — for dsh and every other tool you use.**
+**One address for all your models: subscriptions, free tiers and local models, with daily check-in credits claimed for you.**
+
+One OpenAI-compatible endpoint, one key, dozens of models. dsh, Cline, Continue, Cherry Studio, scripts: anything that speaks the OpenAI API just works.
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/AIcivilization/dsh-model" alt="MIT license"></a>
@@ -17,18 +19,22 @@ English · [中文](README.md)
 
 </div>
 
-## What it is
+## Why
 
-You may have several model sources at once: free WorkBuddy credits, an OpenCode Zen key, paid Codex or Kimi subscriptions. Each has its own API and sign-in, and every tool needs its own setup.
+You may have several at once: Codex from ChatGPT Plus, a Kimi coding plan, free WorkBuddy credits, free Gemini and Groq keys, and Ollama on your machine. Each has its own API and sign-in, every tool needs its own setup, and when a quota runs out you switch by hand.
 
 dsh-model turns them into **one address and one kind of key**:
 
-- **In dsh**: the models show up in dsh's model list automatically, grouped by source. Nothing to configure.
-- **Everywhere else**: any editor or script that speaks the OpenAI API uses the same address and key to reach every model.
-- **Low maintenance**: one command to install; a key is always required; uninstall restores dsh's config exactly.
-- **On a server**: runs next to [dsh-vps](https://github.com/AIcivilization/dsh-vps) on the same VPS and opens a public address on dsh's own domain, so your laptop and phone can use it too.
+- 🔌 **Connect once, use everywhere**: every model shows up in dsh, grouped by source; any other tool uses the same address and key.
+- 🆓 **Get the most from free tiers**: WorkBuddy credits, free Gemini / Groq / OpenRouter keys and local models; every source is tagged Free / Free · limited / Paid.
+- 📅 **Daily check-in, credits claimed for you**: WorkBuddy (China), Qoder and Trae are checked in automatically every day.
+- 🔁 **Rate limits are not the end**: when a model is offered by several sources, requests move to another one when the first is limited.
+- 📊 **Know where you stand**: plan usage, remaining credits, success rate and speed per model, recent failures with advice, and a notice when quota runs low.
+- 🔒 **Secure by default**: a key is always required, one per device, revocable at any time; every sign-in happens on your own machine.
+- 🖥️ **Laptop or server**: Windows, macOS, Linux; on a VPS (with [dsh-vps](https://github.com/AIcivilization/dsh-vps)) it opens an https address you can use from anywhere.
+- 🧹 **Installs in one command, uninstalls cleanly**: dsh's config is restored byte for byte.
 
-> A personal tool: one person, one account per provider, not a public service.
+No dsh? It still works: the command line manages everything; dsh just adds a management page.
 
 ## Quick start
 
@@ -54,6 +60,7 @@ On a dsh-vps server, use `sudo dsh-model setup`. On Windows, run it in a normal 
 | **Sources** | One switch per provider: on connects (and signs in if needed), off pauses and keeps the sign-in. Each row is tagged Free / Free · limited / Paid and shows plan usage or remaining credits |
 | **Models** | Pick which models of each source appear in dsh (5 suggested per source by default); the rest stay available through the endpoint; a "Test" button per model |
 | **Auto switch** | When a model is offered by several sources, dsh gets an "Auto switch (multiple sources)" group that moves to another source when one is rate-limited or failing |
+| **Daily check-in** | WorkBuddy (China), Qoder and Trae are checked in automatically every day (or with one click); the card shows what you got today |
 | **Recent failures** | Failed requests in the last 24 hours: which model, why, and what to do (no conversation content kept) |
 | **API keys** | OpenAI-style, one per device. Requests, success rate, latency and speed over 24 hours; copy, rotate, revoke |
 | **Model stats** | Success rate, latency and speed per model |
@@ -98,6 +105,7 @@ dsh-model only connects; it provides no quota of its own.
 | `sources` | Sources: switch, cost, sign-in state, usage |
 | `source enable\|disable\|logout <source>` | Turn on (signing in if needed) / off / sign out |
 | `key list\|add\|revoke\|rotate <name>` | Access keys, one per device |
+| `checkin` | Check in now (WorkBuddy China, Qoder, Trae; automatic daily by default) |
 | `failures` | Failed requests in the last 24 hours, with advice |
 | `stats` | Success rate, latency and speed by key, source and model |
 | `status` / `doctor [--e2e]` | Overview / health checks |
@@ -127,6 +135,7 @@ See the [design doc](docs/DESIGN.md) (Chinese).
 
 ## Notes
 
+- Meant for personal use: one account of your own per provider; do not use it to serve others.
 - Using subscription and WorkBuddy credentials outside the official clients may break the providers' terms and put the account at risk. Decide for yourself.
 - Windows 10 / 11 (x64, ARM64), macOS and Linux, Node ≥ 20.
 - Windows: the background services start at sign-in with no window. If an antivirus blocks them (the program is gone or will not start), trust `%USERPROFILE%\.dsh-model` and run `dsh-model repair`.
