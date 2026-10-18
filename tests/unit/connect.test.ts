@@ -90,6 +90,16 @@ describe('connect / disconnect', () => {
     await expect(connectDsh(s.ctx, s.state, s.keys, s.input)).rejects.toMatchObject({ code: 'credential_ref_conflict' })
   })
 
+  it('takes over a DSH_MODEL_API_KEY left by an earlier dsh-model install', async () => {
+    const leftover = `dshm_${'A'.repeat(43)}`
+    const s = await setup(fx('no-llm.yml'), fx('credentials.yml') + `refs:\n  DSH_MODEL_API_KEY: ${leftover}\n`)
+    const r = await connectDsh(s.ctx, s.state, s.keys, s.input)
+    expect(r.warnings.join(' ')).toMatch(/接管|Took over/)
+    const cred = await readFile(s.credFile, 'utf8')
+    expect(cred).not.toContain(leftover)
+    expect(cred).toContain(s.input.key)
+  })
+
   it('refuses while dsh is in crash recovery', async () => {
     const s = await setup(null, fx('credentials.yml'))
     await writeFile(join(s.profileDir, 'cordis.patch.yml.bak-123'), '[]\n')

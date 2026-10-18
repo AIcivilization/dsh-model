@@ -52,6 +52,12 @@ async function checkLocation(state, location, force) {
     return warnings;
 }
 /** 写入 / 移除一组项。所有权记在 state.dsh.ownedProviders / ownedRefs */
+/**
+ * 上次安装留下的东西（台账丢了，例如卸载没走完、或手动删过 ~/.dsh-model）：
+ * dsh-model 格式的 key（dshm_ + 43 位），或指向 DSH_MODEL_API_KEY 的 dsh-model* provider。直接接管，不让用户去手动删。
+ */
+export const isLeftoverKey = (value) => /^dshm_[A-Za-z0-9_-]{43}$/.test(value);
+const isLeftoverProvider = (id, spec) => id.startsWith('dsh-model') && spec?.apiKeyEnv === KEY_REF;
 export async function applyDsh(ctx, state, items, opts) {
     const location = await locateDsh(ctx, opts.profile);
     const warnings = await checkLocation(state, location, opts.force);
@@ -72,7 +78,12 @@ export async function applyDsh(ctx, state, items, opts) {
             continue;
         }
         if (existing !== undefined && !ownedRefs.has(name) && !opts.isOwnRef?.(name, existing)) {
-            throw new DshModelError('credential_ref_conflict', L(`dsh 凭据里已有 ${name}，且不是 dsh-model 写的`, `dsh credentials already contain ${name}, not written by dsh-model`), L('不会覆盖它。要让 dsh-model 接管，请先在 dsh 设置里删掉它再重试', 'It will not be overwritten. To let dsh-model manage it, remove it in dsh settings and retry'));
+            if (name === KEY_REF && isLeftoverKey(existing)) {
+                warnings.push(L(`接管了上次安装留下的 ${name}（换成这次的 key）`, `Took over ${name} left by an earlier install (replaced with this install's key)`));
+            }
+            else {
+                throw new DshModelError('credential_ref_conflict', L(`dsh 凭据里已有 ${name}，且不是 dsh-model 写的`, `dsh credentials already contain ${name}, not written by dsh-model`), L('不会覆盖它。要让 dsh-model 接管，请先在 dsh 设置里删掉它再重试', 'It will not be overwritten. To let dsh-model manage it, remove it in dsh settings and retry'));
+            }
         }
         credAfter = upsertRef(credAfter === '' ? null : credAfter, value, name);
         ownedRefs.add(name);
@@ -88,7 +99,11 @@ export async function applyDsh(ctx, state, items, opts) {
             }
             continue;
         }
-        if (!ownedProviders.has(id) && readProvider(patchAfter === '' ? null : patchAfter, id)) {
+        const existingProvider = ownedProviders.has(id) ? null : readProvider(patchAfter === '' ? null : patchAfter, id);
+        if (existingProvider && isLeftoverProvider(id, existingProvider)) {
+            warnings.push(L(`接管了上次安装留下的 provider ${id}`, `Took over provider ${id} left by an earlier install`));
+        }
+        else if (existingProvider) {
             throw new DshModelError('provider_conflict', L(`dsh 里已有 provider ${id}，且不是 dsh-model 写的`, `dsh already has a provider ${id}, not written by dsh-model`), L('不会覆盖它', 'It will not be overwritten'));
         }
         const r = upsertProvider(patchAfter === '' ? null : patchAfter, id, spec);
