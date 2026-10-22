@@ -6,6 +6,7 @@
 
 import type { ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
+import { BLOCKED_RE } from './daemon/failures.js'
 import { DshModelError } from './errors.js'
 import { L } from './i18n.js'
 
@@ -50,6 +51,7 @@ export function normalizeCombo(input: { name?: unknown; models?: unknown }, avai
 /** 这次失败值得换下一个吗：请求本身写错了（400 且不是额度/长度问题）换了也一样，直接返回 */
 export function shouldFallBack(status: number, text: string): boolean {
   if (status !== 400 && status !== 422) return true
+  if (BLOCKED_RE.test(text)) return true
   return /quota|rate|limit|credit|context|too long|too many tokens|maximum|exceed|overload|unavailable|not supported|unsupported/i.test(text)
 }
 

@@ -4,6 +4,7 @@
 // 请求先发给第一个；限流、额度用完、出错就换下一个，直到有一个成功。已经开始输出之后不再切换。
 // 引擎把 combo/<id> 转给守护进程（openai-compatibility 上游），守护进程再逐个调引擎里的真实模型。
 import { Readable } from 'node:stream';
+import { BLOCKED_RE } from './daemon/failures.js';
 import { DshModelError } from './errors.js';
 import { L } from './i18n.js';
 export const COMBO_PREFIX = 'combo';
@@ -44,6 +45,8 @@ export function normalizeCombo(input, available) {
 /** 这次失败值得换下一个吗：请求本身写错了（400 且不是额度/长度问题）换了也一样，直接返回 */
 export function shouldFallBack(status, text) {
     if (status !== 400 && status !== 422)
+        return true;
+    if (BLOCKED_RE.test(text))
         return true;
     return /quota|rate|limit|credit|context|too long|too many tokens|maximum|exceed|overload|unavailable|not supported|unsupported/i.test(text);
 }

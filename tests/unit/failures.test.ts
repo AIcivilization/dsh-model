@@ -40,6 +40,8 @@ describe('recent failures', () => {
   it('classifies common causes', () => {
     expect(classify({ status: 429, message: 'slow down' }).kind).toBe('rate')
     expect(classify({ status: 403, message: 'Your current subscription does not have access' }).kind).toBe('quota')
+    expect(classify({ status: 400, code: 'client', message: 'WorkBuddy AI upstream client (http 400): 请求被拦截，请重新发送' }).kind).toBe('blocked')
+    expect(classify({ status: 400, message: 'Illegal API invocation from an unapproved channel (11-128)' }).kind).toBe('blocked')
     expect(classify({ status: 401, message: 'token expired' }).kind).toBe('auth')
     expect(classify({ status: 400, code: 'model_not_found', message: 'unknown provider for model x' }).kind).toBe('model')
     expect(classify({ status: 503, message: 'upstream unavailable' }).kind).toBe('upstream')

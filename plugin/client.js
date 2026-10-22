@@ -575,6 +575,7 @@ window.__ModuleLoader__.load({
       try { return Number(window.localStorage.getItem(FAIL_ACK)) || 0 } catch { return 0 }
     }
     const KIND_LABEL = {
+      blocked: () => L('被服务商拦截', 'blocked by the provider'),
       rate: () => L('限流', 'rate limits'),
       quota: () => L('额度或套餐不足', 'quota or plan'),
       auth: () => L('登录或 key 失效', 'sign-in or key'),

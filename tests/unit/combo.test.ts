@@ -23,5 +23,6 @@ describe('combos', () => {
     expect(shouldFallBack(401, '')).toBe(true)
     expect(shouldFallBack(400, '{"error":{"message":"messages: field required"}}')).toBe(false)
     expect(shouldFallBack(400, 'context length exceeded')).toBe(true)
+    expect(shouldFallBack(400, '{"error":{"message":"WorkBuddy AI upstream client (http 400): 请求被拦截，请重新发送"}}')).toBe(true)
   })
 })
