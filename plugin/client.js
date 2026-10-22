@@ -1089,9 +1089,15 @@ window.__ModuleLoader__.load({
     /** 刚装好、接入的来源少于两个时显示：先接一个免费来源 → 模型已经挑好 → 去 dsh 里用 */
     function Guide({ sources, onConnect }) {
       const [done, setDone] = useState(readGuideDone)
-      const connected = sources.filter((s) => s.loggedIn && s.enabled)
-      if (done || connected.length >= 2) return null
-      const free = sources.filter((s) => !s.risky && !(s.loggedIn && s.enabled) && s.pricing && s.pricing.tier !== 'paid')
+      // WorkBuddy 只签到（它拦 dsh 的对话），不算"已接入"
+      const connected = sources.filter((s) => s.loggedIn && s.enabled && s.kind !== 'workbuddy')
+      if (done || connected.length >= 1) return null
+      // 只推两家：国内直连的硅基流动、能上外网的 Gemini
+      const PICKS = [
+        { id: 'siliconflow', why: () => L('国内直连，不用代理；实名认证后部分模型免费', 'Reachable from China without a proxy; some models are free after identity verification') },
+        { id: 'gemini', why: () => L('能上外网就选它：免费模型里质量最好，每天有次数上限', 'If you can reach Google: the best free models, with a daily limit') },
+      ]
+      const picks = PICKS.map((p) => ({ ...p, s: sources.find((s) => s.id === p.id) })).filter((p) => p.s)
       const hide = () => {
         setDone(true)
         try { window.localStorage.setItem(GUIDE_KEY, '1') } catch { /* 无痕模式：只在本次生效 */ }
@@ -1106,9 +1112,11 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', style: S.btn, onClick: hide }, L('我知道了，不再显示', 'Got it, hide this'))),
           step(1, L('接入一个免费来源', 'Connect a free source'),
             h('div', null,
-              h('div', { style: S.meta }, L('先接一个就能用。标「免费·额度少」的要先去对方网站拿一把免费 key。', 'One is enough to start. "Free · limited" ones need a free key from their website first.')),
-              h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 } },
-                free.slice(0, 8).map((s) => h('button', { key: s.id, type: 'button', style: S.btn, onClick: () => onConnect(s) }, `${s.label}${s.pricing.tier === 'free' ? L(' · 免费', ' · free') : ''}`))))),
+              h('div', { style: S.meta }, L('接一个就能用：去对方网站领一把免费 key，点下面的按钮粘贴进来。', 'One is enough: get a free key from their website, then click below and paste it.')),
+              picks.map((p) => h('div', { key: p.id, style: { ...S.line, marginTop: 6, flexWrap: 'wrap' } },
+                h('button', { type: 'button', style: S.btn, onClick: () => onConnect(p.s) }, p.s.label),
+                h('span', { style: { ...S.meta, ...S.grow } }, p.why()),
+                p.s.subscribeUrl ? h('a', { href: p.s.subscribeUrl, target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent, fontSize: 12 } }, L('去领 key ↗', 'Get a key ↗')) : null)))),
           step(2, L('模型已经替你挑好', 'Models are picked for you'),
             h('div', { style: S.meta }, L('每个来源默认挑 5 个放进 dsh（免费的优先）。想换就在下面「来源」里点「选模型」。', 'Each source puts 5 suggested models into dsh (free ones first). Change them with "Models" under Sources below.'))),
           step(3, L('去用', 'Use it'),

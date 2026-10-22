@@ -37,7 +37,31 @@ async function waitCatalogs(ctx, since, expected, timeoutMs = 45_000) {
     return cats;
 }
 /** 检测 App → 首次打印说明 → bridge 配置与服务 → 等目录。返回目录（调用方随后 syncAll） */
+export const WORKBUDDY_SOURCES = ['workbuddy', 'workbuddy-ai'];
+/** WorkBuddy 会拦 dsh 发出的对话时的提醒（新装默认关、从页面打开前都显示） */
+export function blockedNotice() {
+    return L('WorkBuddy 现在会认出 dsh 发出的对话并拦下（「请求被拦截」），在 dsh 里基本用不了；「测一下」能通也不代表能用。dsh-model 不会去绕开这个限制，继续调用有封号风险。签到不受影响。仍要把它的模型接进 dsh 吗？', 'WorkBuddy now recognises conversations sent by dsh and blocks them ("请求被拦截"), so it barely works in dsh; a passing Test does not mean it works. dsh-model will not try to get around this, and continuing risks the account. Check-in is not affected. Connect its models to dsh anyway?');
+}
+/**
+ * 只签到（设计 §14.18）：第一次装时把 WorkBuddy 的模型关掉，签到照常（签到不看来源开关）。
+ * 以前装过的（已有 riskNoticeAt）保持原样；只做一次，之后用户自己打开的不改回去。
+ */
+export function applyWorkbuddyDefault(all) {
+    if (all.config.workbuddyDefault)
+        return;
+    if (all.config.bridge?.riskNoticeAt) {
+        all.config.workbuddyDefault = 'kept';
+        return;
+    }
+    const off = new Set(all.config.disabledSources ?? []);
+    for (const id of WORKBUDDY_SOURCES)
+        off.add(id);
+    all.config.disabledSources = [...off];
+    all.config.workbuddyDefault = 'checkin-only';
+    info(L('WorkBuddy 只用来签到：它现在会拦 dsh 的对话，所以模型默认不接进 dsh（要用可在「来源」里打开）', 'WorkBuddy is used for check-in only: it now blocks conversations from dsh, so its models are not connected by default (turn it on under Sources if you want)'));
+}
 export async function enableWorkbuddy(ctx, all) {
+    applyWorkbuddyDefault(all);
     const variants = await availableVariants(ctx.paths.home);
     if (!variants.length) {
         skip(ctx.platform === 'darwin'

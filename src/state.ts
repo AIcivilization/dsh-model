@@ -25,6 +25,8 @@ export interface Config {
   dshModels?: Record<string, string[]>
   /** 关掉的来源（workbuddy / workbuddy-ai / opencode；引擎来源的开关存在凭据的 disabled 上） */
   disabledSources?: string[]
+  /** WorkBuddy 只签到（2026-10 起它拦 dsh 的对话）：新装时把它的模型关掉，记一次就不再动，之后用户自己打开的不改回去 */
+  workbuddyDefault?: 'checkin-only' | 'kept'
   /** 自定义组合切换（combo/<id>），见 combo.ts */
   combos?: { id: string; name: string; models: string[] }[]
   /** WorkBuddy bridge（统一端点下的自有组件） */

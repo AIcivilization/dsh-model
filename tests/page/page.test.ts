@@ -226,9 +226,17 @@ describe('settings page', () => {
 
   it('first-use guide: offers free sources, opens the key dialog, can be hidden', async () => {
     window.localStorage.clear()
-    handler = (c) => (c.path.startsWith('/sources') && !c.path.includes('/models') ? [200, [workbuddy, gemini]] : normal()(c))
+    const silicon = { ...gemini, id: 'siliconflow', label: '硅基流动', subscribeUrl: 'https://cloud.siliconflow.cn/account/ak' }
+    const groq = { ...gemini, id: 'groq', label: 'Groq' }
+    handler = (c) => (c.path.startsWith('/sources') && !c.path.includes('/models') ? [200, [workbuddy, gemini, silicon, groq]] : normal()(c))
     await render()
     await waitText('开始使用')
+    // 只推硅基流动和 Gemini；WorkBuddy 只签到，接着也不算"已接入"
+    const guide = container.textContent!.slice(container.textContent!.indexOf('开始使用'), container.textContent!.indexOf('模型已经替你挑好'))
+    expect(guide).toContain('硅基流动')
+    expect(guide).toContain('国内直连')
+    expect(guide).not.toContain('Groq')
+    expect(guide).not.toContain('WorkBuddy')
     await click('Gemini（Google AI Studio）')
     await waitText('去创建 key')
     await act(async () => root?.unmount())

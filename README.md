@@ -48,7 +48,7 @@ dsh-model setup
 `setup` 可以重复执行，它会依次：
 
 1. 下载并校验引擎，在本机 `127.0.0.1:8317/v1` 上运行，强制 key 鉴权；
-2. 接入 WorkBuddy（dsh-model 自己的 bridge）。安装时不问任何 key，OpenCode Zen 等要 key 的来源，需要时在管理页里打开；
+2. 启动 dsh-model 的守护进程（管理页、签到、登录都靠它）。安装时不问任何 key：免费来源推荐**硅基流动**（国内直连）或 **Gemini**（能上外网），装好后在管理页里填 key。WorkBuddy 只用来签到，模型默认不接进 dsh；
 3. 把管理页装进 dsh，把模型同步进 dsh；
 4. 在 VPS 上，额外开通对外地址 `https://<dsh 的域名>:9443/v1`（没有域名时用 `<IP>.sslip.io`）。
 

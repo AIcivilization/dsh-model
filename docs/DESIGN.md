@@ -91,7 +91,7 @@ bridge 的职责只有一件：把"WorkBuddy 私有接口 + App 登录态"变成
 ### 1.3.3 运行形态的变化
 
 - 常驻进程从一个变成两个：引擎（launchd `com.dsh-model.engine`）和 bridge（`com.dsh-model.bridge`，仅在检测到 WorkBuddy App 时注册）。两者都只绑回环地址。
-- `setup` 默认安装引擎（OpenCode 也要走引擎）并接入 WorkBuddy；安装时不问任何 key，OpenCode Zen 等要 key 的来源已配置过的会刷新，没配置的跳过，需要时在管理页打开。订阅上游照旧用 `login`。
+- `setup` 默认安装引擎（OpenCode 也要走引擎）并启动守护进程；WorkBuddy 只签到（§14.18）；安装时不问任何 key，OpenCode Zen 等要 key 的来源已配置过的会刷新，没配置的跳过，需要时在管理页打开。订阅上游照旧用 `login`。
 - dsh 插件版 WorkBuddy 的界面能力（积分卡片、徽章、模型显隐）不再提供，改由 `dsh-model status` 显示账号和积分。
 
 ## 2. 架构
@@ -589,3 +589,12 @@ Gemini（Google AI Studio 的 OpenAI 兼容接口 `…/v1beta/openai`）、Groq�
 
 - Codex、Claude、Kimi 的每个用量窗口本来就显示"X 后重置"。窗口用到 100% 时，来源那一行再加红标「已用完 · X 后恢复」（几个窗口都满时按最晚恢复的算）；积分为 0 也标「已用完」。
 - WorkBuddy 的积分包各有周期结束时间（`CycleEndTime`，北京时间；`RemainCycles > 0` 表示到时重置，否则作废）。页面显示最近一批："200 积分 8 小时后到期，先用这些"，3 天内到期标黄。同一天内到期的合在一起算；作废的优先于重置的提醒。企业版只有一个周期重置时间。
+
+
+### 14.18 WorkBuddy 只签到；默认推荐的免费来源
+
+2026-10 起 WorkBuddy 会认出 dsh 发出的对话并拦下（§14.12），国内版、国际版都是。实测同一个模型：普通的系统提示词能答，带上 dsh 内置的 GUI 说明就返回 400「请求被拦截」。所以「测一下」能通，真正对话会失败。同类插件的做法是改写 dsh 的系统提示词来躲开识别，dsh-model 不这么做。
+
+- **新装默认关**：`setup` 第一次跑时，把 `workbuddy`、`workbuddy-ai` 加进 `disabledSources`，并记 `workbuddyDefault: 'checkin-only'`。只做一次，之后用户自己打开的不改回去。以前装过的（有 `bridge.riskNoticeAt`）记为 `'kept'`，保持原样。签到不看来源开关，照常进行。
+- **打开前提醒**：从页面把 WorkBuddy 从关着打开时，先弹一次说明：会被拦、不会去绕、有封号风险。确认后才接进 dsh。来源行和「测一下」的结果里也都有提醒。
+- **向导只推两家**：国内直连推硅基流动（实名后部分模型免费），能上外网推 Gemini（免费模型里质量最好）。WorkBuddy 不算"已接入"。

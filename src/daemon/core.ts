@@ -34,7 +34,7 @@ import { Mgmt, type CredentialEntry } from '../engine/mgmt.js'
 import { DshModelError, isDshModelError } from '../errors.js'
 import { L } from '../i18n.js'
 import { refreshOpencodeModels, removeOpencodeKey, saveOpencodeKey, validateKeyShape, verifyOpencodeKey } from '../integrations/opencode.js'
-import { riskNotice as workbuddyRiskNotice } from '../integrations/workbuddy.js'
+import { blockedNotice as workbuddyBlockedNotice, riskNotice as workbuddyRiskNotice } from '../integrations/workbuddy.js'
 import { DSH_KEY_NAME, addKey, findActive, loadKeys, revokeKey, rotateKey, saveKeys } from '../keys.js'
 import { applyKeyChange, dshCandidates, dshKey, loadAll, saveAll, syncAll } from '../ops.js'
 import { defaultPick, pickedFor } from '../dsh/pick.js'
@@ -343,6 +343,8 @@ export class Daemon {
       if (def.riskAck && !opts.acceptRisk) return { enabled: false, riskNotice: upstreamRiskNotice(getUpstream(def.id)) }
       return { enabled: false, login: await this.startLogin(def) }
     }
+    // WorkBuddy 会拦 dsh 的对话：从关着打开时先提醒一次
+    if (def.kind === 'workbuddy' && !state.enabled && !opts.acceptRisk) return { enabled: false, riskNotice: workbuddyBlockedNotice() }
     if (def.kind === 'engine') {
       const m = await this.mgmt()
       for (const c of credsFor(await m.credentials(), def)) if (c.disabled) await m.setDisabled(c.name, false)
