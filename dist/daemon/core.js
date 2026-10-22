@@ -866,7 +866,9 @@ export class Daemon {
             catch {
                 // 不是 JSON 也算通了
             }
-            return { ok: true, ms, reply };
+            // 测试只发一句短话；WorkBuddy 会拦带 dsh 内置说明的真实对话（2026-10），通过不代表在 dsh 里能用
+            const note = /^workbuddy(-ai)?\//.test(model) ? L('这只是一句短测试；WorkBuddy 会拦下 dsh 里的真实对话', 'Only a short test; WorkBuddy blocks real conversations from dsh') : undefined;
+            return { ok: true, ms, reply, ...(note ? { note } : {}) };
         }
         let message = text.slice(0, 300);
         let code;

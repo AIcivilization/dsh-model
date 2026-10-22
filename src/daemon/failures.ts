@@ -60,7 +60,7 @@ export function classify(f: Pick<Failure, 'status' | 'code' | 'message'>): Pick<
   // 服务商在挡官方客户端之外的调用（2026-10 起 WorkBuddy：国际版"请求被拦截"，国内版 11-128 unapproved channel）。
   // 不去绕：改用别的来源
   if (BLOCKED_RE.test(m)) {
-    return { kind: 'blocked', advice: L('被服务商拦截：它在限制官方客户端之外的使用，换模型、重试都没用。请改用其他来源（WorkBuddy 国际版不行可以用国内版），或建一个组合自动换到下一个；继续调用有封号风险，建议在「来源」里先把它关掉', 'Blocked by the provider: it is restricting use outside its official app, so retrying or switching its models will not help. Use another source (for WorkBuddy AI, try WorkBuddy China), or build a combo that moves on automatically; continuing may get the account banned, so consider turning this source off under Sources') }
+    return { kind: 'blocked', advice: L('被服务商拦截：它在限制官方客户端之外的使用（WorkBuddy 会认出 dsh 发出的请求并拦下，国内版、国际版都是），换模型、重试都没用。请改用其他来源，或建一个组合自动换到下一个；继续调用有封号风险，建议在「来源」里先把它关掉', 'Blocked by the provider: it is restricting use outside its official app (WorkBuddy recognises requests sent by dsh and blocks them, China and international alike), so retrying or switching its models will not help. Use another source, or build a combo that moves on automatically; continuing may get the account banned, so consider turning this source off under Sources') }
   }
   if (f.status === 429 || /cooldown|rate|频繁|too many/.test(m)) {
     return { kind: 'rate', advice: L('被限流：请求太频繁。等一会儿再试，或换一个来源的同款模型', 'Rate limited: too many requests. Wait a bit, or use the same model from another source') }

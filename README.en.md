@@ -26,7 +26,7 @@ You may have several at once: Codex from ChatGPT Plus, a Kimi coding plan, free 
 dsh-model turns them into **one address and one kind of key**:
 
 - 🔌 **Connect once, use everywhere**: every model shows up in dsh, grouped by source; any other tool uses the same address and key.
-- 🆓 **Get the most from free tiers**: WorkBuddy credits, free Gemini / Groq / OpenRouter keys and local models; every source is tagged Free / Free · limited / Paid.
+- 🆓 **Get the most from free tiers**: free Gemini / Groq / OpenRouter keys, local models and WorkBuddy credits; every source is tagged Free / Free · limited / Paid.
 - 📅 **Daily check-in, credits claimed for you**: WorkBuddy (China), Qoder and Trae are checked in automatically every day.
 - 🔁 **Rate limits are not the end**: build a combo (say Codex → Kimi → WorkBuddy) and requests move to the next model on a rate limit or used-up quota; a model offered by several sources also switches automatically.
 - 📊 **Know where you stand**: plan usage with reset countdowns, remaining credits and when they expire, success rate and speed per model, recent failures with advice, and a notice when quota runs low.
@@ -82,7 +82,7 @@ If a source is signed in but has no usable plan (say, a Kimi account without Kim
 
 | Source | Cost | Notes |
 |---|---|---|
-| WorkBuddy / WorkBuddy AI | Free | Credits come with the account |
+| WorkBuddy / WorkBuddy AI | Free | Credits come with the account. **Since 2026-10 WorkBuddy recognises conversations sent by dsh and blocks them**, so it barely works inside dsh; check-in still works |
 | Ollama / LM Studio | Free | Models running on this machine; they appear once installed and started, no sign-in |
 | Gemini (Google AI Studio), Groq | Free · limited | Paste a free API key; daily / per-minute limits apply |
 | OpenRouter | Free · limited | `:free` models are free (about 50 requests a day) |

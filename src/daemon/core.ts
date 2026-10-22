@@ -854,7 +854,7 @@ export class Daemon {
   }
 
   /** 「测一下」：经引擎发一句很短的话，看能不能用、多久回复（会用掉一点点额度） */
-  async testModel(model: string): Promise<{ ok: boolean; ms: number; reply?: string; status?: number; advice?: string; message?: string }> {
+  async testModel(model: string): Promise<{ ok: boolean; ms: number; reply?: string; note?: string; status?: number; advice?: string; message?: string }> {
     if (!model || model.length > 200) throw new DshModelError('bad_model', L('model 不合法', 'invalid model'))
     const all = await loadAll(this.ctx)
     const started = Date.now()
@@ -879,7 +879,9 @@ export class Daemon {
       } catch {
         // 不是 JSON 也算通了
       }
-      return { ok: true, ms, reply }
+      // 测试只发一句短话；WorkBuddy 会拦带 dsh 内置说明的真实对话（2026-10），通过不代表在 dsh 里能用
+      const note = /^workbuddy(-ai)?\//.test(model) ? L('这只是一句短测试；WorkBuddy 会拦下 dsh 里的真实对话', 'Only a short test; WorkBuddy blocks real conversations from dsh') : undefined
+      return { ok: true, ms, reply, ...(note ? { note } : {}) }
     }
     let message = text.slice(0, 300)
     let code: string | undefined

@@ -26,7 +26,7 @@
 dsh-model 把它们合成**一个地址、一种 key**：
 
 - 🔌 **一处接入，处处可用**：dsh 里自动出现全部模型，按来源分组；其他软件填上同一个地址和 key 就行。
-- 🆓 **把免费的用足**：WorkBuddy 积分、Gemini / Groq / OpenRouter 免费 key、本机模型都能接；每个来源标出「免费 / 免费·额度少 / 需付费」。
+- 🆓 **把免费的用足**：Gemini / Groq / OpenRouter 免费 key、本机模型、WorkBuddy 积分都能接；每个来源标出「免费 / 免费·额度少 / 需付费」。
 - 📅 **每日签到，自动领积分**：WorkBuddy 国内版、Qoder、Trae 每天自动签到，不用记。
 - 🔁 **不怕限流**：自己排一个组合（如 Codex → Kimi → WorkBuddy），一个限流或额度用完就自动换下一个；同一个模型在几个来源都有时也会自动切换。
 - 📊 **心里有数**：套餐用量和重置倒计时、剩余积分和到期时间、每个模型的成功率和速度、最近失败的原因和建议；额度快用完时提醒。
@@ -82,7 +82,7 @@ dsh-model setup
 
 | 来源 | 费用 | 说明 |
 |---|---|---|
-| WorkBuddy / WorkBuddy AI | 免费 | 账号自带积分 |
+| WorkBuddy / WorkBuddy AI | 免费 | 账号自带积分。**2026-10 起 WorkBuddy 会认出 dsh 发出的对话并拦下**，在 dsh 里基本用不了；签到照常 |
 | Ollama / LM Studio | 免费 | 本机运行的模型。装好并启动后自动出现，不用登录 |
 | Gemini（Google AI Studio）、Groq | 免费·额度少 | 填免费 API key 即可，每天 / 每分钟有上限 |
 | OpenRouter | 免费·额度少 | 名字带 `:free` 的模型免费（每天约 50 次） |

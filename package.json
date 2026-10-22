@@ -1,6 +1,6 @@
 {
   "name": "dsh-model",
-  "version": "0.22.2",
+  "version": "0.22.3",
   "description": "One OpenAI-compatible address for all your models: subscriptions (Codex, Kimi…), free tiers (WorkBuddy, Gemini, Groq, OpenRouter), local models (Ollama, LM Studio), daily check-in credits, auto failover. Works with DeepSeek Harness (dsh) and any OpenAI-compatible tool. 一个地址用上你所有的模型。",
   "keywords": [
     "dsh-plugin",
