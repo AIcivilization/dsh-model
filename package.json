@@ -1,8 +1,10 @@
 {
   "name": "dsh-model",
-  "version": "0.23.0",
-  "description": "One OpenAI-compatible address for all your models: subscriptions (Codex, Kimi…), free tiers (WorkBuddy, Gemini, Groq, OpenRouter), local models (Ollama, LM Studio), daily check-in credits, auto failover. Works with DeepSeek Harness (dsh) and any OpenAI-compatible tool. 一个地址用上你所有的模型。",
+  "version": "0.23.1",
+  "description": "Daily check-in credits claimed for you (Trae, Qoder, WorkBuddy China), one OpenAI-compatible address that relays every model, and free or subscription model sources (SiliconFlow, Gemini, Codex, Kimi, Ollama…). For DeepSeek Harness (dsh) and any OpenAI-compatible tool. 每天自动签到领积分 · 一个地址中转所有模型 · 免费和订阅模型随你接。",
   "keywords": [
+    "siliconflow",
+    "checkin",
     "dsh-plugin",
     "dsh-plugins",
     "dsh",
