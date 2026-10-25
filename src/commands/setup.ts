@@ -173,9 +173,9 @@ export async function ensureEngine(ctx: Ctx, all: All, opts: { port?: number } =
   const manifest = await loadManifest()
   const target = platformTarget()
   const version = config.engine.version ?? manifest.version
-  const asset = version === manifest.version ? manifest.assets[target] : await fetchUpstreamAsset(manifest, version, target)
+  const asset = version === manifest.version ? manifest.assets[target] : await fetchUpstreamAsset(manifest, version, target, { proxy: config.proxy })
   if (!asset) throw new DshModelError('unsupported_platform', L(`引擎没有 ${target} 的发布包`, `No engine build for ${target}`))
-  const installed = await installVersion(ctx, version, asset)
+  const installed = await installVersion(ctx, version, asset, { proxy: config.proxy })
   if ((await currentVersion(ctx)) !== version) await activateVersion(ctx, version)
   config.engine.version = version
   if (!state.engine.versions.includes(version)) state.engine.versions.push(version)

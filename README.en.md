@@ -163,6 +163,7 @@ See the [design doc](docs/DESIGN.md) (Chinese).
 - Meant for personal use: one account of your own per provider; do not use it to serve others.
 - Using subscription and WorkBuddy credentials outside the official clients may break the providers' terms and put the account at risk. Decide for yourself.
 - Windows 10 / 11 (x64, ARM64), macOS and Linux, Node ≥ 20.
+- Downloading the engine needs GitHub: setup uses the system proxy (Windows, macOS) or `HTTPS_PROXY` automatically; if it still cannot connect it says why, and you can pass `--proxy <url>` or download the file yourself and set `DSH_MODEL_ENGINE_ARCHIVE`.
 - Windows: the background services start at sign-in with no window. If an antivirus blocks them (the program is gone or will not start), trust `%USERPROFILE%\.dsh-model` and run `dsh-model repair`.
 
 ## License

@@ -45,9 +45,9 @@ async function upgrade(ctx, requested) {
     let asset = version === manifest.version ? manifest.assets[target] : undefined;
     if (!asset) {
         warn(L(`v${version} 不在本版 dsh-model 的锁定清单里，校验值取自上游发布的 checksums.txt`, `v${version} is not pinned by this dsh-model; using the checksum from the upstream checksums.txt`));
-        asset = await fetchUpstreamAsset(manifest, version, target);
+        asset = await fetchUpstreamAsset(manifest, version, target, { proxy: all.config.proxy });
     }
-    await installVersion(ctx, version, asset);
+    await installVersion(ctx, version, asset, { proxy: all.config.proxy });
     ok(L(`v${version} 已下载并校验`, `v${version} downloaded and verified`));
     await trialRun(ctx, all, versionBinary(ctx, version));
     ok(L('试运行通过', 'Trial run passed'));
