@@ -462,8 +462,9 @@ window.__ModuleLoader__.load({
         try { await api('POST', `/sources/${s.id}/logout`); await reload() } catch (e) { setErr(e.message) }
       }
       // 已登录的照常列出；没登录的收进一个可折叠的列表（默认收起；一个都没登录时默认展开）
-      const signedIn = visible.filter((s) => s.loggedIn)
-      const rest = visible.filter((s) => !s.loggedIn)
+      // 顶部只放正在用的（已登录且打开）；没登录的、关掉的都收进折叠列表
+      const signedIn = visible.filter((s) => s.loggedIn && s.enabled)
+      const rest = visible.filter((s) => !(s.loggedIn && s.enabled))
       const [restPref, setRestPref] = useState(readShowRest)
       const openRest = restPref ?? signedIn.length === 0
       const toggleRest = (v) => {
@@ -509,7 +510,7 @@ window.__ModuleLoader__.load({
         showRisky ? h('p', { style: { ...S.note, color: C.warn } }, L('高风险来源（Claude、Antigravity）：服务商有封禁第三方使用订阅的先例，账号可能被封。仅在你清楚风险时使用。', 'High-risk sources (Claude, Antigravity): the providers have banned third-party use of subscriptions before; your account may be suspended. Use only if you accept the risk.')) : null,
         signedIn.length ? h('div', { style: S.card }, signedIn.map(row)) : h('div', { style: { ...S.note, margin: '0 0 8px' } }, L('还没有接入任何来源：展开下面的列表挑一个。', 'No source connected yet: open the list below and pick one.')),
         rest.length ? h('button', { type: 'button', style: { ...S.btn, marginTop: 10 }, 'aria-expanded': openRest, onClick: () => toggleRest(!openRest) },
-          openRest ? L(`▾ 收起未登录的来源（${rest.length} 个）`, `▾ Hide signed-out sources (${rest.length})`) : L(`▸ 未登录的来源（${rest.length} 个）`, `▸ Signed-out sources (${rest.length})`)) : null,
+          openRest ? L(`▾ 收起没在用的来源（${rest.length} 个：未登录或已关闭）`, `▾ Hide sources not in use (${rest.length}: signed out or off)`) : L(`▸ 没在用的来源（${rest.length} 个：未登录或已关闭）`, `▸ Sources not in use (${rest.length}: signed out or off)`)) : null,
         openRest && rest.length ? h('div', { style: { ...S.card, marginTop: 8 } }, rest.map(row)) : null)
     }
 

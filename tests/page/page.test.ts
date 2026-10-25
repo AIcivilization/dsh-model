@@ -128,8 +128,8 @@ describe('settings page', () => {
     }
     window.localStorage.clear()
     await render()
-    await waitText('未登录的来源（1 个）')
-    await click('▸ 未登录的来源（1 个）')
+    await waitText('没在用的来源（1 个：未登录或已关闭）')
+    await click('▸ 没在用的来源（1 个：未登录或已关闭）')
     const sw = container.querySelector('button[role="switch"][aria-label="Gemini（Google AI Studio）"]')!
     await act(async () => sw.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await waitText('去创建 key')
@@ -250,19 +250,22 @@ describe('settings page', () => {
     expect(container.textContent).not.toContain('开始使用')
   })
 
-  it('signed-in sources are listed; signed-out ones are folded away (and the choice is remembered)', async () => {
+  it('sources in use are listed; signed-out and turned-off ones are folded away (and the choice is remembered)', async () => {
     window.localStorage.clear()
     window.localStorage.setItem('dsh-model.guideDone', '1')
-    handler = (c) => (c.path.startsWith('/sources') && !c.path.includes('/models') ? [200, [workbuddy, gemini]] : normal()(c))
+    const off = { ...workbuddy, id: 'workbuddy-ai', label: 'WorkBuddy AI', enabled: false }
+    handler = (c) => (c.path.startsWith('/sources') && !c.path.includes('/models') ? [200, [workbuddy, off, gemini]] : normal()(c))
     await render()
     await waitText('WorkBuddy')
     expect(container.querySelector('button[role="switch"][aria-label="WorkBuddy"]')).toBeTruthy()
+    expect(container.querySelector('button[role="switch"][aria-label="WorkBuddy AI"]')).toBeNull()
     expect(container.querySelector('button[role="switch"][aria-label="Gemini（Google AI Studio）"]')).toBeNull()
-    await click('▸ 未登录的来源（1 个）')
+    await click('▸ 没在用的来源（2 个：未登录或已关闭）')
+    expect(container.querySelector('button[role="switch"][aria-label="WorkBuddy AI"]')).toBeTruthy()
     expect(container.querySelector('button[role="switch"][aria-label="Gemini（Google AI Studio）"]')).toBeTruthy()
     await act(async () => root?.unmount())
     await render()
-    await waitText('收起未登录的来源（1 个）')
+    await waitText('收起没在用的来源（2 个：未登录或已关闭）')
   })
 
   it('nothing signed in yet: the signed-out list starts open', async () => {
