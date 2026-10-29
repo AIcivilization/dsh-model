@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { decryptStorageValue, findTraeCredential, tokenDaysLeft } from '../../src/checkin/trae.js'
+import { decryptStorageValue, findTraeCredential, pickTraeCredential, tokenDaysLeft } from '../../src/checkin/trae.js'
 
 // 用假数据按 Trae 的格式造一个加密信封：头 6 字节 + 32 字节随机数 + AES-128-CBC(sha512(明文) + 明文)
 const SALT_A = [82, 9, 106, 213, 48, 54, 165, 56, 191, 64, 163, 158, 129, 243, 215, 251, 124, 227, 57, 130, 155, 47, 255, 135, 52, 142, 67, 68, 196, 222, 233, 203, 84, 123, 148, 50, 166, 194, 35, 61, 238, 76, 149, 11, 66, 250, 195, 78, 8, 46, 161, 102, 40, 217, 36, 178, 118, 91, 162, 73, 109, 139, 209, 37]
@@ -57,6 +57,37 @@ describe('Trae check-in', () => {
     delete process.env.APPDATA
     try {
       expect(await findTraeCredential(home)).toMatchObject({ source: '~/.trae-cn', deviceId: '' })
+    } finally {
+      if (saved.xdg) process.env.XDG_CONFIG_HOME = saved.xdg
+      if (saved.appdata) process.env.APPDATA = saved.appdata
+    }
+  })
+
+  it('picks a live login over an expired one, even when the expired one is found first', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const stale = { token: fakeJwt(now - 7 * 86400), deviceId: 'd1', source: 'TRAE SOLO CN' }
+    const fresh = { token: fakeJwt(now + 8 * 86400), deviceId: 'd2', source: 'Trae CN' }
+    const cli = { token: fakeJwt(now + 30 * 86400), deviceId: '', source: '~/.trae-cn' }
+    expect(pickTraeCredential([stale, fresh, cli])?.source).toBe('Trae CN')
+    expect(pickTraeCredential([stale, cli])?.source).toBe('~/.trae-cn')
+    expect(pickTraeCredential([stale])?.source).toBe('TRAE SOLO CN')
+    expect(pickTraeCredential([])).toBeNull()
+  })
+
+  it('reads every installed Trae and uses the live one', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-model-trae-'))
+    const root = process.platform === 'darwin' ? join(home, 'Library', 'Application Support') : process.platform === 'win32' ? join(home, 'AppData', 'Roaming') : join(home, '.config')
+    const now = Math.floor(Date.now() / 1000)
+    for (const [app, exp, dev] of [['TRAE SOLO CN', now - 7 * 86400, '111'], ['Trae CN', now + 8 * 86400, '222']] as const) {
+      const dir = join(root, app, 'User', 'globalStorage')
+      await mkdir(dir, { recursive: true })
+      await writeFile(join(dir, 'storage.json'), JSON.stringify({ 'iCubeAuthInfo://icube.cloudide': envelope(JSON.stringify({ token: fakeJwt(exp) })), [`iCubeAuthInfo://icube-dc:${dev}`]: 'x' }))
+    }
+    const saved = { xdg: process.env.XDG_CONFIG_HOME, appdata: process.env.APPDATA }
+    delete process.env.XDG_CONFIG_HOME
+    delete process.env.APPDATA
+    try {
+      expect(await findTraeCredential(home)).toMatchObject({ source: 'Trae CN', deviceId: '222' })
     } finally {
       if (saved.xdg) process.env.XDG_CONFIG_HOME = saved.xdg
       if (saved.appdata) process.env.APPDATA = saved.appdata

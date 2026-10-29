@@ -1053,7 +1053,9 @@ window.__ModuleLoader__.load({
             h('div', { style: { ...S.line, marginTop: 6 } },
               st.qoder.configured
                 ? h('button', { type: 'button', style: S.btn, onClick: () => { if (window.confirm(L('删除 Qoder 的令牌？之后不再给 Qoder 签到。', 'Remove the Qoder token? Qoder will no longer be checked in.'))) void api('DELETE', '/checkin/qoder').then(setSt, (e) => setErr(e.message)) } }, L('删除 Qoder 令牌', 'Remove Qoder token'))
-                : h('button', { type: 'button', style: S.btn, onClick: () => setQoder(true) }, L('添加 Qoder', 'Add Qoder')))) : null,
+                : h('button', { type: 'button', style: S.btn, onClick: () => setQoder(true) }, L('添加 Qoder', 'Add Qoder'))),
+            // Trae 读本机 Trae 的登录：这台没装（比如 VPS）就不会出现，在装了 Trae 的电脑上签就行（每个账号一天一次）
+            !st.available.some((a) => a.id === 'trae') ? h('div', { style: { ...S.meta, marginTop: 6 } }, L('Trae：这台电脑上没装 Trae，所以不签。在装了 Trae 的电脑上会自动签（一个账号一天签一次就够）。', 'Trae: not installed on this machine, so it is skipped. A computer with Trae installed checks it in automatically (once a day per account is enough).')) : null) : null,
           !open && !st.qoder.configured ? h('div', { style: { ...S.meta, marginTop: 4 } }, h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, onClick: () => setQoder(true) }, L('+ 添加 Qoder', '+ Add Qoder'))) : null,
           err ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, err) : null),
         qoder ? h(QoderDialog, { onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null)

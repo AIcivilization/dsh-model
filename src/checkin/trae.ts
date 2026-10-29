@@ -58,39 +58,59 @@ function appDataRoots(home: string, platform = process.platform, env = process.e
   return [env.XDG_CONFIG_HOME || join(home, '.config')]
 }
 
-/** 找本机的 Trae 登录：先桌面 App，再 CLI。找不到返回 null（不报错：没装 Trae 就不显示） */
+/**
+ * 找本机的 Trae 登录。可能有好几份（Trae CN、TRAE SOLO CN、CLI…），常有一份早就过期没人用了
+ * （2026-10-29 实测：先读到的 TRAE SOLO CN 已过期 7 天，正在用的 Trae CN 是新的，签到因此失败）。
+ * 所以全读一遍再挑：没过期的优先，其中桌面 App（带设备 id）优先，再按到期最晚。找不到返回 null（没装 Trae 就不显示）。
+ */
 export async function findTraeCredential(home = homedir()): Promise<TraeCredential | null> {
   // 测试环境不看本机真装了什么（与不发现桌面 App 同一个开关）
   if (process.env.DSH_MODEL_NO_APP_DISCOVERY && home === homedir()) return null
+  const found: TraeCredential[] = []
   for (const root of appDataRoots(home)) {
     for (const app of APPS) {
       const file = join(root, app, 'User', 'globalStorage', 'storage.json')
-      let storage: Record<string, unknown>
       try {
-        storage = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>
+        const storage = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>
+        const raw = storage[AUTH_KEY]
+        if (typeof raw !== 'string' || !raw.trim()) continue
+        const text = raw.trim().startsWith('{') ? raw : decryptStorageValue(raw)
+        const auth = JSON.parse(text) as { token?: string; accessToken?: string }
+        const token = auth.token || auth.accessToken
+        if (!token) continue
+        const dc = Object.keys(storage).find((k) => k.startsWith(DEVICE_PREFIX))
+        found.push({ token, deviceId: dc ? dc.slice(DEVICE_PREFIX.length) : String(storage['telemetry.devDeviceId'] ?? ''), source: app })
       } catch {
-        continue
+        // 没装、读不了或解不开：看下一个
       }
-      const raw = storage[AUTH_KEY]
-      if (typeof raw !== 'string' || !raw.trim()) continue
-      const text = raw.trim().startsWith('{') ? raw : decryptStorageValue(raw)
-      const auth = JSON.parse(text) as { token?: string; accessToken?: string }
-      const token = auth.token || auth.accessToken
-      if (!token) continue
-      const dc = Object.keys(storage).find((k) => k.startsWith(DEVICE_PREFIX))
-      return { token, deviceId: dc ? dc.slice(DEVICE_PREFIX.length) : String(storage['telemetry.devDeviceId'] ?? ''), source: app }
     }
   }
   for (const dir of ['.trae-cn', '.trae']) {
     try {
       const text = (await readFile(join(home, dir, 'trae-jwt-token'), 'utf8')).trim()
       const token = text.startsWith('{') ? String((JSON.parse(text) as { token?: string; accessToken?: string; jwt?: string }).token ?? '') : text
-      if (token.split('.').length === 3) return { token, deviceId: '', source: `~/${dir}` }
+      if (token.split('.').length === 3) found.push({ token, deviceId: '', source: `~/${dir}` })
     } catch {
       // 没有
     }
   }
-  return null
+  return pickTraeCredential(found)
+}
+
+/** 几份登录里挑一份：没过期的优先 → 带设备 id 的（桌面 App）优先 → 到期最晚的。导出给测试 */
+export function pickTraeCredential(list: TraeCredential[], now = Date.now()): TraeCredential | null {
+  const exp = (t: string) => {
+    const d = tokenDaysLeft(t, now)
+    return d === null ? Number.POSITIVE_INFINITY : d
+  }
+  const ranked = [...list].sort((a, b) => {
+    const live = Number(exp(b.token) >= 0) - Number(exp(a.token) >= 0)
+    if (live) return live
+    const desktop = Number(Boolean(b.deviceId)) - Number(Boolean(a.deviceId))
+    if (desktop) return desktop
+    return exp(b.token) - exp(a.token)
+  })
+  return ranked[0] ?? null
 }
 
 /** 令牌还剩几天（读 JWT 的 exp）；读不出来返回 null */
