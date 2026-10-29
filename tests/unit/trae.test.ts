@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { decryptStorageValue, findTraeCredential, pickTraeCredential, tokenDaysLeft } from '../../src/checkin/trae.js'
+import { decryptStorageValue, findTraeCredential, findTraeCredentials, pickTraeCredential, tokenDaysLeft } from '../../src/checkin/trae.js'
 
 // 用假数据按 Trae 的格式造一个加密信封：头 6 字节 + 32 字节随机数 + AES-128-CBC(sha512(明文) + 明文)
 const SALT_A = [82, 9, 106, 213, 48, 54, 165, 56, 191, 64, 163, 158, 129, 243, 215, 251, 124, 227, 57, 130, 155, 47, 255, 135, 52, 142, 67, 68, 196, 222, 233, 203, 84, 123, 148, 50, 166, 194, 35, 61, 238, 76, 149, 11, 66, 250, 195, 78, 8, 46, 161, 102, 40, 217, 36, 178, 118, 91, 162, 73, 109, 139, 209, 37]
@@ -88,6 +88,28 @@ describe('Trae check-in', () => {
     delete process.env.APPDATA
     try {
       expect(await findTraeCredential(home)).toMatchObject({ source: 'Trae CN', deviceId: '222' })
+    } finally {
+      if (saved.xdg) process.env.XDG_CONFIG_HOME = saved.xdg
+      if (saved.appdata) process.env.APPDATA = saved.appdata
+    }
+  })
+
+  it('one entry per Trae account: two apps on the same account count once, a second account adds one', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-model-trae-'))
+    const root = process.platform === 'darwin' ? join(home, 'Library', 'Application Support') : process.platform === 'win32' ? join(home, 'AppData', 'Roaming') : join(home, '.config')
+    const now = Math.floor(Date.now() / 1000)
+    const jwt = (exp: number, id: string) => `x.${Buffer.from(JSON.stringify({ exp, data: { id } })).toString('base64url')}.y`
+    for (const [app, exp, user] of [['TRAE SOLO CN', now - 7 * 86400, 'u1'], ['Trae CN', now + 8 * 86400, 'u1'], ['Trae', now + 5 * 86400, 'u2']] as const) {
+      const dir = join(root, app, 'User', 'globalStorage')
+      await mkdir(dir, { recursive: true })
+      await writeFile(join(dir, 'storage.json'), JSON.stringify({ 'iCubeAuthInfo://icube.cloudide': envelope(JSON.stringify({ token: jwt(exp, user), userId: user })), 'iCubeAuthInfo://icube-dc:9': 'x' }))
+    }
+    const saved = { xdg: process.env.XDG_CONFIG_HOME, appdata: process.env.APPDATA }
+    delete process.env.XDG_CONFIG_HOME
+    delete process.env.APPDATA
+    try {
+      const list = await findTraeCredentials(home)
+      expect(list.map((c) => [c.accountId, c.source])).toEqual([['u1', 'Trae CN'], ['u2', 'Trae']])
     } finally {
       if (saved.xdg) process.env.XDG_CONFIG_HOME = saved.xdg
       if (saved.appdata) process.env.APPDATA = saved.appdata

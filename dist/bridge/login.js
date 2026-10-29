@@ -7,7 +7,7 @@
 //   GET {base}/v2/plugin/login/account?state=…（Bearer）                 → 账号（uid / 企业 / 昵称）
 // 令牌按移植凭据库的"自有副本"格式写进 $DSH_MODEL_HOME/workbuddy/<ownFilename>（0600），bridge 直接用。
 // 网络请求走 curl：它认 -x 代理（Node 的 fetch 不走代理）；国内版域名强制直连。
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DshModelError } from '../errors.js';
 import { L } from '../i18n.js';
 import { run } from '../util/exec.js';
@@ -110,9 +110,9 @@ export async function workbuddyLogin(variant, home, opts) {
         ...(nickname ? { nickname } : {}),
         source: 'dsh',
     };
-    const dir = bridgeDir(home);
-    await ensureDir(dir, { owner: opts.owner });
-    await atomicWrite(join(dir, variant.ownFilename), JSON.stringify({ version: 1, credential }, null, 2) + '\n', { mode: 0o600, owner: opts.owner });
+    const file = opts.file ?? join(bridgeDir(home), variant.ownFilename);
+    await ensureDir(dirname(file), { owner: opts.owner });
+    await atomicWrite(file, JSON.stringify({ version: 1, credential }, null, 2) + '\n', { mode: 0o600, owner: opts.owner });
     return credential;
 }
 /** 退出登录：删掉 dsh-model 保存的那份（App 的文件不动） */

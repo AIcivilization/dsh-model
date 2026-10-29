@@ -1,4 +1,4 @@
-// checkin/index.ts — 每日签到（设计 §14.15）：WorkBuddy 国内版、Qoder、Trae；以后加 WPS 灵犀
+// checkin/index.ts — 每日签到（设计 §14.15）：WorkBuddy 国内版、Qoder、Trae；每家可以有几个账号（§14.19，checkin/accounts.ts）
 //
 // 「今天」按北京时间算：这几家都在北京时间零点换天（VPS 的系统时间是 UTC）。
 // 自动签到默认打开：守护进程每 15 分钟看一眼，过了当天随机的几分钟后签一次；失败的隔一小时再试；错过了下次开机补。
@@ -8,7 +8,8 @@ import { join } from 'node:path'
 import { L } from '../i18n.js'
 import { readJson, writeJson, type Owner } from '../util/fs.js'
 
-export type CheckinId = 'workbuddy' | 'qoder' | 'trae'
+/** workbuddy / qoder / trae，多账号时是 <家>:<账号>（checkin/accounts.ts） */
+export type CheckinId = string
 
 export interface CheckinItem {
   id: CheckinId
@@ -55,10 +56,12 @@ export function todayResults(file: CheckinFile, now = new Date()): CheckinItem[]
 }
 
 /** 失败原因 → 该怎么办 */
-export function checkinAdvice(id: CheckinId, message: string): string {
-  if (/无效|过期|401|403|unauthor|expired/i.test(message)) {
+export function checkinAdvice(itemId: CheckinId, message: string): string {
+  const id = itemId.split(':')[0]
+  if (/无效|过期|401|403|unauthor|expired|not able to authenticate/i.test(message)) {
     if (id === 'trae') return L('Trae 登录过期：打开 Trae 重新登录一次', 'Trae sign-in expired: open Trae and sign in again')
-    return id === 'qoder' ? L('Qoder 个人访问令牌失效：在签到卡片里重新填一个', 'The Qoder access token no longer works: enter a new one in the check-in card') : L('WorkBuddy 登录过期：在来源里重新登录 WorkBuddy', 'WorkBuddy sign-in expired: sign in to WorkBuddy again under Sources')
+    if (id === 'qoder') return L('Qoder 个人访问令牌失效：在签到卡片里删掉它再添加一个新的', 'The Qoder access token no longer works: remove it in the check-in card and add a new one')
+    return itemId.includes(':') ? L('这个 WorkBuddy 签到账号的登录过期：在签到卡片里删掉它再添加一次', 'This WorkBuddy check-in account has expired: remove it in the check-in card and add it again') : L('WorkBuddy 登录过期：在来源里重新登录 WorkBuddy', 'WorkBuddy sign-in expired: sign in to WorkBuddy again under Sources')
   }
   if (/timeout|timed out|fetch failed|network|ECONN/i.test(message)) return L('网络不通：稍后会自动再试', 'Network problem: it will retry automatically')
   return L('稍后会自动再试', 'It will retry automatically')

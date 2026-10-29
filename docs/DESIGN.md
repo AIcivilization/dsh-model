@@ -598,3 +598,14 @@ Gemini（Google AI Studio 的 OpenAI 兼容接口 `…/v1beta/openai`）、Groq�
 - **新装默认关**：`setup` 第一次跑时，把 `workbuddy`、`workbuddy-ai` 加进 `disabledSources`，并记 `workbuddyDefault: 'checkin-only'`。只做一次，之后用户自己打开的不改回去。以前装过的（有 `bridge.riskNoticeAt`）记为 `'kept'`，保持原样。签到不看来源开关，照常进行。
 - **打开前提醒**：从页面把 WorkBuddy 从关着打开时，先弹一次说明：会被拦、不会去绕、有封号风险。确认后才接进 dsh。来源行和「测一下」的结果里也都有提醒。
 - **向导只推两家**：国内直连推硅基流动（实名后部分模型免费），能上外网推 Gemini（免费模型里质量最好）。WorkBuddy 不算"已接入"。
+
+### 14.19 多账号签到
+
+一家可以签几个账号。每个签到项一个 id：第一个账号沿用 `workbuddy` / `qoder` / `trae`，旧的结果照常认；多出来的是 `<家>:<账号>`。同一个账号只签一次。
+
+- **WorkBuddy**：主账号是「来源」里登录的那个（bridge 的凭据）。签到卡片里「+ 添加 WorkBuddy 账号」走和来源一样的链接授权，存成 `workbuddy/checkin/<uid>.json`（0600，格式同 dsh-model 自己的登录），只用来签到、不接模型，也不读桌面 App。授权的如果就是主账号，会提示换一个。
+- **Qoder**：`secrets.json` 里存一组令牌（`checkin.qoders`），每个带一个名字，因为 Qoder 的接口不返回账号名。旧版只有一个 `checkin.qoder`，读的时候当第一个，写的时候换成新格式。同一个令牌再加一次，等于改名字。
+- **Trae**：本机装的每个 Trae 都读，按账号去重（登录信息的 `userId`，或 JWT 的 `data.id`）。每个账号选没过期、到期最晚的那份。实测 Mac 上的 Trae CN 和 TRAE SOLO CN 登的是同一个账号，只签一次。
+- **页面**：签到卡片的「详情」里列出多加的账号，每个都能删，并有「+ 添加 WorkBuddy 账号」「+ 再加一个 Qoder 账号」。账号删掉后，它今天的结果不再显示。
+
+**没做的**：WPS 灵犀、百度搭子、豆包（2026-10-29 调研）。GitHub 上没有任何开源的签到实现，现有签到插件都只做 Trae、Qoder、WorkBuddy。从头研究这几家的私有接口和本机登录，属于 §14.15 里灵犀那类工作（当时被安全检查拦下），所以不做。等它们有官方接口或可参考的开源实现再加。

@@ -6,6 +6,7 @@ import { workbuddyLogin } from '../../src/bridge/login.js'
 import { bridgeDir } from '../../src/bridge/runtime.js'
 import { WorkBuddyCredentialStore } from '../../src/bridge/workbuddy/auth.js'
 import { CN_VARIANT } from '../../src/bridge/workbuddy/variants.js'
+import { workbuddyAccountStore, workbuddyAccountsDir } from '../../src/checkin/accounts.js'
 import { tempCtx } from './helpers.js'
 
 describe('workbuddy login (own flow, fake server)', () => {
@@ -55,6 +56,15 @@ describe('workbuddy login (own flow, fake server)', () => {
       const store = new WorkBuddyCredentialStore({ variant: CN_VARIANT, ownPath: file, desktopPath: join(ctx.paths.home, 'nope'), refresh: async () => ({ accessToken: 'x' }) })
       const current = await store.current()
       expect(current).toMatchObject({ accessToken: 'at-123', uid: 'u-1', nickname: '测试' })
+
+      // 签到账号：写到指定的文件，不动主登录那份
+      const before = await readFile(file, 'utf8')
+      const extra = join(workbuddyAccountsDir(ctx.paths.home), 'pending.json')
+      await workbuddyLogin(CN_VARIANT, ctx.paths.home, { onUrl: () => {}, timeoutMs: 30_000, file: extra })
+      expect(JSON.parse(await readFile(extra, 'utf8')).credential).toMatchObject({ uid: 'u-1' })
+      expect(await readFile(file, 'utf8')).toBe(before)
+      const { store: acct } = workbuddyAccountStore(ctx.paths.home, extra)
+      expect(await acct.current()).toMatchObject({ accessToken: 'at-123' })
     } finally {
       delete process.env.DSH_MODEL_WORKBUDDY_BASE
       server.close()

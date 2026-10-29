@@ -985,23 +985,26 @@ window.__ModuleLoader__.load({
     // —— 每日签到 ——
     const CHECKIN_TEXT = (r) => (r.state === 'signed' ? L(`成功${r.credit ? ` +${r.credit} 积分` : ''}`, `done${r.credit ? ` +${r.credit} credits` : ''}`) : r.state === 'already' ? L('今天已签过', 'already today') : L(`失败：${r.message || ''}`, `failed: ${r.message || ''}`))
 
-    function QoderDialog({ onDone, onClose }) {
+    function QoderDialog({ onDone, onClose, another }) {
       const [pat, setPat] = useState('')
+      const [name, setName] = useState('')
       const [region, setRegion] = useState('cn')
       const [busy, setBusy] = useState(false)
       const [msg, setMsg] = useState('')
       const save = async () => {
         setBusy(true)
         setMsg(L('正在验证这个令牌并签到…', 'Checking the token and checking in…'))
-        try { await api('POST', '/checkin/qoder', { pat: pat.trim(), region }); onDone() } catch (e) { setMsg(e.message); setBusy(false) }
+        try { await api('POST', '/checkin/qoder', { pat: pat.trim(), region, ...(name.trim() ? { name: name.trim() } : {}) }); onDone() } catch (e) { setMsg(e.message); setBusy(false) }
       }
-      return h(Modal, { title: L('添加 Qoder 签到', 'Add Qoder check-in'), onClose },
+      return h(Modal, { title: another ? L('再加一个 Qoder 账号', 'Add another Qoder account') : L('添加 Qoder 签到', 'Add Qoder check-in'), onClose },
         h('p', { style: S.note },
           L('登录 Qoder 网站，在「设置 → API 令牌」（有的版本叫「账号 → 集成」）里点「创建令牌」，复制生成的个人访问令牌（以 pt- 开头，只显示一次），粘贴到这里。只用来每天领签到积分，保存在本机。', 'Sign in on the Qoder website, open Settings → API Tokens (Account → Integrations in some versions), click Create token, then paste the personal access token here (it starts with pt- and is shown only once). It is only used to claim the daily credits, and stays on this machine.'),
           h('a', { href: region === 'cn' ? 'https://qoder.com.cn/account/integrations' : 'https://qoder.com/account/integrations', target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent, marginLeft: 6 } }, region === 'cn' ? L('去 Qoder 国内版创建 ↗', 'Create on Qoder China ↗') : L('去 Qoder 国际版创建 ↗', 'Create on Qoder ↗'))),
         h('div', { style: { ...S.line, marginBottom: 8 } },
           ['cn', 'intl'].map((r) => h('label', { key: r, style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' } },
             h('input', { type: 'radio', name: 'qoder-region', checked: region === r, onChange: () => setRegion(r) }), r === 'cn' ? L('国内版', 'China') : L('国际版', 'International')))),
+        another ? h('div', { style: { ...S.line, marginBottom: 8 } },
+          h('input', { style: { ...S.input, ...S.grow }, maxLength: 20, placeholder: L('给这个账号起个名字，如：小号', 'A name for this account, e.g. Second'), value: name, onChange: (e) => setName(e.target.value), 'aria-label': L('账号名字', 'Account name') })) : null,
         h('div', { style: S.line },
           h('input', { type: 'password', style: { ...S.input, ...S.grow }, placeholder: L('个人访问令牌', 'Personal access token'), value: pat, onChange: (e) => setPat(e.target.value) }),
           h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !pat.trim(), onClick: () => void save() }, L('保存', 'Save'))),
@@ -1014,8 +1017,17 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [open, setOpen] = useState(false)
       const [qoder, setQoder] = useState(false)
+      const [wbLogin, setWbLogin] = useState(null)
       const [err, setErr] = useState('')
       const refresh = useCallback(() => api('GET', '/checkin').then(setSt, () => {}), [])
+      const addWorkbuddy = async () => {
+        setErr('')
+        try { setWbLogin((await api('POST', '/checkin/workbuddy')).login) } catch (e) { setErr(e.message) }
+      }
+      const removeAccount = async (kind, id, label) => {
+        if (!window.confirm(L(`不再给「${label}」签到？`, `Stop checking in "${label}"?`))) return
+        try { setSt(await api('DELETE', `/checkin/${kind}/${encodeURIComponent(id)}`)) } catch (e) { setErr(e.message) }
+      }
       useEffect(() => { void refresh(); const t = setInterval(refresh, 5 * 60 * 1000); return () => clearInterval(t) }, [refresh])
       if (!st) return null
       const byId = new Map(st.results.map((r) => [r.id, r]))
@@ -1050,15 +1062,22 @@ window.__ModuleLoader__.load({
           open ? h('div', { style: { marginTop: 8 } },
             st.results.map((r) => h('div', { key: r.id, style: { fontSize: 12, lineHeight: 1.8, color: r.state === 'failed' ? C.err : C.text } },
               `${r.label}：${CHECKIN_TEXT(r)}`, r.advice ? h('span', { style: { color: C.sub, marginLeft: 6 } }, r.advice) : null)),
-            h('div', { style: { ...S.line, marginTop: 6 } },
-              st.qoder.configured
-                ? h('button', { type: 'button', style: S.btn, onClick: () => { if (window.confirm(L('删除 Qoder 的令牌？之后不再给 Qoder 签到。', 'Remove the Qoder token? Qoder will no longer be checked in.'))) void api('DELETE', '/checkin/qoder').then(setSt, (e) => setErr(e.message)) } }, L('删除 Qoder 令牌', 'Remove Qoder token'))
-                : h('button', { type: 'button', style: S.btn, onClick: () => setQoder(true) }, L('添加 Qoder', 'Add Qoder'))),
+            // 多账号：多加的 WorkBuddy 签到账号、每个 Qoder 令牌，都能删；再加一个
+            h('div', { style: { marginTop: 8, borderTop: `1px solid ${C.border}`, paddingTop: 8 } },
+              h('div', { style: { ...S.meta, marginBottom: 4 } }, L('签到账号（同一家可以加几个账号）', 'Check-in accounts (several per product are fine)')),
+              [...((st.accounts && st.accounts.workbuddy) || []).map((a) => ({ kind: 'workbuddy', id: a.uid, label: a.label })), ...((st.accounts && st.accounts.qoder) || []).map((q) => ({ kind: 'qoder', id: q.id, label: q.label }))].map((a) =>
+                h('div', { key: `${a.kind}:${a.id}`, style: { ...S.line, minHeight: 24, fontSize: 12 } },
+                  h('span', { style: S.grow }, a.label),
+                  h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, onClick: () => void removeAccount(a.kind, a.id, a.label) }, L('删除', 'Remove')))),
+              h('div', { style: { ...S.line, marginTop: 4, flexWrap: 'wrap' } },
+                h('button', { type: 'button', style: S.btn, onClick: () => void addWorkbuddy() }, L('+ 添加 WorkBuddy 账号', '+ Add a WorkBuddy account')),
+                h('button', { type: 'button', style: S.btn, onClick: () => setQoder(true) }, st.qoder.configured ? L('+ 再加一个 Qoder 账号', '+ Add another Qoder account') : L('+ 添加 Qoder', '+ Add Qoder')))),
             // Trae 读本机 Trae 的登录：这台没装（比如 VPS）就不会出现，在装了 Trae 的电脑上签就行（每个账号一天一次）
             !st.available.some((a) => a.id === 'trae') ? h('div', { style: { ...S.meta, marginTop: 6 } }, L('Trae：这台电脑上没装 Trae，所以不签。在装了 Trae 的电脑上会自动签（一个账号一天签一次就够）。', 'Trae: not installed on this machine, so it is skipped. A computer with Trae installed checks it in automatically (once a day per account is enough).')) : null) : null,
           !open && !st.qoder.configured ? h('div', { style: { ...S.meta, marginTop: 4 } }, h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, onClick: () => setQoder(true) }, L('+ 添加 Qoder', '+ Add Qoder'))) : null,
           err ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, err) : null),
-        qoder ? h(QoderDialog, { onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null)
+        qoder ? h(QoderDialog, { another: st.qoder.configured, onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null,
+        wbLogin ? h(LoginDialog, { source: { id: 'workbuddy-checkin', label: L('WorkBuddy 签到账号', 'WorkBuddy check-in account'), login: 'link' }, session: wbLogin, onDone: () => { setWbLogin(null); setOpen(true); setTimeout(() => void refresh(), 3000) }, onClose: () => { setWbLogin(null); void refresh() } }) : null)
     }
 
     /** 签完在 dsh 右下角提示一次（成功或失败），一天一次 */

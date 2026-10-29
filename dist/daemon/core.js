@@ -5,7 +5,7 @@
 // 职责：来源状态与开关、登录会话（引擎 OAuth / WorkBuddy 自有登录 / OpenCode key）、key 管理、用量统计。
 // CLI 与 dsh 插件都只通过 /control/* 调这里，逻辑只有一份。
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { latestVersion, selfJobLog } from '../commands/self.js';
 import { LOCAL_SERVERS, loadLocalCatalog, refreshLocalCatalog } from '../integrations/local.js';
@@ -18,7 +18,9 @@ import { spawnDetached } from '../util/detach.js';
 import { classify, recentFailures } from './failures.js';
 import { autoDue, beijingNow, checkinAdvice, ensureJitter, loadCheckin, runCheckin, setAuto, todayResults } from '../checkin/index.js';
 import { QODER_REGIONS, exchangePat, qoderCheckin } from '../checkin/qoder.js';
-import { findTraeCredential, traeCheckin } from '../checkin/trae.js';
+import { findTraeCredentials, traeCheckin } from '../checkin/trae.js';
+import { accountTag, addQoder, listWorkbuddyAccounts, loadQoders, removeQoder, removeWorkbuddyAccount, workbuddyAccountStore, workbuddyAccountsDir } from '../checkin/accounts.js';
+import { CN_VARIANT } from '../bridge/workbuddy/variants.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
 import { randomBytes } from 'node:crypto';
 import { currentBinary } from '../engine/install.js';
@@ -34,7 +36,7 @@ import { blockedNotice as workbuddyBlockedNotice, riskNotice as workbuddyRiskNot
 import { DSH_KEY_NAME, addKey, findActive, loadKeys, revokeKey, rotateKey, saveKeys } from '../keys.js';
 import { applyKeyChange, dshCandidates, dshKey, loadAll, saveAll, syncAll } from '../ops.js';
 import { defaultPick, pickedFor } from '../dsh/pick.js';
-import { loadSecrets, saveSecrets } from '../secrets.js';
+import { loadSecrets } from '../secrets.js';
 import { SOURCES, credsFor, findSource, paymentRequired } from '../sources.js';
 import { withLock } from '../state.js';
 import { riskNotice as upstreamRiskNotice } from '../upstreams.js';
@@ -717,35 +719,71 @@ export class Daemon {
     }
     // —— 每日签到 ——
     /** 现在能签到的：WorkBuddy 国内版（已登录）、Qoder（填了个人访问令牌） */
+    /**
+     * 能签到的每个账号（设计 §14.19）：WorkBuddy 主账号 + 多加的签到账号、每个 Qoder 令牌、本机每个 Trae 账号。
+     * 第一个账号的 id 沿用 workbuddy / qoder / trae（旧结果照常认），多出来的是 <家>:<账号>。同一个账号只签一次。
+     */
     async checkers() {
         const out = [];
+        const home = this.ctx.paths.home;
+        const extra = await listWorkbuddyAccounts(home);
+        const seen = new Set();
         for (const rt of this.runtimes) {
             if (rt.variant.id !== 'workbuddy')
                 continue; // 国际版没有签到
             const st = await rt.wbStore.status().catch(() => null);
             if (st?.state !== 'signed-in')
                 continue;
-            out.push({ id: 'workbuddy', label: rt.label, run: async () => rt.wbClient.dailyCheckin(await rt.wbStore.resolve()) });
+            const uid = (await rt.wbStore.resolve().catch(() => null))?.uid;
+            if (uid)
+                seen.add(uid);
+            const tag = extra.length ? `（${accountTag(st.nickname, uid ?? '')}）` : '';
+            out.push({ id: 'workbuddy', label: `${rt.label}${tag}`, run: async () => rt.wbClient.dailyCheckin(await rt.wbStore.resolve()) });
         }
-        const q = (await loadSecrets(this.ctx)).checkin?.qoder;
-        if (q?.pat)
-            out.push({ id: 'qoder', label: QODER_REGIONS[q.region].label, run: () => qoderCheckin(q.pat, q.region) });
-        // Trae：本机装了并登录过 Trae 才有（读它自己的登录信息，不需要另外设置；VPS 上一般没有）
-        const trae = await findTraeCredential().catch(() => null);
-        if (trae)
-            out.push({ id: 'trae', label: 'Trae', run: async () => traeCheckin((await findTraeCredential()) ?? trae) });
+        for (const a of extra) {
+            if (seen.has(a.uid))
+                continue;
+            seen.add(a.uid);
+            const { store, client } = workbuddyAccountStore(home, a.file);
+            out.push({ id: `workbuddy:${a.uid}`, label: `WorkBuddy（${accountTag(a.nickname, a.uid)}）`, run: async () => client.dailyCheckin(await store.resolve()) });
+        }
+        const qoders = await loadQoders(this.ctx);
+        qoders.forEach((q, i) => {
+            // 一个令牌：「Qoder（国内版）」；几个：带上名字（没起名就用编号），如「Qoder（小号 · 国内版）」
+            const region = q.region === 'cn' ? L('国内版', 'China') : '';
+            const tag = q.name || (qoders.length > 1 ? `#${q.id}` : '');
+            const label = tag ? `Qoder（${[tag, region].filter(Boolean).join(' · ')}）` : QODER_REGIONS[q.region].label;
+            out.push({ id: i === 0 ? 'qoder' : `qoder:${q.id}`, label, run: () => qoderCheckin(q.pat, q.region) });
+        });
+        // Trae：本机装了并登录过 Trae 才有（读它自己的登录信息，不需要另外设置；VPS 上一般没有）。每个账号签一次
+        const traes = await findTraeCredentials().catch(() => []);
+        traes.forEach((t, i) => {
+            const id = i === 0 ? 'trae' : `trae:${t.accountId ?? t.source}`;
+            out.push({
+                id,
+                label: traes.length > 1 ? `Trae（${t.accountId ? `…${t.accountId.slice(-4)}` : t.source}）` : 'Trae',
+                run: async () => traeCheckin((await findTraeCredentials()).find((x) => (x.accountId ?? x.source) === (t.accountId ?? t.source)) ?? t),
+            });
+        });
         return out;
     }
     async checkinStatus() {
         const file = await loadCheckin(this.ctx.paths.home);
         const checkers = await this.checkers();
-        const q = (await loadSecrets(this.ctx)).checkin?.qoder;
+        const qoders = await loadQoders(this.ctx);
+        const extra = await listWorkbuddyAccounts(this.ctx.paths.home);
+        const ids = new Set(checkers.map((c) => c.id));
         return {
             auto: file.auto !== false,
             date: beijingNow().date,
-            results: todayResults(file).map((r) => (r.state === 'failed' ? { ...r, advice: checkinAdvice(r.id, r.message ?? '') } : r)),
+            // 删掉的账号今天的结果不再显示
+            results: todayResults(file).filter((r) => ids.has(r.id)).map((r) => (r.state === 'failed' ? { ...r, advice: checkinAdvice(r.id, r.message ?? '') } : r)),
             available: checkers.map((c) => ({ id: c.id, label: c.label })),
-            qoder: { configured: Boolean(q?.pat), ...(q ? { region: q.region } : {}) },
+            qoder: { configured: qoders.length > 0, ...(qoders[0] ? { region: qoders[0].region } : {}) },
+            accounts: {
+                workbuddy: extra.map((a) => ({ uid: a.uid, label: `WorkBuddy（${accountTag(a.nickname, a.uid)}）` })),
+                qoder: qoders.map((q, i) => ({ id: q.id, label: checkers.find((c) => c.id === (i === 0 ? 'qoder' : `qoder:${q.id}`))?.label ?? q.id, region: q.region })),
+            },
         };
     }
     checkinInflight;
@@ -767,20 +805,61 @@ export class Daemon {
         if (results)
             log_(`daemon: auto check-in ${results.results.map((r) => `${r.id}=${r.state}`).join(' ')}`);
     }
-    async setQoderPat(pat, region) {
+    /** 加一个 Qoder 令牌（同一个令牌再加 = 改名字 / 区域） */
+    async addQoderPat(pat, region, name) {
         if (!pat || /\s/.test(pat) || pat.length < 8)
             throw new DshModelError('invalid_key', L('这看起来不是 Qoder 的个人访问令牌', 'That does not look like a Qoder access token'));
         await exchangePat(pat, region); // 换得到短期 token 才算可用
-        const secrets = await loadSecrets(this.ctx);
-        secrets.checkin = { ...secrets.checkin, qoder: { pat, region, savedAt: new Date().toISOString() } };
-        await saveSecrets(this.ctx, secrets);
+        await addQoder(this.ctx, { pat, region, ...(name ? { name } : {}) });
     }
-    async removeQoderPat() {
-        const secrets = await loadSecrets(this.ctx);
-        if (secrets.checkin?.qoder) {
-            delete secrets.checkin.qoder;
-            await saveSecrets(this.ctx, secrets);
-        }
+    async removeQoderPat(id) {
+        await removeQoder(this.ctx, id);
+    }
+    /** 加一个 WorkBuddy 签到账号：打开链接授权（同来源登录一样），存成单独一份，只用来签到 */
+    async startWorkbuddyCheckinLogin() {
+        const all = await loadAll(this.ctx);
+        const home = this.ctx.paths.home;
+        const s = {
+            id: `wbc-${randomBytes(8).toString('hex')}`,
+            source: 'workbuddy-checkin',
+            kind: 'link',
+            status: 'pending',
+            needsPaste: false,
+            startedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+            abort: new AbortController(),
+        };
+        this.sessions.set(s.id, s);
+        const tmp = join(workbuddyAccountsDir(home), `.pending-${s.id}.json`);
+        let urlReady;
+        const ready = new Promise((r) => (urlReady = r));
+        void workbuddyLogin(CN_VARIANT, home, { proxy: all.config.proxy, owner: this.ctx.owner, signal: s.abort.signal, file: tmp, onUrl: (url) => { s.url = url; urlReady(); } })
+            .then(async (cred) => {
+            const uid = cred.uid || randomBytes(4).toString('hex');
+            const primary = this.runtimes.find((r) => r.variant.id === 'workbuddy');
+            const primaryUid = primary ? (await primary.wbStore.resolve().catch(() => null))?.uid : undefined;
+            if (primaryUid && primaryUid === uid) {
+                await rm(tmp, { force: true });
+                s.status = 'error';
+                s.error = L('这个账号就是来源里登录的 WorkBuddy，已经在签到了。请在浏览器里换另一个账号授权', 'This is the WorkBuddy account already signed in under Sources, so it is checked in already. Authorise a different account');
+                return;
+            }
+            await rename(tmp, join(workbuddyAccountsDir(home), `${uid.replace(/[^A-Za-z0-9_-]/g, '_')}.json`));
+            s.status = 'ok';
+            void this.checkinNow(false).catch(() => { });
+        })
+            .catch(async (error) => {
+            await rm(tmp, { force: true }).catch(() => { });
+            if (s.status === 'pending') {
+                s.status = 'error';
+                s.error = String(error.message ?? error);
+            }
+            urlReady();
+        });
+        await Promise.race([ready, new Promise((r) => setTimeout(r, 30_000))]);
+        if (s.status === 'error')
+            throw new DshModelError('login_failed', s.error ?? 'login failed');
+        return publicSession(s);
     }
     // —— 更新 / 卸载（管理页的按钮）——
     selfJob;
@@ -1104,11 +1183,18 @@ export class Daemon {
                 return ok(await this.checkinStatus());
             }
             if (method === 'POST' && path === '/checkin/qoder') {
-                await this.setQoderPat(String(b.pat ?? '').trim(), b.region === 'intl' ? 'intl' : 'cn');
+                await this.addQoderPat(String(b.pat ?? '').trim(), b.region === 'intl' ? 'intl' : 'cn', typeof b.name === 'string' ? b.name : undefined);
                 return ok(await this.checkinNow(true));
             }
-            if (method === 'DELETE' && path === '/checkin/qoder') {
-                await this.removeQoderPat();
+            if (method === 'DELETE' && (path === '/checkin/qoder' || (seg[0] === 'checkin' && seg[1] === 'qoder' && seg[2]))) {
+                await this.removeQoderPat(seg[2]);
+                return ok(await this.checkinStatus());
+            }
+            if (method === 'POST' && path === '/checkin/workbuddy')
+                return ok({ login: await this.startWorkbuddyCheckinLogin() });
+            if (method === 'DELETE' && seg[0] === 'checkin' && seg[1] === 'workbuddy' && seg[2]) {
+                if (!(await removeWorkbuddyAccount(this.ctx.paths.home, seg[2])))
+                    throw new DshModelError('no_account', L('没有这个签到账号', 'No such check-in account'));
                 return ok(await this.checkinStatus());
             }
             if (method === 'GET' && path === '/failures') {

@@ -42,6 +42,17 @@ export function decryptStorageValue(encoded) {
         throw new Error('Trae 登录信息校验不通过');
     return plain.toString('utf8');
 }
+/** JWT 里的账号 id（data.id）；读不出来返回 undefined */
+export function tokenAccountId(token) {
+    try {
+        const p = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString());
+        const id = p.data?.id ?? p.sub;
+        return id === undefined || id === null || id === '' ? undefined : String(id);
+    }
+    catch {
+        return undefined;
+    }
+}
 /** 各平台的应用数据目录 */
 function appDataRoots(home, platform = process.platform, env = process.env) {
     if (platform === 'darwin')
@@ -56,9 +67,25 @@ function appDataRoots(home, platform = process.platform, env = process.env) {
  * 所以全读一遍再挑：没过期的优先，其中桌面 App（带设备 id）优先，再按到期最晚。找不到返回 null（没装 Trae 就不显示）。
  */
 export async function findTraeCredential(home = homedir()) {
+    return (await findTraeCredentials(home))[0] ?? null;
+}
+/** 本机的每个 Trae 账号各一份登录（同一个账号装了几个 Trae 只算一个），第一个是最该用的 */
+export async function findTraeCredentials(home = homedir()) {
+    const found = await readTraeCredentials(home);
+    const groups = new Map();
+    for (const c of found) {
+        const key = c.accountId ?? `?${c.source}`;
+        groups.set(key, [...(groups.get(key) ?? []), c]);
+    }
+    const best = [...groups.values()].map((g) => pickTraeCredential(g)).filter(Boolean);
+    // 账号之间：没过期的在前
+    const first = pickTraeCredential(best);
+    return first ? [first, ...best.filter((c) => c !== first)] : [];
+}
+async function readTraeCredentials(home) {
     // 测试环境不看本机真装了什么（与不发现桌面 App 同一个开关）
     if (process.env.DSH_MODEL_NO_APP_DISCOVERY && home === homedir())
-        return null;
+        return [];
     const found = [];
     for (const root of appDataRoots(home)) {
         for (const app of APPS) {
@@ -74,7 +101,8 @@ export async function findTraeCredential(home = homedir()) {
                 if (!token)
                     continue;
                 const dc = Object.keys(storage).find((k) => k.startsWith(DEVICE_PREFIX));
-                found.push({ token, deviceId: dc ? dc.slice(DEVICE_PREFIX.length) : String(storage['telemetry.devDeviceId'] ?? ''), source: app });
+                const accountId = auth.userId !== undefined && auth.userId !== null && auth.userId !== '' ? String(auth.userId) : tokenAccountId(token);
+                found.push({ token, deviceId: dc ? dc.slice(DEVICE_PREFIX.length) : String(storage['telemetry.devDeviceId'] ?? ''), source: app, ...(accountId ? { accountId } : {}) });
             }
             catch {
                 // 没装、读不了或解不开：看下一个
@@ -85,14 +113,15 @@ export async function findTraeCredential(home = homedir()) {
         try {
             const text = (await readFile(join(home, dir, 'trae-jwt-token'), 'utf8')).trim();
             const token = text.startsWith('{') ? String(JSON.parse(text).token ?? '') : text;
+            const accountId = tokenAccountId(token);
             if (token.split('.').length === 3)
-                found.push({ token, deviceId: '', source: `~/${dir}` });
+                found.push({ token, deviceId: '', source: `~/${dir}`, ...(accountId ? { accountId } : {}) });
         }
         catch {
             // 没有
         }
     }
-    return pickTraeCredential(found);
+    return found;
 }
 /** 几份登录里挑一份：没过期的优先 → 带设备 id 的（桌面 App）优先 → 到期最晚的。导出给测试 */
 export function pickTraeCredential(list, now = Date.now()) {

@@ -27,10 +27,11 @@ English · [中文](README.md)
 |---|---|---|
 | **Trae** | Detected automatically if Trae is installed and signed in; nothing to do | Check-in credits (200 a day in testing) |
 | **Qoder** | Paste a personal access token once (China or international) | That day's check-in credits |
-| **WorkBuddy (China)** | Sign in once | Check-in credits |
+| **WorkBuddy (China)** | Sign in once (several accounts are fine) | Check-in credits |
 
 - **Automatic by default**: done at a random 5–55 minutes after midnight Beijing time; failures retry an hour later; if the computer was off, it catches up within a minute of starting.
 - **You can see it**: one line at the top of the settings page, "Checked in today: …", with a one-click "Check in all" for anything missed, plus a one-time notice in the corner of dsh.
+- **Several accounts**: each product can have more than one. In the check-in card's Details: "+ Add a WorkBuddy account" (approve through a link) and "+ Add another Qoder account"; several Trae installs are checked in once per account automatically.
 - **Check-in only, credits untouched**: they stay on your account for use in each product's own app. Command line: `dsh-model checkin`.
 
 ## 🔁 2. Relay: one address, one key, every model

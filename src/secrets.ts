@@ -10,7 +10,12 @@ export interface Secrets {
   /** 自带 API key 的来源（gemini / groq / openrouter / siliconflow / deepseek / custom）；custom 还有地址 */
   apikeys?: Record<string, { key: string; base?: string; verifiedAt?: string }>
   /** 每日签到要用的登录（WorkBuddy 用 bridge 已有的登录，不在这里） */
-  checkin?: { qoder?: { pat: string; region: 'cn' | 'intl'; savedAt?: string } }
+  checkin?: {
+    /** 旧版：只有一个令牌（读的时候当第一个，写的时候换成 qoders） */
+    qoder?: { pat: string; region: 'cn' | 'intl'; savedAt?: string }
+    /** 多账号：一组令牌，各带名字（checkin/accounts.ts） */
+    qoders?: { id: string; pat: string; region: 'cn' | 'intl'; name?: string; savedAt?: string }[]
+  }
 }
 
 export function secretsPath(ctx: Ctx): string {

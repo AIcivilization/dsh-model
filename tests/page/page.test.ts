@@ -364,4 +364,36 @@ describe('settings page', () => {
     await waitText('200 积分 5 小时 2 分后到期，先用这些')
     expect(container.textContent).toMatch(/已用完 · 2 小时 (29|30) 分后恢复/)
   })
+
+  it('check-in accounts: lists extra accounts, removes one, adds a WorkBuddy account through a login link', async () => {
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    const calls: string[] = []
+    let accounts = { workbuddy: [{ uid: '42', label: 'WorkBuddy（小号）' }], qoder: [{ id: '1', label: 'Qoder（国内版）', region: 'cn' }, { id: '2', label: 'Qoder（工作 · 国内版）', region: 'cn' }] }
+    const status = () => ({ auto: true, date: '2026-10-29', results: [{ id: 'workbuddy:42', label: 'WorkBuddy（小号）', state: 'signed', credit: 100, at: 'x' }], available: [{ id: 'workbuddy:42', label: 'WorkBuddy（小号）' }, { id: 'qoder', label: 'Qoder（国内版）' }, { id: 'qoder:2', label: 'Qoder（工作 · 国内版）' }], qoder: { configured: true, region: 'cn' }, accounts })
+    handler = normal((c) => {
+      calls.push(`${c.method} ${c.path}`)
+      if (c.path === '/checkin' && c.method === 'GET') return [200, status()]
+      if (c.path === '/checkin/qoder/2' && c.method === 'DELETE') {
+        accounts = { ...accounts, qoder: accounts.qoder.slice(0, 1) }
+        return [200, status()]
+      }
+      if (c.path === '/checkin/workbuddy' && c.method === 'POST') return [200, { login: { id: 'wbc-1', source: 'workbuddy-checkin', kind: 'link', status: 'pending', url: 'https://www.workbuddy.cn/auth?x=1', needsPaste: false, startedAt: 'x' } }]
+      if (c.path.startsWith('/login/')) return [200, { id: 'wbc-1', status: 'pending', url: 'https://www.workbuddy.cn/auth?x=1', needsPaste: false }]
+      return [404, {}]
+    })
+    window.confirm = () => true
+    await render()
+    await waitText('还没签')
+    await click('详情')
+    await waitText('签到账号（同一家可以加几个账号）')
+    expect(container.textContent).toContain('Qoder（工作 · 国内版）')
+    const row = [...container.querySelectorAll('div')].find((d) => d.textContent === 'Qoder（工作 · 国内版）删除')!
+    await act(async () => row.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await waitText('+ 再加一个 Qoder 账号')
+    expect(calls).toContain('DELETE /checkin/qoder/2')
+    await click('+ 添加 WorkBuddy 账号')
+    await waitText('WorkBuddy 签到账号')
+    expect(calls).toContain('POST /checkin/workbuddy')
+    expect(container.innerHTML).toContain('https://www.workbuddy.cn/auth?x=1')
+  })
 })
