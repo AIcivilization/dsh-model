@@ -19,7 +19,8 @@ import { classify, recentFailures } from './failures.js';
 import { autoDue, beijingNow, checkinAdvice, ensureJitter, loadCheckin, runCheckin, setAuto, todayResults } from '../checkin/index.js';
 import { QODER_REGIONS, exchangePat, qoderCheckin } from '../checkin/qoder.js';
 import { findTraeCredentials, traeCheckin } from '../checkin/trae.js';
-import { accountTag, addQoder, listWorkbuddyAccounts, loadQoders, removeQoder, removeWorkbuddyAccount, workbuddyAccountStore, workbuddyAccountsDir } from '../checkin/accounts.js';
+import { DoubaoAuthError, doubaoCheckin, doubaoStatus, normalizeCookie } from '../checkin/doubao.js';
+import { accountTag, addDoubao, addQoder, listWorkbuddyAccounts, loadDoubaos, loadQoders, removeDoubao, removeQoder, removeWorkbuddyAccount, workbuddyAccountStore, workbuddyAccountsDir } from '../checkin/accounts.js';
 import { CN_VARIANT } from '../bridge/workbuddy/variants.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
 import { randomBytes } from 'node:crypto';
@@ -755,6 +756,12 @@ export class Daemon {
             const label = tag ? `Qoder（${[tag, region].filter(Boolean).join(' · ')}）` : QODER_REGIONS[q.region].label;
             out.push({ id: i === 0 ? 'qoder' : `qoder:${q.id}`, label, run: () => qoderCheckin(q.pat, q.region) });
         });
+        // 豆包：用户粘贴的 Cookie，每个账号一个
+        const doubaos = await loadDoubaos(this.ctx);
+        doubaos.forEach((d, i) => {
+            const tag = d.name || (doubaos.length > 1 ? `#${d.id}` : '');
+            out.push({ id: i === 0 ? 'doubao' : `doubao:${d.id}`, label: tag ? L(`豆包（${tag}）`, `Doubao (${tag})`) : L('豆包', 'Doubao'), run: () => doubaoCheckin(d.cookie, d.seed) });
+        });
         // Trae：本机装了并登录过 Trae 才有（读它自己的登录信息，不需要另外设置；VPS 上一般没有）。每个账号签一次
         const traes = await findTraeCredentials().catch(() => []);
         traes.forEach((t, i) => {
@@ -783,6 +790,7 @@ export class Daemon {
             accounts: {
                 workbuddy: extra.map((a) => ({ uid: a.uid, label: `WorkBuddy（${accountTag(a.nickname, a.uid)}）` })),
                 qoder: qoders.map((q, i) => ({ id: q.id, label: checkers.find((c) => c.id === (i === 0 ? 'qoder' : `qoder:${q.id}`))?.label ?? q.id, region: q.region })),
+                doubao: (await loadDoubaos(this.ctx)).map((d, i) => ({ id: d.id, label: checkers.find((c) => c.id === (i === 0 ? 'doubao' : `doubao:${d.id}`))?.label ?? d.id })),
             },
         };
     }
@@ -814,6 +822,25 @@ export class Daemon {
     }
     async removeQoderPat(id) {
         await removeQoder(this.ctx, id);
+    }
+    /** 加一个豆包账号：先用这份 Cookie 查一次签到任务，查得到才保存 */
+    async addDoubaoCookie(raw, name) {
+        const cookie = normalizeCookie(raw);
+        if (cookie.length < 20 || !cookie.includes('='))
+            throw new DshModelError('invalid_key', L('这看起来不是豆包的 Cookie：要从浏览器开发者工具里复制整串 Cookie（形如 a=1; b=2; …）', 'That does not look like a Doubao cookie: copy the whole Cookie string from the browser developer tools (like a=1; b=2; …)'));
+        const seed = randomBytes(16).toString('hex');
+        let st;
+        try {
+            st = await doubaoStatus(cookie, seed);
+        }
+        catch (error) {
+            if (error instanceof DoubaoAuthError)
+                throw new DshModelError('key_rejected', L('豆包说这份 Cookie 没有登录或已过期：在浏览器里登录 doubao.com 后重新复制', 'Doubao says this cookie is signed out or expired: sign in at doubao.com in the browser and copy it again'));
+            throw new DshModelError('doubao_failed', String(error.message ?? error));
+        }
+        if (st.checkedIn === null)
+            throw new DshModelError('doubao_no_task', L('这个豆包账号没有签到任务：只有个人账号能领每日额度，飞书企业账号不行。请换成个人账号登录后再复制 Cookie', 'This Doubao account has no check-in task: only personal accounts get the daily credits, not Feishu enterprise accounts. Sign in with a personal account and copy the cookie again'));
+        await addDoubao(this.ctx, { cookie, seed, ...(name ? { name } : {}) });
     }
     /** 加一个 WorkBuddy 签到账号：打开链接授权（同来源登录一样），存成单独一份，只用来签到 */
     async startWorkbuddyCheckinLogin() {
@@ -1192,6 +1219,15 @@ export class Daemon {
             }
             if (method === 'POST' && path === '/checkin/workbuddy')
                 return ok({ login: await this.startWorkbuddyCheckinLogin() });
+            if (method === 'POST' && path === '/checkin/doubao') {
+                await this.addDoubaoCookie(String(b.cookie ?? ''), typeof b.name === 'string' ? b.name : undefined);
+                return ok(await this.checkinNow(true));
+            }
+            if (method === 'DELETE' && seg[0] === 'checkin' && seg[1] === 'doubao' && seg[2]) {
+                if (!(await removeDoubao(this.ctx, seg[2])))
+                    throw new DshModelError('no_account', L('没有这个签到账号', 'No such check-in account'));
+                return ok(await this.checkinStatus());
+            }
             if (method === 'DELETE' && seg[0] === 'checkin' && seg[1] === 'workbuddy' && seg[2]) {
                 if (!(await removeWorkbuddyAccount(this.ctx.paths.home, seg[2])))
                     throw new DshModelError('no_account', L('没有这个签到账号', 'No such check-in account'));

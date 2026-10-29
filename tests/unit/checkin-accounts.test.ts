@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { addQoder, checkinKind, listWorkbuddyAccounts, loadQoders, removeQoder, removeWorkbuddyAccount, workbuddyAccountsDir } from '../../src/checkin/accounts.js'
+import { addDoubao, addQoder, checkinKind, loadDoubaos, removeDoubao, listWorkbuddyAccounts, loadQoders, removeQoder, removeWorkbuddyAccount, workbuddyAccountsDir } from '../../src/checkin/accounts.js'
 import { checkinAdvice } from '../../src/checkin/index.js'
 import { loadSecrets, saveSecrets } from '../../src/secrets.js'
 import { tempCtx } from './helpers.js'
@@ -42,5 +42,18 @@ describe('multi-account check-in', () => {
     expect(checkinAdvice('qoder:2', 'Qoder 个人访问令牌无效或已过期（HTTP 401）')).toMatch(/Qoder/)
     expect(checkinAdvice('workbuddy:42', 'token expired')).toMatch(/签到卡片|check-in card/)
     expect(checkinAdvice('trae', "We're sorry, but we are not able to authenticate you")).toMatch(/Trae/)
+  })
+
+  it('stores Doubao cookies per account, keeping the seed it was verified with', async () => {
+    const { ctx } = await tempCtx()
+    expect(await addDoubao(ctx, { cookie: 'a=1', seed: 'seed-1' })).toBe('1')
+    expect(await addDoubao(ctx, { cookie: 'b=2', name: '小号' })).toBe('2')
+    expect(await addDoubao(ctx, { cookie: 'a=1', name: '主号' })).toBe('1')
+    const list = await loadDoubaos(ctx)
+    expect(list.map((d) => [d.id, d.name, d.seed === 'seed-1'])).toEqual([['1', '主号', true], ['2', '小号', false]])
+    expect(await removeDoubao(ctx, '1')).toBe(true)
+    expect(await removeDoubao(ctx, '9')).toBe(false)
+    expect((await loadDoubaos(ctx)).map((d) => d.id)).toEqual(['2'])
+    expect(checkinAdvice('doubao', '豆包登录已过期（Cookie 失效）')).toMatch(/Cookie/)
   })
 })

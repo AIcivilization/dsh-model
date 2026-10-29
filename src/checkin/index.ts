@@ -1,4 +1,4 @@
-// checkin/index.ts — 每日签到（设计 §14.15）：WorkBuddy 国内版、Qoder、Trae；每家可以有几个账号（§14.19，checkin/accounts.ts）
+// checkin/index.ts — 每日签到（设计 §14.15）：WorkBuddy 国内版、Qoder、Trae、豆包；每家可以有几个账号（§14.19，checkin/accounts.ts）
 //
 // 「今天」按北京时间算：这几家都在北京时间零点换天（VPS 的系统时间是 UTC）。
 // 自动签到默认打开：守护进程每 15 分钟看一眼，过了当天随机的几分钟后签一次；失败的隔一小时再试；错过了下次开机补。
@@ -59,6 +59,7 @@ export function todayResults(file: CheckinFile, now = new Date()): CheckinItem[]
 export function checkinAdvice(itemId: CheckinId, message: string): string {
   const id = itemId.split(':')[0]
   if (/无效|过期|401|403|unauthor|expired|not able to authenticate/i.test(message)) {
+    if (id === 'doubao') return L('豆包登录过期：在浏览器里重新登录 doubao.com，到签到卡片里删掉它，再复制 Cookie 添加一次', 'Doubao sign-in expired: sign in at doubao.com again, remove it in the check-in card and add the new cookie')
     if (id === 'trae') return L('Trae 登录过期：打开 Trae 重新登录一次', 'Trae sign-in expired: open Trae and sign in again')
     if (id === 'qoder') return L('Qoder 个人访问令牌失效：在签到卡片里删掉它再添加一个新的', 'The Qoder access token no longer works: remove it in the check-in card and add a new one')
     return itemId.includes(':') ? L('这个 WorkBuddy 签到账号的登录过期：在签到卡片里删掉它再添加一次', 'This WorkBuddy check-in account has expired: remove it in the check-in card and add it again') : L('WorkBuddy 登录过期：在来源里重新登录 WorkBuddy', 'WorkBuddy sign-in expired: sign in to WorkBuddy again under Sources')

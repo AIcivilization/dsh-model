@@ -1,4 +1,4 @@
-// checkin/index.ts — 每日签到（设计 §14.15）：WorkBuddy 国内版、Qoder、Trae；每家可以有几个账号（§14.19，checkin/accounts.ts）
+// checkin/index.ts — 每日签到（设计 §14.15）：WorkBuddy 国内版、Qoder、Trae、豆包；每家可以有几个账号（§14.19，checkin/accounts.ts）
 //
 // 「今天」按北京时间算：这几家都在北京时间零点换天（VPS 的系统时间是 UTC）。
 // 自动签到默认打开：守护进程每 15 分钟看一眼，过了当天随机的几分钟后签一次；失败的隔一小时再试；错过了下次开机补。
@@ -23,6 +23,8 @@ export function todayResults(file, now = new Date()) {
 export function checkinAdvice(itemId, message) {
     const id = itemId.split(':')[0];
     if (/无效|过期|401|403|unauthor|expired|not able to authenticate/i.test(message)) {
+        if (id === 'doubao')
+            return L('豆包登录过期：在浏览器里重新登录 doubao.com，到签到卡片里删掉它，再复制 Cookie 添加一次', 'Doubao sign-in expired: sign in at doubao.com again, remove it in the check-in card and add the new cookie');
         if (id === 'trae')
             return L('Trae 登录过期：打开 Trae 重新登录一次', 'Trae sign-in expired: open Trae and sign in again');
         if (id === 'qoder')

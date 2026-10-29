@@ -396,4 +396,27 @@ describe('settings page', () => {
     expect(calls).toContain('POST /checkin/workbuddy')
     expect(container.innerHTML).toContain('https://www.workbuddy.cn/auth?x=1')
   })
+
+  it('Doubao: the dialog explains how to copy the cookie and posts it', async () => {
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    const posted: unknown[] = []
+    const status = { auto: true, date: '2026-10-29', results: [], available: [{ id: 'qoder', label: 'Qoder（国内版）' }], qoder: { configured: true, region: 'cn' }, accounts: { workbuddy: [], qoder: [{ id: '1', label: 'Qoder（国内版）', region: 'cn' }], doubao: [] } }
+    handler = normal((c) => {
+      if (c.path === '/checkin' && c.method === 'GET') return [200, status]
+      if (c.path === '/checkin/doubao') { posted.push(c.body); return [200, status] }
+      return [404, {}]
+    })
+    await render()
+    await waitText('还没签')
+    await click('详情')
+    await click('+ 添加豆包')
+    await waitText('添加豆包签到（实验）')
+    expect(container.textContent).toContain('飞书企业账号不行')
+    expect(container.textContent).toContain('Request Headers')
+    const input = container.querySelector('input[aria-label="Cookie"]') as HTMLInputElement
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Cookie: sessionid=abc; sid_tt=def')
+    await act(async () => input.dispatchEvent(new Event('input', { bubbles: true })))
+    await click('保存')
+    expect(posted).toEqual([{ cookie: 'Cookie: sessionid=abc; sid_tt=def' }])
+  })
 })

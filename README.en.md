@@ -2,7 +2,7 @@
 
 # dsh-model
 
-**📅 Daily check-in credits claimed for you · 🔁 one address that relays every model · 🧩 free and subscription models, your pick**
+**📅 Daily check-in credits claimed for you (Trae, Qoder, WorkBuddy, Doubao) · 🔁 one address that relays every model · 🧩 free and subscription models, your pick**
 
 Install once and all three are taken care of. dsh gets a management page; without dsh, the command line does everything.
 
@@ -28,6 +28,7 @@ English · [中文](README.md)
 | **Trae** | Detected automatically if Trae is installed and signed in; nothing to do | Check-in credits (200 a day in testing) |
 | **Qoder** | Paste a personal access token once (China or international) | That day's check-in credits |
 | **WorkBuddy (China)** | Sign in once (several accounts are fine) | Check-in credits |
+| **Doubao** (experimental) | Copy the sign-in cookie from the browser once (personal accounts only) | Daily trial credits |
 
 - **Automatic by default**: done at a random 5–55 minutes after midnight Beijing time; failures retry an hour later; if the computer was off, it catches up within a minute of starting.
 - **You can see it**: one line at the top of the settings page, "Checked in today: …", with a one-click "Check in all" for anything missed, plus a one-time notice in the corner of dsh.

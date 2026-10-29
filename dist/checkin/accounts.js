@@ -5,6 +5,7 @@
 //   各存一份 $DSH_MODEL_HOME/workbuddy/checkin/<uid>.json（与 dsh-model 自己登录的格式相同，0600），不接模型。
 // - Qoder：secrets.json 里一组个人访问令牌，各带一个名字（Qoder 的接口不返回账号名）。
 // - Trae：本机装的每个 Trae 都读，按账号（userId）去重，每个账号签一次。
+// - 豆包：secrets.json 里一组 Cookie（用户从浏览器复制），各带一个名字。
 import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { bridgeDir } from '../bridge/runtime.js';
@@ -14,6 +15,7 @@ import { WorkBuddyUpstreamClient } from '../bridge/workbuddy/upstream.js';
 import { CN_VARIANT } from '../bridge/workbuddy/variants.js';
 import { loadSecrets, saveSecrets } from '../secrets.js';
 import { readJson } from '../util/fs.js';
+import { randomBytes } from 'node:crypto';
 /** 一个签到项属于哪一家：workbuddy:123 → workbuddy */
 export const checkinKind = (id) => id.split(':')[0];
 // —— WorkBuddy 签到账号 ——
@@ -101,4 +103,45 @@ export async function removeQoder(ctx, id) {
     // 不给 id：删第一个（旧版页面的"删除 Qoder 令牌"）
     const target = id ?? list[0]?.id;
     await saveQoders(ctx, list.filter((q) => q.id !== target));
+}
+export async function loadDoubaos(ctx) {
+    return (await loadSecrets(ctx)).checkin?.doubaos ?? [];
+}
+async function saveDoubaos(ctx, list) {
+    const secrets = await loadSecrets(ctx);
+    const checkin = { ...secrets.checkin };
+    if (list.length)
+        checkin.doubaos = list;
+    else
+        delete checkin.doubaos;
+    secrets.checkin = Object.keys(checkin).length ? checkin : undefined;
+    await saveSecrets(ctx, secrets);
+}
+/** 加一个豆包账号；同一个 Cookie 再加 = 改名字。返回 id */
+export async function addDoubao(ctx, entry) {
+    const list = await loadDoubaos(ctx);
+    const name = entry.name?.trim().slice(0, 20);
+    const same = list.find((d) => d.cookie === entry.cookie);
+    if (same) {
+        if (name)
+            same.name = name;
+        await saveDoubaos(ctx, list);
+        return same.id;
+    }
+    const used = new Set(list.map((d) => d.id));
+    let n = list.length + 1;
+    while (used.has(String(n)))
+        n++;
+    const id = String(n);
+    list.push({ id, cookie: entry.cookie, seed: entry.seed ?? randomBytes(16).toString('hex'), ...(name ? { name } : {}), savedAt: new Date().toISOString() });
+    await saveDoubaos(ctx, list);
+    return id;
+}
+export async function removeDoubao(ctx, id) {
+    const list = await loadDoubaos(ctx);
+    const next = list.filter((d) => d.id !== id);
+    if (next.length === list.length)
+        return false;
+    await saveDoubaos(ctx, next);
+    return true;
 }

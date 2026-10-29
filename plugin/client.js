@@ -1011,6 +1011,32 @@ window.__ModuleLoader__.load({
         msg ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null)
     }
 
+    /** 添加豆包签到：从浏览器复制一次登录 Cookie（豆包没有令牌，也不读豆包客户端的文件） */
+    function DoubaoDialog({ onDone, onClose, another }) {
+      const [cookie, setCookie] = useState('')
+      const [name, setName] = useState('')
+      const [busy, setBusy] = useState(false)
+      const [msg, setMsg] = useState('')
+      const save = async () => {
+        setBusy(true)
+        setMsg(L('正在用这份 Cookie 查签到任务并签到…', 'Checking this cookie and checking in…'))
+        try { await api('POST', '/checkin/doubao', { cookie: cookie.trim(), ...(name.trim() ? { name: name.trim() } : {}) }); onDone() } catch (e) { setMsg(e.message); setBusy(false) }
+      }
+      const step = (n, text) => h('div', { style: { ...S.meta, lineHeight: 1.7 } }, `${n}. `, text)
+      return h(Modal, { title: another ? L('再加一个豆包账号', 'Add another Doubao account') : L('添加豆包签到（实验）', 'Add Doubao check-in (experimental)'), onClose },
+        h('p', { style: S.note }, L('豆包「天天领额度」每天送体验额度，只有个人账号能领（飞书企业账号不行）。豆包没有令牌，要从浏览器复制一次登录 Cookie：', 'Doubao gives daily credits to personal accounts (not Feishu enterprise accounts). Doubao has no token, so copy its sign-in cookie from the browser once:')),
+        step(1, h('span', null, L('用电脑浏览器打开 ', 'Open '), h('a', { href: 'https://www.doubao.com/', target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent } }, 'doubao.com ↗'), L(' 并登录', ' in a desktop browser and sign in'))),
+        step(2, L('按 F12 打开开发者工具，切到「网络 / Network」，刷新一下页面', 'Press F12, open the Network tab, and reload the page')),
+        step(3, L('点列表里任意一条 doubao.com 的请求，在「请求标头 / Request Headers」里找到 Cookie 那一行，右键复制它的值', 'Click any doubao.com request, find Cookie under Request Headers, and copy its value')),
+        h('div', { style: { fontSize: 12, color: C.warn, margin: '8px 0' } }, L('Cookie 等于你的登录：只粘在这里（保存在本机），不要发给别人。', 'The cookie is your sign-in: paste it only here (it stays on this machine) and never share it.')),
+        another ? h('div', { style: { ...S.line, marginBottom: 8 } },
+          h('input', { style: { ...S.input, ...S.grow }, maxLength: 20, placeholder: L('给这个账号起个名字，如：小号', 'A name for this account, e.g. Second'), value: name, onChange: (e) => setName(e.target.value), 'aria-label': L('账号名字', 'Account name') })) : null,
+        h('div', { style: S.line },
+          h('input', { type: 'password', style: { ...S.input, ...S.grow }, placeholder: L('粘贴 Cookie', 'Paste the cookie'), value: cookie, onChange: (e) => setCookie(e.target.value), 'aria-label': 'Cookie' }),
+          h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !cookie.trim(), onClick: () => void save() }, L('保存', 'Save'))),
+        msg ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null)
+    }
+
     /** 签到卡片：平时一行"今日已完成签到：…"；没签完的列出来，一键签到；自动签到开关 */
     function CheckinCard() {
       const [st, setSt] = useState(null)
@@ -1018,6 +1044,7 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = useState(false)
       const [qoder, setQoder] = useState(false)
       const [wbLogin, setWbLogin] = useState(null)
+      const [doubao, setDoubao] = useState(false)
       const [err, setErr] = useState('')
       const refresh = useCallback(() => api('GET', '/checkin').then(setSt, () => {}), [])
       const addWorkbuddy = async () => {
@@ -1045,8 +1072,10 @@ window.__ModuleLoader__.load({
         // 没有能签到的：只留一个很小的入口
         return h('div', { style: { ...S.section, marginBottom: 16 } },
           h('div', { style: { ...S.meta } }, L('每日签到：登录 WorkBuddy 国内版，或', 'Daily check-in: sign in to WorkBuddy (China), or '),
-            h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setQoder(true) }, L('添加 Qoder', 'Add Qoder'))),
-          qoder ? h(QoderDialog, { onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null)
+            h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setQoder(true) }, L('添加 Qoder', 'Add Qoder')),
+            h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setDoubao(true) }, L('添加豆包', 'Add Doubao'))),
+          qoder ? h(QoderDialog, { onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null,
+          doubao ? h(DoubaoDialog, { onDone: () => { setDoubao(false); void refresh() }, onClose: () => setDoubao(false) }) : null)
       }
       return h('div', { style: S.section },
         h('div', { style: { ...S.card, padding: '10px 14px' } },
@@ -1056,7 +1085,8 @@ window.__ModuleLoader__.load({
               done.length && pending.length ? h('span', { style: { color: C.sub } }, L('；', '; ')) : null,
               pending.length ? h('span', { style: { color: C.text } }, L(`还没签：${pending.map((a) => a.label).join('、')}`, `Not yet: ${pending.map((a) => a.label).join(', ')}`)) : null),
             pending.length ? h('button', { type: 'button', style: S.btnPrimary, disabled: busy, onClick: () => void run() }, busy ? L('签到中…', 'Checking in…') : L('一键签到', 'Check in all')) : null,
-            st.results.length ? h('button', { type: 'button', style: S.btn, onClick: () => setOpen(!open) }, open ? L('收起', 'Hide') : L('详情', 'Details')) : null,
+            // 详情里还有管理账号的按钮，所以没签过也要能打开
+            h('button', { type: 'button', style: S.btn, onClick: () => setOpen(!open) }, open ? L('收起', 'Hide') : L('详情', 'Details')),
             h('label', { style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap' } },
               h('input', { type: 'checkbox', checked: st.auto, onChange: (e) => void toggleAuto(e.target.checked) }), L('自动签到', 'Auto'))),
           open ? h('div', { style: { marginTop: 8 } },
@@ -1065,18 +1095,20 @@ window.__ModuleLoader__.load({
             // 多账号：多加的 WorkBuddy 签到账号、每个 Qoder 令牌，都能删；再加一个
             h('div', { style: { marginTop: 8, borderTop: `1px solid ${C.border}`, paddingTop: 8 } },
               h('div', { style: { ...S.meta, marginBottom: 4 } }, L('签到账号（同一家可以加几个账号）', 'Check-in accounts (several per product are fine)')),
-              [...((st.accounts && st.accounts.workbuddy) || []).map((a) => ({ kind: 'workbuddy', id: a.uid, label: a.label })), ...((st.accounts && st.accounts.qoder) || []).map((q) => ({ kind: 'qoder', id: q.id, label: q.label }))].map((a) =>
+              [...((st.accounts && st.accounts.workbuddy) || []).map((a) => ({ kind: 'workbuddy', id: a.uid, label: a.label })), ...((st.accounts && st.accounts.qoder) || []).map((q) => ({ kind: 'qoder', id: q.id, label: q.label })), ...((st.accounts && st.accounts.doubao) || []).map((d) => ({ kind: 'doubao', id: d.id, label: d.label }))].map((a) =>
                 h('div', { key: `${a.kind}:${a.id}`, style: { ...S.line, minHeight: 24, fontSize: 12 } },
                   h('span', { style: S.grow }, a.label),
                   h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, onClick: () => void removeAccount(a.kind, a.id, a.label) }, L('删除', 'Remove')))),
               h('div', { style: { ...S.line, marginTop: 4, flexWrap: 'wrap' } },
                 h('button', { type: 'button', style: S.btn, onClick: () => void addWorkbuddy() }, L('+ 添加 WorkBuddy 账号', '+ Add a WorkBuddy account')),
-                h('button', { type: 'button', style: S.btn, onClick: () => setQoder(true) }, st.qoder.configured ? L('+ 再加一个 Qoder 账号', '+ Add another Qoder account') : L('+ 添加 Qoder', '+ Add Qoder')))),
+                h('button', { type: 'button', style: S.btn, onClick: () => setQoder(true) }, st.qoder.configured ? L('+ 再加一个 Qoder 账号', '+ Add another Qoder account') : L('+ 添加 Qoder', '+ Add Qoder')),
+                h('button', { type: 'button', style: S.btn, onClick: () => setDoubao(true) }, (st.accounts && st.accounts.doubao && st.accounts.doubao.length) ? L('+ 再加一个豆包账号', '+ Add another Doubao account') : L('+ 添加豆包', '+ Add Doubao')))),
             // Trae 读本机 Trae 的登录：这台没装（比如 VPS）就不会出现，在装了 Trae 的电脑上签就行（每个账号一天一次）
             !st.available.some((a) => a.id === 'trae') ? h('div', { style: { ...S.meta, marginTop: 6 } }, L('Trae：这台电脑上没装 Trae，所以不签。在装了 Trae 的电脑上会自动签（一个账号一天签一次就够）。', 'Trae: not installed on this machine, so it is skipped. A computer with Trae installed checks it in automatically (once a day per account is enough).')) : null) : null,
           !open && !st.qoder.configured ? h('div', { style: { ...S.meta, marginTop: 4 } }, h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, onClick: () => setQoder(true) }, L('+ 添加 Qoder', '+ Add Qoder'))) : null,
           err ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, err) : null),
         qoder ? h(QoderDialog, { another: st.qoder.configured, onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null,
+        doubao ? h(DoubaoDialog, { another: Boolean(st.accounts && st.accounts.doubao && st.accounts.doubao.length), onDone: () => { setDoubao(false); setOpen(true); void refresh() }, onClose: () => setDoubao(false) }) : null,
         wbLogin ? h(LoginDialog, { source: { id: 'workbuddy-checkin', label: L('WorkBuddy 签到账号', 'WorkBuddy check-in account'), login: 'link' }, session: wbLogin, onDone: () => { setWbLogin(null); setOpen(true); setTimeout(() => void refresh(), 3000) }, onClose: () => { setWbLogin(null); void refresh() } }) : null)
     }
 

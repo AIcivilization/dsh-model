@@ -608,4 +608,6 @@ Gemini（Google AI Studio 的 OpenAI 兼容接口 `…/v1beta/openai`）、Groq�
 - **Trae**：本机装的每个 Trae 都读，按账号去重（登录信息的 `userId`，或 JWT 的 `data.id`）。每个账号选没过期、到期最晚的那份。实测 Mac 上的 Trae CN 和 TRAE SOLO CN 登的是同一个账号，只签一次。
 - **页面**：签到卡片的「详情」里列出多加的账号，每个都能删，并有「+ 添加 WorkBuddy 账号」「+ 再加一个 Qoder 账号」。账号删掉后，它今天的结果不再显示。
 
-**没做的**：WPS 灵犀、百度搭子、豆包（2026-10-29 调研）。GitHub 上没有任何开源的签到实现，现有签到插件都只做 Trae、Qoder、WorkBuddy。从头研究这几家的私有接口和本机登录，属于 §14.15 里灵犀那类工作（当时被安全检查拦下），所以不做。等它们有官方接口或可参考的开源实现再加。
+**豆包（实验）**：签的是豆包的「天天领额度」，接口照 techysy/CreditDaddy 的 `doubaoClient.js`（MIT）。流程是 `POST /alice/ug/campaign/v3/detail/` 看今天签没签，没签再 `POST /alice/ug/campaign/landing/checkin`；服务端幂等。鉴权只要 doubao.com 的登录 Cookie，没有 `a_bogus` / `msToken` 签名，请求里带上豆包电脑版网页本来就会发的平台参数。Cookie 由用户从浏览器复制一次，存在 `secrets.checkin.doubaos`，每个账号一个随机种子，派生出固定的网页标识。添加时先查一次任务：Cookie 失效会报"登录已过期"；账号里没有签到任务（飞书企业账号）会提示换成个人账号。2026-10-29 用一份假 Cookie 实测，接口返回登录过期的业务码 710012001，说明地址和参数都对；真账号由用户来验证。
+
+**没做的**：WPS 灵犀、百度搭子、MiniMax Code、讯飞 AStudio、华为云码道（2026-10-29 调研）。灵犀、百度搭子、讯飞、华为云在 GitHub 上没有任何开源的签到实现。MiniMax 有，但要用从客户端扒出来的签名密钥加上伪造的设备号，冒充 MiniMax Code，而且没有许可证或是 GPL。从头研究这几家的私有接口和本机登录，属于 §14.15 里灵犀那类工作（当时被安全检查拦下），所以不做。等它们有官方接口或可参考的开源实现再加。
