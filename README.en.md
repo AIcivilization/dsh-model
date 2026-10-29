@@ -32,6 +32,8 @@ English · [中文](README.md)
 
 - **Automatic by default**: done at a random 5–55 minutes after midnight Beijing time; failures retry an hour later; if the computer was off, it catches up within a minute of starting.
 - **You can see it**: one line at the top of the settings page, "Checked in today: …", with a one-click "Check in all" for anything missed, plus a one-time notice in the corner of dsh.
+- **What else this machine can do**: the card lists the supported products not set up here yet, each with "+ Add".
+- **Move it to an always-on VPS**: "Copy check-in accounts to another machine" gives an encrypted text and a code to import on the VPS page (Qoder and Doubao; sign in to WorkBuddy on the VPS itself, and Trae stays on the computer that has Trae).
 - **Several accounts**: each product can have more than one. In the check-in card's Details: "+ Add a WorkBuddy account" (approve through a link) and "+ Add another Qoder account"; several Trae installs are checked in once per account automatically.
 - **Check-in only, credits untouched**: they stay on your account for use in each product's own app. Command line: `dsh-model checkin`.
 
@@ -51,7 +53,7 @@ Your model sources each have their own API and sign-in. dsh-model puts them behi
 | Kind | Sources |
 |---|---|
 | **Free (suggested)** | **SiliconFlow** (reachable from China; some models free after identity verification), **Gemini** (if you can reach Google; the best free models) |
-| Free · limited | Groq, OpenRouter (`:free` models) |
+| Free · limited | **Zhipu GLM** (the Flash models), **iFlytek Spark** (Spark Lite), Baidu Qianfan (ERNIE Speed / Lite), Groq, OpenRouter (`:free` models) |
 | Local | Ollama, LM Studio: appear once started, no sign-in |
 | Subscription | Codex (ChatGPT Plus / Pro), Kimi Code, Grok, Muse, Devin: sign in from the management page |
 | Pay as you go | DeepSeek official, OpenCode Zen, any OpenAI-compatible service |
@@ -112,6 +114,10 @@ If a source is signed in but has no usable plan (say, a Kimi account without Kim
 | Gemini (Google AI Studio), Groq | Free · limited | Paste a free API key; daily / per-minute limits apply |
 | OpenRouter | Free · limited | `:free` models are free (about 50 requests a day) |
 | SiliconFlow | Free · limited | Some small models are free after identity verification |
+| Zhipu GLM | Free · limited | The Flash models (e.g. GLM-4.7-Flash) are free; reachable from China |
+| iFlytek Spark | Free · limited | Spark Lite is free with no token cap, 2 requests per second; use the console's APIPassword as the key |
+| Baidu Qianfan | Free · limited | ERNIE Speed / Lite are free for now (rate limited) |
+| Volcengine Ark (Doubao models), MiniMax, Huawei Cloud ModelArts | Paid | Official APIs, just add a key; Ark and Huawei Cloud have free quotas for new users |
 | DeepSeek official, any OpenAI-compatible service | Paid | Paste an API key (and a URL for other services) |
 | Codex | Paid | ChatGPT Plus / Pro |
 | Kimi | Paid | Kimi Code plan |

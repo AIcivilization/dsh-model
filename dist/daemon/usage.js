@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { beijingTimeToIso } from '../bridge/workbuddy/upstream.js';
 const TIMEOUT_MS = 15_000;
 /** 这几家暂不支持（见设计 §14.6） */
-export const USAGE_UNSUPPORTED = new Set(['antigravity', 'devin', 'meta', 'opencode', 'ollama', 'lmstudio', 'gemini', 'groq', 'openrouter', 'siliconflow', 'deepseek', 'custom']);
+export const USAGE_UNSUPPORTED = new Set(['antigravity', 'devin', 'meta', 'opencode', 'ollama', 'lmstudio', 'gemini', 'groq', 'openrouter', 'siliconflow', 'zhipu', 'spark', 'qianfan', 'ark', 'minimax', 'modelarts', 'deepseek', 'custom']);
 async function getJson(url, headers) {
     const res = await fetch(url, { headers: { Accept: 'application/json', ...headers }, signal: AbortSignal.timeout(TIMEOUT_MS) });
     const text = await res.text();

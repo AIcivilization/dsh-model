@@ -13,6 +13,13 @@ export const KEY_PROVIDERS = [
     { id: 'groq', label: 'Groq', base: 'https://api.groq.com/openai/v1', keyUrl: 'https://console.groq.com/keys' },
     { id: 'openrouter', label: 'OpenRouter', base: 'https://openrouter.ai/api/v1', keyUrl: 'https://openrouter.ai/keys' },
     { id: 'siliconflow', label: '硅基流动 SiliconFlow', base: 'https://api.siliconflow.cn/v1', keyUrl: 'https://cloud.siliconflow.cn/account/ak', listQuery: 'type=text&sub_type=chat' },
+    // 国内大厂的官方 API（2026-10-29 加）：智谱、讯飞星火有长期免费的模型
+    { id: 'zhipu', label: '智谱 GLM', base: 'https://open.bigmodel.cn/api/paas/v4', keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys', fallbackModels: ['glm-4.7-flash', 'glm-4.6', 'glm-4.5-air'], freeRe: /flash/i, direct: true },
+    { id: 'spark', label: '讯飞星火', base: 'https://spark-api-open.xf-yun.com/v1', keyUrl: 'https://console.xfyun.cn/services/cbm', fallbackModels: ['lite', 'generalv3', 'pro-128k', 'generalv3.5', 'max-32k', '4.0Ultra'], freeRe: /^lite$/i, direct: true },
+    { id: 'qianfan', label: '百度千帆', base: 'https://qianfan.baidubce.com/v2', keyUrl: 'https://console.bce.baidu.com/iam/#/iam/apikey/list', fallbackModels: ['ernie-speed-128k', 'ernie-lite-8k', 'ernie-4.5-turbo-128k', 'deepseek-v3'], freeRe: /^ernie-(speed|lite)/i, direct: true },
+    { id: 'ark', label: '火山方舟（豆包大模型）', base: 'https://ark.cn-beijing.volces.com/api/v3', keyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey', fallbackModels: ['doubao-seed-1-6-flash-250615', 'doubao-seed-1-6-250615', 'deepseek-v3-1-250821'], direct: true },
+    { id: 'minimax', label: 'MiniMax 开放平台', base: 'https://api.minimaxi.com/v1', keyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key', fallbackModels: ['MiniMax-M2', 'MiniMax-M1', 'MiniMax-Text-01'], direct: true },
+    { id: 'modelarts', label: '华为云 ModelArts', base: 'https://api.modelarts-maas.com/v1', keyUrl: 'https://console.huaweicloud.com/modelarts/?region=cn-southwest-2#/model-studio/authmanage', fallbackModels: ['DeepSeek-V3', 'DeepSeek-R1', 'qwen3-235b-a22b'], direct: true },
     { id: 'deepseek', label: 'DeepSeek 官方', base: 'https://api.deepseek.com/v1', keyUrl: 'https://platform.deepseek.com/api_keys' },
     { id: 'custom', label: '其他 OpenAI 兼容服务', base: '', keyUrl: '' },
 ];
@@ -37,22 +44,60 @@ export function parseModelList(providerId, body) {
         if (!id)
             continue;
         const pricing = m.pricing;
-        const free = id.endsWith(':free') || (pricing ? Number(pricing.prompt) === 0 && Number(pricing.completion) === 0 : false);
+        const free = id.endsWith(':free') || (pricing ? Number(pricing.prompt) === 0 && Number(pricing.completion) === 0 : false) || Boolean(keyProvider(providerId)?.freeRe?.test(id));
         out.push({ id, ...(free ? { free: true } : {}) });
     }
     // OpenRouter 有几百个模型：付费的照样能用，但先把免费的排前面，挑默认时就先挑它们
     return out.sort((a, b) => Number(Boolean(b.free)) - Number(Boolean(a.free)) || a.id.localeCompare(b.id));
 }
 /** 用这把 key 拉模型列表：拉得到就是可用的 key（不花 token） */
-export async function fetchKeyModels(provider, key, base, proxy) {
-    const url = `${base}/models${provider.listQuery ? `?${provider.listQuery}` : ''}`;
-    const r = await run('curl', ['-s', '-m', '25', '-w', '\n%{http_code}', '-K', '-', ...(proxy ? ['-x', proxy] : []), url], {
+/** 带 key 的一次请求（curl：认代理，key 经 stdin 传、不进进程参数） */
+async function keyRequest(provider, key, url, proxy) {
+    const viaProxy = proxy && !provider.direct;
+    const r = await run('curl', ['-s', '-m', '25', '-w', '\n%{http_code}', '-K', '-', ...(viaProxy ? ['-x', proxy] : provider.direct ? ['--noproxy', '*'] : []), url], {
         input: `header = "Authorization: Bearer ${key.replace(/"/g, '')}"\n`,
         timeoutMs: 40_000,
     });
     const lines = r.stdout.trimEnd().split('\n');
-    const status = Number(lines.pop()) || null;
-    const text = lines.join('\n');
+    return { status: Number(lines.pop()) || null, text: lines.join('\n') };
+}
+/** 不支持列模型的平台：发一次 1 个 token 的对话验证 key，返回内置的常用模型 */
+async function verifyByChat(provider, key, base, proxy) {
+    const models = provider.fallbackModels ?? [];
+    const probe = models[0];
+    // curl 的 --data-binary @- 和 -K - 都读 stdin，这里把请求体写进临时文件
+    const { writeFile, rm, mkdtemp } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-model-key-'));
+    const file = join(dir, 'body.json');
+    await writeFile(file, JSON.stringify({ model: probe, messages: [{ role: 'user', content: 'ok' }], max_tokens: 1, stream: false }), { mode: 0o600 });
+    try {
+        const viaProxy = proxy && !provider.direct;
+        const r = await run('curl', ['-s', '-m', '40', '-w', '\n%{http_code}', '-K', '-', ...(viaProxy ? ['-x', proxy] : provider.direct ? ['--noproxy', '*'] : []), '-X', 'POST', '--data-binary', `@${file}`, `${base}/chat/completions`], {
+            input: `header = "Authorization: Bearer ${key.replace(/"/g, '')}"\nheader = "Content-Type: application/json"\n`,
+            timeoutMs: 60_000,
+        });
+        const lines = r.stdout.trimEnd().split('\n');
+        const status = Number(lines.pop()) || null;
+        const text = lines.join('\n');
+        if (status === 401 || status === 403 || /invalid.*(api.?key|token)|apikey not found|authenticat|鉴权|令牌/i.test(status === 200 ? '' : text)) {
+            throw new DshModelError('key_rejected', L(`${provider.label} 不认这把 key（HTTP ${status ?? '-'}）`, `${provider.label} rejected the key (HTTP ${status ?? '-'})`), L(`到 ${provider.keyUrl} 重新创建一把`, `Create a new one at ${provider.keyUrl}`));
+        }
+        // 200 = 能用；429 = key 对、只是限流；其余（模型没开通等）key 也是对的，照常保存
+        if (!status)
+            throw new DshModelError('key_check_failed', L(`连不上 ${base}`, `Cannot reach ${base}`));
+    }
+    finally {
+        await rm(dir, { recursive: true, force: true });
+    }
+    return parseModelList(provider.id, { data: models.map((id) => ({ id })) });
+}
+export async function fetchKeyModels(provider, key, base, proxy) {
+    const url = `${base}/models${provider.listQuery ? `?${provider.listQuery}` : ''}`;
+    const { status, text } = await keyRequest(provider, key, url, proxy);
+    // 有内置列表的平台：列模型不成功（不支持，或这个接口要额外权限）就改用一次短对话验证 key，由它来判断 key 对不对
+    if (provider.fallbackModels?.length && status !== 200)
+        return verifyByChat(provider, key, base, proxy);
     if (status === 401 || status === 403)
         throw new DshModelError('key_rejected', L(`${provider.label} 不认这把 key（HTTP ${status}）`, `${provider.label} rejected the key (HTTP ${status})`), provider.keyUrl ? L(`到 ${provider.keyUrl} 重新创建一把`, `Create a new one at ${provider.keyUrl}`) : undefined);
     if (status !== 200) {
@@ -63,8 +108,12 @@ export async function fetchKeyModels(provider, key, base, proxy) {
         models = parseModelList(provider.id, JSON.parse(text));
     }
     catch {
+        if (provider.fallbackModels?.length)
+            return verifyByChat(provider, key, base, proxy);
         throw new DshModelError('key_check_failed', L(`${provider.label} 的模型列表看不懂`, `Could not read the ${provider.label} model list`));
     }
+    if (!models.length && provider.fallbackModels?.length)
+        return verifyByChat(provider, key, base, proxy);
     if (!models.length)
         throw new DshModelError('key_no_models', L(`${provider.label} 没有返回任何模型`, `${provider.label} returned no models`));
     return models;

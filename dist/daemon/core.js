@@ -20,7 +20,8 @@ import { autoDue, beijingNow, checkinAdvice, ensureJitter, loadCheckin, runCheck
 import { QODER_REGIONS, exchangePat, qoderCheckin } from '../checkin/qoder.js';
 import { findTraeCredentials, traeCheckin } from '../checkin/trae.js';
 import { DoubaoAuthError, doubaoCheckin, doubaoStatus, normalizeCookie } from '../checkin/doubao.js';
-import { accountTag, addDoubao, addQoder, listWorkbuddyAccounts, loadDoubaos, loadQoders, removeDoubao, removeQoder, removeWorkbuddyAccount, workbuddyAccountStore, workbuddyAccountsDir } from '../checkin/accounts.js';
+import { exportCheckin, importCheckin } from '../checkin/transfer.js';
+import { accountTag, addDoubao, checkinKind, addQoder, listWorkbuddyAccounts, loadDoubaos, loadQoders, removeDoubao, removeQoder, removeWorkbuddyAccount, workbuddyAccountStore, workbuddyAccountsDir } from '../checkin/accounts.js';
 import { CN_VARIANT } from '../bridge/workbuddy/variants.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
 import { randomBytes } from 'node:crypto';
@@ -792,6 +793,13 @@ export class Daemon {
                 qoder: qoders.map((q, i) => ({ id: q.id, label: checkers.find((c) => c.id === (i === 0 ? 'qoder' : `qoder:${q.id}`))?.label ?? q.id, region: q.region })),
                 doubao: (await loadDoubaos(this.ctx)).map((d, i) => ({ id: d.id, label: checkers.find((c) => c.id === (i === 0 ? 'doubao' : `doubao:${d.id}`))?.label ?? d.id })),
             },
+            // 支持、但这台还没设置的（签到卡片里列出来，旁边就是「添加」）
+            missing: [
+                ...(checkers.some((c) => checkinKind(c.id) === 'workbuddy') ? [] : [{ id: 'workbuddy', label: L('WorkBuddy 国内版', 'WorkBuddy (China)'), action: 'workbuddy' }]),
+                ...(checkers.some((c) => checkinKind(c.id) === 'qoder') ? [] : [{ id: 'qoder', label: 'Qoder', action: 'qoder' }]),
+                ...(checkers.some((c) => checkinKind(c.id) === 'doubao') ? [] : [{ id: 'doubao', label: L('豆包', 'Doubao'), action: 'doubao' }]),
+                ...(checkers.some((c) => checkinKind(c.id) === 'trae') ? [] : [{ id: 'trae', label: 'Trae', reason: L('这台没装 Trae：要在装了 Trae 的电脑上签', 'Trae is not installed here: it is checked in on a computer with Trae') }]),
+            ],
         };
     }
     checkinInflight;
@@ -1219,6 +1227,12 @@ export class Daemon {
             }
             if (method === 'POST' && path === '/checkin/workbuddy')
                 return ok({ login: await this.startWorkbuddyCheckinLogin() });
+            if (method === 'POST' && path === '/checkin/export')
+                return ok(await exportCheckin(this.ctx));
+            if (method === 'POST' && path === '/checkin/import') {
+                const n = await importCheckin(this.ctx, String(b.text ?? ''), String(b.code ?? ''));
+                return ok({ imported: n, ...(await this.checkinNow(true)) });
+            }
             if (method === 'POST' && path === '/checkin/doubao') {
                 await this.addDoubaoCookie(String(b.cookie ?? ''), typeof b.name === 'string' ? b.name : undefined);
                 return ok(await this.checkinNow(true));

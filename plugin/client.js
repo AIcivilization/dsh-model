@@ -1037,6 +1037,49 @@ window.__ModuleLoader__.load({
         msg ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null)
     }
 
+    /** 把签到账号复制到另一台机器：导出一段加密文本 + 提取码，到那台的页面里导入 */
+    function TransferDialog({ mode, onDone, onClose }) {
+      const [out, setOut] = useState(null)
+      const [text, setText] = useState('')
+      const [code, setCode] = useState('')
+      const [busy, setBusy] = useState(false)
+      const [msg, setMsg] = useState('')
+      useEffect(() => {
+        if (mode !== 'export') return
+        api('POST', '/checkin/export').then(setOut, (e) => setMsg(e.message))
+      }, [mode])
+      const doImport = async () => {
+        setBusy(true)
+        setMsg(L('正在导入并签到…', 'Importing and checking in…'))
+        try {
+          const r = await api('POST', '/checkin/import', { text: text.trim(), code: code.trim() })
+          onDone(r)
+        } catch (e) { setMsg(e.message); setBusy(false) }
+      }
+      if (mode === 'export') {
+        return h(Modal, { title: L('复制签到账号到另一台机器', 'Copy check-in accounts to another machine'), onClose },
+          h('p', { style: S.note }, L('比如搬到不关机的 VPS 上签，就不会漏。会复制 Qoder 令牌和豆包 Cookie；WorkBuddy 请在那台机器上各自登录（复制过去两边会互相顶掉），Trae 要在装了 Trae 的电脑上签。', 'For example move them to an always-on VPS so no day is missed. Qoder tokens and Doubao cookies are copied; sign in to WorkBuddy on that machine itself (a copied sign-in would knock the other out), and Trae needs a computer with Trae.')),
+          out ? h('div', null,
+            h('div', { style: { ...S.meta, marginBottom: 4 } }, L(`1. 复制这段文本（${out.counts.qoder} 个 Qoder、${out.counts.doubao} 个豆包）：`, `1. Copy this text (${out.counts.qoder} Qoder, ${out.counts.doubao} Doubao):`)),
+            h('div', { style: S.line },
+              h('textarea', { readOnly: true, value: out.text, rows: 3, style: { ...S.input, ...S.mono, ...S.grow, resize: 'none' }, 'aria-label': L('导出的文本', 'Exported text') }),
+              h(CopyButton, { get: out.text })),
+            h('div', { style: { ...S.meta, margin: '10px 0 4px' } }, L('2. 记下提取码（光有文本解不开）：', '2. Note the code (the text alone cannot be opened):')),
+            h('div', { style: S.line }, h('span', { style: { ...S.mono, fontSize: 18, letterSpacing: 2 } }, out.code), h(CopyButton, { get: out.code })),
+            h('div', { style: { ...S.meta, marginTop: 10 } }, L('3. 打开那台机器的「设置 → dsh-model」，签到卡片「详情」→「导入签到账号」，把两样都粘进去。', '3. On the other machine open Settings → dsh-model, check-in card Details → "Import check-in accounts", and paste both.')),
+            h('div', { style: { fontSize: 12, color: C.warn, marginTop: 8 } }, L('这段文本加提取码就等于你的登录，只在自己的两台机器之间用。', 'Text plus code amount to your sign-ins: use them only between your own machines.'))) : null,
+          msg ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 8 } }, msg) : null)
+      }
+      return h(Modal, { title: L('导入签到账号', 'Import check-in accounts'), onClose },
+        h('p', { style: S.note }, L('粘贴另一台机器「复制签到账号」给出的文本和提取码。已有的同一个账号不会重复加。', 'Paste the text and code from "Copy check-in accounts" on the other machine. Accounts already here are not added twice.')),
+        h('textarea', { rows: 3, placeholder: 'dshm-checkin:v1:…', value: text, onChange: (e) => setText(e.target.value), style: { ...S.input, ...S.mono, width: '100%', boxSizing: 'border-box', resize: 'none', marginBottom: 8 }, 'aria-label': L('导出的文本', 'Exported text') }),
+        h('div', { style: S.line },
+          h('input', { style: { ...S.input, ...S.mono, width: 160 }, placeholder: L('提取码', 'Code'), value: code, onChange: (e) => setCode(e.target.value), 'aria-label': L('提取码', 'Code') }),
+          h('span', { style: S.grow }),
+          h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !text.trim() || !code.trim(), onClick: () => void doImport() }, L('导入', 'Import'))),
+        msg ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null)
+    }
+
     /** 签到卡片：平时一行"今日已完成签到：…"；没签完的列出来，一键签到；自动签到开关 */
     function CheckinCard() {
       const [st, setSt] = useState(null)
@@ -1045,6 +1088,7 @@ window.__ModuleLoader__.load({
       const [qoder, setQoder] = useState(false)
       const [wbLogin, setWbLogin] = useState(null)
       const [doubao, setDoubao] = useState(false)
+      const [transfer, setTransfer] = useState('')
       const [err, setErr] = useState('')
       const refresh = useCallback(() => api('GET', '/checkin').then(setSt, () => {}), [])
       const addWorkbuddy = async () => {
@@ -1073,7 +1117,9 @@ window.__ModuleLoader__.load({
         return h('div', { style: { ...S.section, marginBottom: 16 } },
           h('div', { style: { ...S.meta } }, L('每日签到：登录 WorkBuddy 国内版，或', 'Daily check-in: sign in to WorkBuddy (China), or '),
             h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setQoder(true) }, L('添加 Qoder', 'Add Qoder')),
-            h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setDoubao(true) }, L('添加豆包', 'Add Doubao'))),
+            h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setDoubao(true) }, L('添加豆包', 'Add Doubao')),
+            h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setTransfer('import') }, L('从另一台机器导入', 'Import from another machine'))),
+          transfer ? h(TransferDialog, { mode: transfer, onDone: (r) => { setTransfer(''); setSt(r); setOpen(true) }, onClose: () => setTransfer('') }) : null,
           qoder ? h(QoderDialog, { onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null,
           doubao ? h(DoubaoDialog, { onDone: () => { setDoubao(false); void refresh() }, onClose: () => setDoubao(false) }) : null)
       }
@@ -1089,6 +1135,12 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', style: S.btn, onClick: () => setOpen(!open) }, open ? L('收起', 'Hide') : L('详情', 'Details')),
             h('label', { style: { ...S.meta, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap' } },
               h('input', { type: 'checkbox', checked: st.auto, onChange: (e) => void toggleAuto(e.target.checked) }), L('自动签到', 'Auto'))),
+          // 支持、但这台还没设置的：一眼看出还能签哪些，旁边就能加
+          (st.missing || []).length ? h('div', { style: { ...S.line, flexWrap: 'wrap', gap: 6, marginTop: 4, fontSize: 12, color: C.sub } },
+            h('span', null, L('这台还能签：', 'Also available here:')),
+            (st.missing || []).map((m) => h('span', { key: m.id, style: { display: 'inline-flex', alignItems: 'center', gap: 4 } },
+              m.label,
+              m.action ? h('button', { type: 'button', style: { ...S.btn, padding: '1px 6px', fontSize: 11 }, onClick: () => { if (m.action === 'workbuddy') void addWorkbuddy(); else if (m.action === 'qoder') setQoder(true); else setDoubao(true) } }, L('+ 添加', '+ Add')) : h('span', { style: { color: C.faint } }, `（${m.reason}）`)))) : null,
           open ? h('div', { style: { marginTop: 8 } },
             st.results.map((r) => h('div', { key: r.id, style: { fontSize: 12, lineHeight: 1.8, color: r.state === 'failed' ? C.err : C.text } },
               `${r.label}：${CHECKIN_TEXT(r)}`, r.advice ? h('span', { style: { color: C.sub, marginLeft: 6 } }, r.advice) : null)),
@@ -1102,12 +1154,16 @@ window.__ModuleLoader__.load({
               h('div', { style: { ...S.line, marginTop: 4, flexWrap: 'wrap' } },
                 h('button', { type: 'button', style: S.btn, onClick: () => void addWorkbuddy() }, L('+ 添加 WorkBuddy 账号', '+ Add a WorkBuddy account')),
                 h('button', { type: 'button', style: S.btn, onClick: () => setQoder(true) }, st.qoder.configured ? L('+ 再加一个 Qoder 账号', '+ Add another Qoder account') : L('+ 添加 Qoder', '+ Add Qoder')),
-                h('button', { type: 'button', style: S.btn, onClick: () => setDoubao(true) }, (st.accounts && st.accounts.doubao && st.accounts.doubao.length) ? L('+ 再加一个豆包账号', '+ Add another Doubao account') : L('+ 添加豆包', '+ Add Doubao')))),
+                h('button', { type: 'button', style: S.btn, onClick: () => setDoubao(true) }, (st.accounts && st.accounts.doubao && st.accounts.doubao.length) ? L('+ 再加一个豆包账号', '+ Add another Doubao account') : L('+ 添加豆包', '+ Add Doubao'))),
+              h('div', { style: { ...S.line, marginTop: 4, flexWrap: 'wrap' } },
+                h('button', { type: 'button', style: S.btn, onClick: () => setTransfer('export') }, L('复制签到账号到另一台机器', 'Copy check-in accounts to another machine')),
+                h('button', { type: 'button', style: S.btn, onClick: () => setTransfer('import') }, L('导入签到账号', 'Import check-in accounts')))),
             // Trae 读本机 Trae 的登录：这台没装（比如 VPS）就不会出现，在装了 Trae 的电脑上签就行（每个账号一天一次）
             !st.available.some((a) => a.id === 'trae') ? h('div', { style: { ...S.meta, marginTop: 6 } }, L('Trae：这台电脑上没装 Trae，所以不签。在装了 Trae 的电脑上会自动签（一个账号一天签一次就够）。', 'Trae: not installed on this machine, so it is skipped. A computer with Trae installed checks it in automatically (once a day per account is enough).')) : null) : null,
           !open && !st.qoder.configured ? h('div', { style: { ...S.meta, marginTop: 4 } }, h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, onClick: () => setQoder(true) }, L('+ 添加 Qoder', '+ Add Qoder'))) : null,
           err ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, err) : null),
         qoder ? h(QoderDialog, { another: st.qoder.configured, onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null,
+        transfer ? h(TransferDialog, { mode: transfer, onDone: (r) => { setTransfer(''); setSt(r); setOpen(true) }, onClose: () => setTransfer('') }) : null,
         doubao ? h(DoubaoDialog, { another: Boolean(st.accounts && st.accounts.doubao && st.accounts.doubao.length), onDone: () => { setDoubao(false); setOpen(true); void refresh() }, onClose: () => setDoubao(false) }) : null,
         wbLogin ? h(LoginDialog, { source: { id: 'workbuddy-checkin', label: L('WorkBuddy 签到账号', 'WorkBuddy check-in account'), login: 'link' }, session: wbLogin, onDone: () => { setWbLogin(null); setOpen(true); setTimeout(() => void refresh(), 3000) }, onClose: () => { setWbLogin(null); void refresh() } }) : null)
     }

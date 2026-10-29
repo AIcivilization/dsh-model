@@ -32,6 +32,8 @@
 
 - **自动签到默认打开**：北京时间零点后随机延后 5–55 分钟签好；失败的一小时后重试；电脑关机错过了，开机一分钟内补签。
 - **结果看得见**：设置页顶部一行「今日已完成签到：…」，没签上的可以「一键签到」；签完在 dsh 右下角提示一次。
+- **这台还能签哪些**：卡片里列出支持、但这台还没设置的，旁边就是「+ 添加」。
+- **放到 VPS 上签，不会漏**：「复制签到账号到另一台机器」导出一段加密文本和提取码，到 VPS 的页面里「导入」即可（Qoder、豆包；WorkBuddy 在 VPS 上各自登录，Trae 留在装了 Trae 的电脑上签）。
 - **多账号**：一家可以签几个账号。在签到卡片的「详情」里「+ 添加 WorkBuddy 账号」（打开链接授权）、「+ 再加一个 Qoder 账号」；本机装了几个 Trae 会自动按账号各签一次。
 - **只签到，不碰积分**：积分留在你的账号里，照常在各家官方软件里用。命令行：`dsh-model checkin`。
 
@@ -51,7 +53,7 @@
 | 类型 | 来源 |
 |---|---|
 | **免费（推荐）** | **硅基流动**（国内直连，实名后部分模型免费）、**Gemini**（能上外网，免费模型里质量最好） |
-| 免费 · 额度少 | Groq、OpenRouter（`:free` 模型） |
+| 免费 · 额度少 | **智谱 GLM**（Flash 系列免费）、**讯飞星火**（Spark Lite 免费）、百度千帆（ERNIE Speed / Lite）、Groq、OpenRouter（`:free` 模型） |
 | 本机 | Ollama、LM Studio：启动后自动出现，不用登录 |
 | 订阅 | Codex（ChatGPT Plus / Pro）、Kimi Code、Grok、Muse、Devin：在管理页里登录即可 |
 | 按量付费 | DeepSeek 官方、OpenCode Zen、任意 OpenAI 兼容服务 |
@@ -112,6 +114,10 @@ dsh-model setup
 | Gemini（Google AI Studio）、Groq | 免费·额度少 | 填免费 API key 即可，每天 / 每分钟有上限 |
 | OpenRouter | 免费·额度少 | 名字带 `:free` 的模型免费（每天约 50 次） |
 | 硅基流动 | 免费·额度少 | 实名认证后部分小模型免费 |
+| 智谱 GLM | 免费·额度少 | Flash 系列（如 GLM-4.7-Flash）免费，国内直连 |
+| 讯飞星火 | 免费·额度少 | Spark Lite 免费不限量，每秒 2 次；key 填控制台的 APIPassword |
+| 百度千帆 | 免费·额度少 | ERNIE Speed / Lite 长期免费（限速） |
+| 火山方舟（豆包大模型）、MiniMax 开放平台、华为云 ModelArts | 需付费 | 官方 API，填 key 即可；火山方舟、华为云有新用户免费额度 |
 | DeepSeek 官方、其他 OpenAI 兼容服务 | 需付费 | 填 API key（其他服务还要填地址） |
 | Codex | 需付费 | ChatGPT Plus / Pro |
 | Kimi | 需付费 | Kimi Code 套餐 |

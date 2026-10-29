@@ -7,7 +7,7 @@ import { readJson, writeJson } from './util/fs.js'
 
 export interface Secrets {
   opencode?: { key: string; verifiedAt?: string; verifiedModel?: string }
-  /** 自带 API key 的来源（gemini / groq / openrouter / siliconflow / deepseek / custom）；custom 还有地址 */
+  /** 自带 API key 的来源（gemini / groq / openrouter / siliconflow / zhipu / spark / qianfan / ark / minimax / modelarts / deepseek / custom）；custom 还有地址 */
   apikeys?: Record<string, { key: string; base?: string; verifiedAt?: string }>
   /** 每日签到要用的登录（WorkBuddy 用 bridge 已有的登录，不在这里） */
   checkin?: {

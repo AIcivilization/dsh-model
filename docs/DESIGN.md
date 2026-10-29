@@ -546,6 +546,7 @@ Gemini（Google AI Studio 的 OpenAI 兼容接口 `…/v1beta/openai`）、Groq�
 - **保存前实测**：带 key 请求一次 `GET /models`，拿到列表才保存（不花额度）。401 / 403 直接报 key 无效。
 - 模型目录存 `apikey-models.json`，每 30 分钟刷新一次。Gemini 去掉 `models/` 前缀；OpenRouter 价格为 0 或名字带 `:free` 的标「Free」、排在前面，默认挑选时优先选它们。
 - 费用标签（2026-10 核实）：Gemini、Groq、OpenRouter、硅基流动是「免费·额度少」，DeepSeek 和其他服务是「需付费」。Cerebras 最近的说法是已经没有长期免费档，所以没放进来。
+- **国内大厂官方 API**（2026-10-29 加）：智谱 GLM（`open.bigmodel.cn/api/paas/v4`，Flash 系列免费）、讯飞星火（`spark-api-open.xf-yun.com/v1`，Spark Lite 免费、每秒 2 次）、百度千帆（`qianfan.baidubce.com/v2`，ERNIE Speed / Lite 免费）、火山方舟、MiniMax 开放平台、华为云 ModelArts。这几家都直连，引擎也不走出站代理。它们不一定支持 `GET /models`，或者这个接口要额外权限，所以各带一份常用模型列表（按各家文档整理），并按名字标出哪些免费。列模型不成功时，改发一次 1 个 token 的对话来验证 key：401 / 403 报 key 无效，200 或 429（限流）都算 key 对。这几家都是官方正式接口，和 IDE 里的模型不是一回事：Trae、Qoder、豆包这些 IDE 自带的模型只能在它们自己的软件里用（§14.18）。
 
 ### 14.12 最近失败的请求
 
@@ -611,3 +612,11 @@ Gemini（Google AI Studio 的 OpenAI 兼容接口 `…/v1beta/openai`）、Groq�
 **豆包（实验）**：签的是豆包的「天天领额度」，接口照 techysy/CreditDaddy 的 `doubaoClient.js`（MIT）。流程是 `POST /alice/ug/campaign/v3/detail/` 看今天签没签，没签再 `POST /alice/ug/campaign/landing/checkin`；服务端幂等。鉴权只要 doubao.com 的登录 Cookie，没有 `a_bogus` / `msToken` 签名，请求里带上豆包电脑版网页本来就会发的平台参数。Cookie 由用户从浏览器复制一次，存在 `secrets.checkin.doubaos`，每个账号一个随机种子，派生出固定的网页标识。添加时先查一次任务：Cookie 失效会报"登录已过期"；账号里没有签到任务（飞书企业账号）会提示换成个人账号。2026-10-29 用一份假 Cookie 实测，接口返回登录过期的业务码 710012001，说明地址和参数都对；真账号由用户来验证。
 
 **没做的**：WPS 灵犀、百度搭子、MiniMax Code、讯飞 AStudio、华为云码道（2026-10-29 调研）。灵犀、百度搭子、讯飞、华为云在 GitHub 上没有任何开源的签到实现。MiniMax 有，但要用从客户端扒出来的签名密钥加上伪造的设备号，冒充 MiniMax Code，而且没有许可证或是 GPL。从头研究这几家的私有接口和本机登录，属于 §14.15 里灵犀那类工作（当时被安全检查拦下），所以不做。等它们有官方接口或可参考的开源实现再加。
+
+
+### 14.20 签到清单；把签到账号复制到另一台机器
+
+- **清单**：`/checkin` 的 `missing` 列出支持、但这台还没设置的产品。签到卡片里显示成一行「这台还能签：…」，可以设置的旁边就是「+ 添加」；Trae 这种这台签不了的，写明原因（要在装了 Trae 的电脑上签）。
+- **复制到 VPS**：VPS 不关机，放在上面签就不会漏。「复制签到账号到另一台机器」导出一段 `dshm-checkin:v1:` 开头的文本，加一个 8 位提取码（分开显示）。内容是 AES-256-GCM 加密的 Qoder 令牌和豆包 Cookie，密钥由提取码经 scrypt 派生，光有文本解不开。到另一台的页面里「导入」，已有的同一个账号不会重复加，导入完马上签一次。
+- **不复制的**：WorkBuddy 的登录令牌会续期轮换，两台用同一份会互相顶掉，所以每台各自登录。Trae 读的是本机 Trae 软件的登录，只能在装了 Trae 的电脑上签。
+- 两台都签同一个账号也没关系：几家都是"今天签过就返回已签"，不会多领，也不会出错。

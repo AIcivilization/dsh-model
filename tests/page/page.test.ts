@@ -419,4 +419,23 @@ describe('settings page', () => {
     await click('保存')
     expect(posted).toEqual([{ cookie: 'Cookie: sessionid=abc; sid_tt=def' }])
   })
+
+  it('check-in card lists what can still be set up here, and exports accounts with a code', async () => {
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    const status = { auto: true, date: '2026-10-29', results: [], available: [{ id: 'workbuddy', label: 'WorkBuddy' }], qoder: { configured: false }, accounts: { workbuddy: [], qoder: [], doubao: [] }, missing: [{ id: 'qoder', label: 'Qoder', action: 'qoder' }, { id: 'doubao', label: '豆包', action: 'doubao' }, { id: 'trae', label: 'Trae', reason: '这台没装 Trae：要在装了 Trae 的电脑上签' }] }
+    handler = normal((c) => {
+      if (c.path === '/checkin' && c.method === 'GET') return [200, status]
+      if (c.path === '/checkin/export') return [200, { text: 'dshm-checkin:v1:abc', code: 'K7P2-QX9M', counts: { qoder: 1, doubao: 0 } }]
+      return [404, {}]
+    })
+    await render()
+    await waitText('这台还能签：')
+    expect(container.textContent).toContain('Trae（这台没装 Trae：要在装了 Trae 的电脑上签）')
+    expect([...container.querySelectorAll('button')].filter((b) => b.textContent === '+ 添加')).toHaveLength(2)
+    await click('详情')
+    await click('复制签到账号到另一台机器')
+    await waitText('K7P2-QX9M')
+    expect(container.textContent).toContain('1 个 Qoder、0 个豆包')
+    expect((container.querySelector('textarea[aria-label="导出的文本"]') as HTMLTextAreaElement).value).toBe('dshm-checkin:v1:abc')
+  })
 })

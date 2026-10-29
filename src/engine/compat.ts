@@ -105,7 +105,7 @@ export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
       })
     }
   }
-  // 自带 API key 的来源：有 key、有模型、没被关掉就接进来（走出站代理，不 direct）
+  // 自带 API key 的来源：有 key、有模型、没被关掉就接进来（海外的走出站代理，国内平台直连）
   const keyCat = await loadKeyCatalog(ctx.paths.home)
   for (const [id, s] of Object.entries(secrets.apikeys ?? {})) {
     const p = keyProvider(id)
@@ -116,6 +116,8 @@ export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
       label: p.label,
       baseUrl: s.base ?? p.base,
       apiKey: s.key,
+      // 国内平台直连，不绕出站代理
+      ...(p.direct ? { direct: true } : {}),
       models: models.map((m) => ({ name: m.id, alias: `${id}/${m.id}`, displayName: `${p.label} · ${m.id}`, dshName: m.free ? `${m.id} · Free` : m.id, ...(m.free ? { rate: 0 } : {}), group: id, groupLabel: p.label })),
     })
   }

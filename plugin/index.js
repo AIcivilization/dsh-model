@@ -63,7 +63,7 @@ const ALLOWED = [
   ['GET', /^\/self$/],
   ['GET', /^\/failures$/],
   ['GET', /^\/checkin$/],
-  ['POST', /^\/checkin(\/auto|\/qoder|\/workbuddy|\/doubao)?$/],
+  ['POST', /^\/checkin(\/auto|\/qoder|\/workbuddy|\/doubao|\/export|\/import)?$/],
   ['DELETE', /^\/checkin\/qoder(\/[A-Za-z0-9_-]{1,40})?$/],
   ['DELETE', /^\/checkin\/workbuddy\/[A-Za-z0-9_-]{1,80}$/],
   ['DELETE', /^\/checkin\/doubao\/[A-Za-z0-9_-]{1,40}$/],

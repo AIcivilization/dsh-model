@@ -1,6 +1,6 @@
 {
   "name": "dsh-model",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "Daily check-in credits claimed for you (Trae, Qoder, WorkBuddy China), one OpenAI-compatible address that relays every model, and free or subscription model sources (SiliconFlow, Gemini, Codex, Kimi, Ollama…). For DeepSeek Harness (dsh) and any OpenAI-compatible tool. 每天自动签到领积分 · 一个地址中转所有模型 · 免费和订阅模型随你接。",
   "keywords": [
     "siliconflow",
