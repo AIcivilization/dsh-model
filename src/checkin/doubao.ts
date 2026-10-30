@@ -108,7 +108,7 @@ export async function doubaoStatus(cookie: string, seed: string): Promise<Doubao
 /** 签到：先看今天签没签，没签才领 */
 export async function doubaoCheckin(cookie: string, seed: string): Promise<{ state: 'signed' | 'already'; credit?: number }> {
   const st = await doubaoStatus(cookie, seed)
-  if (st.checkedIn === null) throw new Error('这个豆包账号没有签到任务：只有个人账号能领，飞书企业账号不行（也可能活动暂时下线）')
+  if (st.checkedIn === null) throw new Error('这个豆包账号的任务面板里没有「每日签到」（飞书企业账号、或豆包没给这个账号开签到时都是这样）')
   if (st.checkedIn) return { state: 'already' }
   const body = await post(apiUrl(CHECKIN_URL, seed), cookie, { scene: CAMPAIGN_GROUP })
   const code = Number(body.code)

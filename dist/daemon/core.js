@@ -883,7 +883,7 @@ export class Daemon {
             try {
                 const st = await doubaoStatus(cookie, seed);
                 if (st.checkedIn === null) {
-                    skipped.push({ label: login.label, reason: L('登录的是飞书企业账号，没有每日额度（只有个人账号能领）', 'signed in with a Feishu enterprise account, which gets no daily credits (personal accounts only)') });
+                    skipped.push({ label: login.label, reason: L('读到了登录，但豆包没给这个账号开「每日签到」：它的任务面板里只有一次性的新手任务（选工作领域、生成文档 / PPT 等，要在豆包里自己做）。飞书企业账号也是这样。打开豆包电脑版看看有没有「每日签到」，有的话告诉开发者', 'Signed in, but Doubao has not given this account a daily check-in: its task panel only has one-off starter tasks (pick a work field, make a document / slides…, done inside Doubao). Feishu enterprise accounts look like this too. Check whether the Doubao app shows a daily check-in, and tell the developer if it does') });
                     continue;
                 }
             }

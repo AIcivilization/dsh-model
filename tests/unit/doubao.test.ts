@@ -53,6 +53,6 @@ describe('Doubao check-in', () => {
     mockFetch({ '/v3/detail/': { code: 710012001, msg: 'login expired' } })
     await expect(doubaoStatus('a=1', 's')).rejects.toBeInstanceOf(DoubaoAuthError)
     mockFetch({ '/v3/detail/': detail(null) })
-    await expect(doubaoCheckin('a=1', 's')).rejects.toThrow(/个人账号/)
+    await expect(doubaoCheckin('a=1', 's')).rejects.toThrow(/每日签到/)
   })
 })

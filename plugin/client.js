@@ -1031,8 +1031,7 @@ window.__ModuleLoader__.load({
           const r = await api('POST', '/checkin/doubao/scan')
           if (r.added.length) { onDone(r.status, scanText(r)); return }
           setMsg(scanText(r) || L('没读到能用的豆包登录', 'No usable Doubao sign-in found'))
-          setManual(true)
-        } catch (e) { setMsg(e.message); setManual(true) }
+        } catch (e) { setMsg(e.message) }
         setBusy(false)
       }
       const save = async () => {
@@ -1049,9 +1048,9 @@ window.__ModuleLoader__.load({
             ? L(`这台电脑上 ${found.join('、')} 登录着豆包，直接读它的登录就行：`, `Doubao is signed in here (${found.join(', ')}); just read that sign-in:`)
             : L('在豆包电脑版、Chrome、Edge 或 Brave 里登录过 doubao.com 的话，直接读它的登录：', 'If you are signed in to doubao.com in the Doubao app, Chrome, Edge or Brave, read that sign-in:')),
           h('button', { type: 'button', style: S.btnPrimary, disabled: busy, onClick: () => void scan() }, busy ? L('读取中…', 'Reading…') : L('从本机自动读取', 'Read from this computer')),
+          msg && !manual ? h('div', { style: { fontSize: 12, color: busy ? C.sub : C.warn, marginTop: 8, lineHeight: 1.6 } }, msg) : null,
           h('div', { style: { ...S.meta, marginTop: 6, color: C.faint } }, L('只读 doubao.com 的登录，保存在本机；豆包里退出登录或过期后，再点一次就会换成新的。', 'Only the doubao.com sign-in is read, and it stays on this machine; after it expires, click again to replace it.'))) : null,
         canScan && !manual ? h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px', fontSize: 12 }, onClick: () => setManual(true) }, L('▸ 手动粘贴 Cookie', '▸ Paste the cookie by hand')) : null,
-        msg && !manual ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null,
         !canScan || manual ? h('div', null,
         h('p', { style: S.note }, L('手动：从浏览器复制一次登录 Cookie：', 'By hand: copy the sign-in cookie from the browser once:')),
         step(1, h('span', null, L('用电脑浏览器打开 ', 'Open '), h('a', { href: 'https://www.doubao.com/', target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent } }, 'doubao.com ↗'), L(' 并登录', ' in a desktop browser and sign in'))),
