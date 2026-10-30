@@ -16,7 +16,7 @@ export interface Secrets {
     /** 多账号：一组令牌，各带名字（checkin/accounts.ts） */
     qoders?: { id: string; pat: string; region: 'cn' | 'intl'; name?: string; savedAt?: string }[]
     /** 豆包：用户从浏览器复制的登录 Cookie；seed 派生这个账号固定的网页标识 */
-    doubaos?: { id: string; cookie: string; seed: string; name?: string; savedAt?: string }[]
+    doubaos?: { id: string; cookie: string; seed: string; name?: string; from?: string; savedAt?: string }[]
   }
 }
 

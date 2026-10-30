@@ -1011,20 +1011,49 @@ window.__ModuleLoader__.load({
         msg ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null)
     }
 
-    /** 添加豆包签到：从浏览器复制一次登录 Cookie（豆包没有令牌，也不读豆包客户端的文件） */
-    function DoubaoDialog({ onDone, onClose, another }) {
+    /** 从本机读豆包登录的结果说成一句话 */
+    const scanText = (r) => [
+      r.added.length ? L(`已添加：${r.added.join('、')}`, `Added: ${r.added.join(', ')}`) : '',
+      ...r.skipped.map((x) => `${x.label}：${x.reason}`),
+    ].filter(Boolean).join('；')
+
+    /** 添加豆包签到：优先从本机已登录的豆包电脑版 / 浏览器自动读；读不了再手动粘贴 Cookie */
+    function DoubaoDialog({ onDone, onClose, another, found, localRead }) {
       const [cookie, setCookie] = useState('')
       const [name, setName] = useState('')
       const [busy, setBusy] = useState(false)
       const [msg, setMsg] = useState('')
+      const [manual, setManual] = useState(false)
+      const scan = async () => {
+        setBusy(true)
+        setMsg(localRead === 'mac' ? L('正在读取…macOS 会弹窗问是否允许读取钥匙串，请点「允许」（点「始终允许」以后就不再问）', 'Reading… macOS will ask to allow keychain access: click Allow (Always Allow skips the question next time)') : L('正在读取…', 'Reading…'))
+        try {
+          const r = await api('POST', '/checkin/doubao/scan')
+          if (r.added.length) { onDone(r.status, scanText(r)); return }
+          setMsg(scanText(r) || L('没读到能用的豆包登录', 'No usable Doubao sign-in found'))
+          setManual(true)
+        } catch (e) { setMsg(e.message); setManual(true) }
+        setBusy(false)
+      }
       const save = async () => {
         setBusy(true)
         setMsg(L('正在用这份 Cookie 查签到任务并签到…', 'Checking this cookie and checking in…'))
         try { await api('POST', '/checkin/doubao', { cookie: cookie.trim(), ...(name.trim() ? { name: name.trim() } : {}) }); onDone() } catch (e) { setMsg(e.message); setBusy(false) }
       }
       const step = (n, text) => h('div', { style: { ...S.meta, lineHeight: 1.7 } }, `${n}. `, text)
+      const canScan = Boolean(localRead)
       return h(Modal, { title: another ? L('再加一个豆包账号', 'Add another Doubao account') : L('添加豆包签到（实验）', 'Add Doubao check-in (experimental)'), onClose },
-        h('p', { style: S.note }, L('豆包「天天领额度」每天送体验额度，只有个人账号能领（飞书企业账号不行）。豆包没有令牌，要从浏览器复制一次登录 Cookie：', 'Doubao gives daily credits to personal accounts (not Feishu enterprise accounts). Doubao has no token, so copy its sign-in cookie from the browser once:')),
+        h('p', { style: S.note }, L('豆包「天天领额度」每天送体验额度，只有个人账号能领（飞书企业账号不行）。', 'Doubao gives daily credits to personal accounts (not Feishu enterprise accounts).')),
+        canScan ? h('div', { style: { ...S.card, padding: '10px 12px', marginBottom: 10 } },
+          h('div', { style: { ...S.meta, marginBottom: 6 } }, found && found.length
+            ? L(`这台电脑上 ${found.join('、')} 登录着豆包，直接读它的登录就行：`, `Doubao is signed in here (${found.join(', ')}); just read that sign-in:`)
+            : L('在豆包电脑版、Chrome、Edge 或 Brave 里登录过 doubao.com 的话，直接读它的登录：', 'If you are signed in to doubao.com in the Doubao app, Chrome, Edge or Brave, read that sign-in:')),
+          h('button', { type: 'button', style: S.btnPrimary, disabled: busy, onClick: () => void scan() }, busy ? L('读取中…', 'Reading…') : L('从本机自动读取', 'Read from this computer')),
+          h('div', { style: { ...S.meta, marginTop: 6, color: C.faint } }, L('只读 doubao.com 的登录，保存在本机；豆包里退出登录或过期后，再点一次就会换成新的。', 'Only the doubao.com sign-in is read, and it stays on this machine; after it expires, click again to replace it.'))) : null,
+        canScan && !manual ? h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px', fontSize: 12 }, onClick: () => setManual(true) }, L('▸ 手动粘贴 Cookie', '▸ Paste the cookie by hand')) : null,
+        msg && !manual ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null,
+        !canScan || manual ? h('div', null,
+        h('p', { style: S.note }, L('手动：从浏览器复制一次登录 Cookie：', 'By hand: copy the sign-in cookie from the browser once:')),
         step(1, h('span', null, L('用电脑浏览器打开 ', 'Open '), h('a', { href: 'https://www.doubao.com/', target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent } }, 'doubao.com ↗'), L(' 并登录', ' in a desktop browser and sign in'))),
         step(2, L('按 F12 打开开发者工具，切到「网络 / Network」，刷新一下页面', 'Press F12, open the Network tab, and reload the page')),
         step(3, L('点列表里任意一条 doubao.com 的请求，在「请求标头 / Request Headers」里找到 Cookie 那一行，右键复制它的值', 'Click any doubao.com request, find Cookie under Request Headers, and copy its value')),
@@ -1034,7 +1063,7 @@ window.__ModuleLoader__.load({
         h('div', { style: S.line },
           h('input', { type: 'password', style: { ...S.input, ...S.grow }, placeholder: L('粘贴 Cookie', 'Paste the cookie'), value: cookie, onChange: (e) => setCookie(e.target.value), 'aria-label': 'Cookie' }),
           h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !cookie.trim(), onClick: () => void save() }, L('保存', 'Save'))),
-        msg ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null)
+        msg ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null) : null)
     }
 
     /** 把签到账号复制到另一台机器：导出一段加密文本 + 提取码，到那台的页面里导入 */
@@ -1121,7 +1150,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setTransfer('import') }, L('从另一台机器导入', 'Import from another machine'))),
           transfer ? h(TransferDialog, { mode: transfer, onDone: (r) => { setTransfer(''); setSt(r); setOpen(true) }, onClose: () => setTransfer('') }) : null,
           qoder ? h(QoderDialog, { onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null,
-          doubao ? h(DoubaoDialog, { onDone: () => { setDoubao(false); void refresh() }, onClose: () => setDoubao(false) }) : null)
+          doubao ? h(DoubaoDialog, { localRead: st.localRead, found: ((st.missing || []).find((m) => m.id === 'doubao') || {}).found, onDone: (next) => { setDoubao(false); if (next) setSt(next); else void refresh() }, onClose: () => setDoubao(false) }) : null)
       }
       return h('div', { style: S.section },
         h('div', { style: { ...S.card, padding: '10px 14px' } },
@@ -1139,7 +1168,7 @@ window.__ModuleLoader__.load({
           (st.missing || []).length ? h('div', { style: { ...S.line, flexWrap: 'wrap', gap: 6, marginTop: 4, fontSize: 12, color: C.sub } },
             h('span', null, L('这台还能签：', 'Also available here:')),
             (st.missing || []).map((m) => h('span', { key: m.id, style: { display: 'inline-flex', alignItems: 'center', gap: 4 } },
-              m.label,
+              m.found && m.found.length ? L(`${m.label}（本机 ${m.found.join('、')} 已登录）`, `${m.label} (signed in: ${m.found.join(', ')})`) : m.label,
               m.action ? h('button', { type: 'button', style: { ...S.btn, padding: '1px 6px', fontSize: 11 }, onClick: () => { if (m.action === 'workbuddy') void addWorkbuddy(); else if (m.action === 'qoder') setQoder(true); else setDoubao(true) } }, L('+ 添加', '+ Add')) : h('span', { style: { color: C.faint } }, `（${m.reason}）`)))) : null,
           open ? h('div', { style: { marginTop: 8 } },
             st.results.map((r) => h('div', { key: r.id, style: { fontSize: 12, lineHeight: 1.8, color: r.state === 'failed' ? C.err : C.text } },
@@ -1164,7 +1193,7 @@ window.__ModuleLoader__.load({
           err ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, err) : null),
         qoder ? h(QoderDialog, { another: st.qoder.configured, onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null,
         transfer ? h(TransferDialog, { mode: transfer, onDone: (r) => { setTransfer(''); setSt(r); setOpen(true) }, onClose: () => setTransfer('') }) : null,
-        doubao ? h(DoubaoDialog, { another: Boolean(st.accounts && st.accounts.doubao && st.accounts.doubao.length), onDone: () => { setDoubao(false); setOpen(true); void refresh() }, onClose: () => setDoubao(false) }) : null,
+        doubao ? h(DoubaoDialog, { another: Boolean(st.accounts && st.accounts.doubao && st.accounts.doubao.length), localRead: st.localRead, found: ((st.missing || []).find((m) => m.id === 'doubao') || {}).found, onDone: (next, note) => { setDoubao(false); setOpen(true); if (next) setSt(next); else void refresh(); if (note) setErr(note) }, onClose: () => setDoubao(false) }) : null,
         wbLogin ? h(LoginDialog, { source: { id: 'workbuddy-checkin', label: L('WorkBuddy 签到账号', 'WorkBuddy check-in account'), login: 'link' }, session: wbLogin, onDone: () => { setWbLogin(null); setOpen(true); setTimeout(() => void refresh(), 3000) }, onClose: () => { setWbLogin(null); void refresh() } }) : null)
     }
 

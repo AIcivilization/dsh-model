@@ -24,7 +24,7 @@ export function checkinAdvice(itemId, message) {
     const id = itemId.split(':')[0];
     if (/无效|过期|401|403|unauthor|expired|not able to authenticate/i.test(message)) {
         if (id === 'doubao')
-            return L('豆包登录过期：在浏览器里重新登录 doubao.com，到签到卡片里删掉它，再复制 Cookie 添加一次', 'Doubao sign-in expired: sign in at doubao.com again, remove it in the check-in card and add the new cookie');
+            return L('豆包登录过期：在豆包电脑版或浏览器里重新登录，再点签到卡片里的「+ 添加豆包 → 从本机自动读取」（会换成新的登录）', 'Doubao sign-in expired: sign in again in the Doubao app or a browser, then use "+ Add Doubao → Read from this computer" in the check-in card (it replaces the old sign-in)');
         if (id === 'trae')
             return L('Trae 登录过期：打开 Trae 重新登录一次', 'Trae sign-in expired: open Trae and sign in again');
         if (id === 'qoder')

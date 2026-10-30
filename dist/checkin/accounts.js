@@ -104,6 +104,20 @@ export async function removeQoder(ctx, id) {
     const target = id ?? list[0]?.id;
     await saveQoders(ctx, list.filter((q) => q.id !== target));
 }
+/** Cookie 串里某一项的值 */
+export function cookieValue(cookie, name) {
+    for (const part of cookie.split(/;\s*/)) {
+        const i = part.indexOf('=');
+        if (i > 0 && part.slice(0, i).trim() === name)
+            return part.slice(i + 1);
+    }
+    return undefined;
+}
+/** 同一个豆包账号：uid_tt 一样（Cookie 里别的项每次都会变） */
+const sameDoubaoAccount = (a, b) => {
+    const x = cookieValue(a, 'uid_tt');
+    return a === b || (Boolean(x) && x === cookieValue(b, 'uid_tt'));
+};
 export async function loadDoubaos(ctx) {
     return (await loadSecrets(ctx)).checkin?.doubaos ?? [];
 }
@@ -117,14 +131,17 @@ async function saveDoubaos(ctx, list) {
     secrets.checkin = Object.keys(checkin).length ? checkin : undefined;
     await saveSecrets(ctx, secrets);
 }
-/** 加一个豆包账号；同一个 Cookie 再加 = 改名字。返回 id */
+/** 加一个豆包账号；同一个账号再加 = 换成新的 Cookie（和名字）。返回 id */
 export async function addDoubao(ctx, entry) {
     const list = await loadDoubaos(ctx);
     const name = entry.name?.trim().slice(0, 20);
-    const same = list.find((d) => d.cookie === entry.cookie);
+    const same = list.find((d) => sameDoubaoAccount(d.cookie, entry.cookie));
     if (same) {
+        same.cookie = entry.cookie;
         if (name)
             same.name = name;
+        if (entry.from)
+            same.from = entry.from;
         await saveDoubaos(ctx, list);
         return same.id;
     }
@@ -133,7 +150,7 @@ export async function addDoubao(ctx, entry) {
     while (used.has(String(n)))
         n++;
     const id = String(n);
-    list.push({ id, cookie: entry.cookie, seed: entry.seed ?? randomBytes(16).toString('hex'), ...(name ? { name } : {}), savedAt: new Date().toISOString() });
+    list.push({ id, cookie: entry.cookie, seed: entry.seed ?? randomBytes(16).toString('hex'), ...(name ? { name } : {}), ...(entry.from ? { from: entry.from } : {}), savedAt: new Date().toISOString() });
     await saveDoubaos(ctx, list);
     return id;
 }

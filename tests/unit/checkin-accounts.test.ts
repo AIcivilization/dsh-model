@@ -54,6 +54,14 @@ describe('multi-account check-in', () => {
     expect(await removeDoubao(ctx, '1')).toBe(true)
     expect(await removeDoubao(ctx, '9')).toBe(false)
     expect((await loadDoubaos(ctx)).map((d) => d.id)).toEqual(['2'])
-    expect(checkinAdvice('doubao', '豆包登录已过期（Cookie 失效）')).toMatch(/Cookie/)
+    expect(checkinAdvice('doubao', '豆包登录已过期（Cookie 失效）')).toMatch(/从本机自动读取/)
+  })
+
+  it('treats a fresher cookie of the same Doubao account (same uid_tt) as a replacement', async () => {
+    const { ctx } = await tempCtx()
+    expect(await addDoubao(ctx, { cookie: 'sessionid=s1; uid_tt=u1', seed: 'k', name: '主号' })).toBe('1')
+    expect(await addDoubao(ctx, { cookie: 's_v_web_id=new; sessionid=s2; uid_tt=u1', from: '豆包电脑版' })).toBe('1')
+    const [d] = await loadDoubaos(ctx)
+    expect([d!.cookie, d!.seed, d!.name, d!.from]).toEqual(['s_v_web_id=new; sessionid=s2; uid_tt=u1', 'k', '主号', '豆包电脑版'])
   })
 })

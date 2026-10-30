@@ -23,8 +23,9 @@ import { autoDue, beijingNow, checkinAdvice, ensureJitter, loadCheckin, runCheck
 import { QODER_REGIONS, exchangePat, qoderCheckin } from '../checkin/qoder.js'
 import { findTraeCredentials, traeCheckin } from '../checkin/trae.js'
 import { DoubaoAuthError, doubaoCheckin, doubaoStatus, normalizeCookie } from '../checkin/doubao.js'
+import { CookieAccessDenied, findDoubaoLogins, readDoubaoCookie } from '../checkin/browser-cookies.js'
 import { exportCheckin, importCheckin } from '../checkin/transfer.js'
-import { accountTag, addDoubao, checkinKind, addQoder, listWorkbuddyAccounts, loadDoubaos, loadQoders, removeDoubao, removeQoder, removeWorkbuddyAccount, workbuddyAccountStore, workbuddyAccountsDir } from '../checkin/accounts.js'
+import { accountTag, addDoubao, checkinKind, cookieValue, addQoder, listWorkbuddyAccounts, loadDoubaos, loadQoders, removeDoubao, removeQoder, removeWorkbuddyAccount, workbuddyAccountStore, workbuddyAccountsDir } from '../checkin/accounts.js'
 import { CN_VARIANT } from '../bridge/workbuddy/variants.js'
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js'
 import { randomBytes } from 'node:crypto'
@@ -789,7 +790,7 @@ export class Daemon {
     return out
   }
 
-  async checkinStatus(): Promise<{ auto: boolean; date: string; results: (CheckinItem & { advice?: string })[]; available: { id: CheckinId; label: string }[]; qoder: { configured: boolean; region?: string }; accounts: { workbuddy: { uid: string; label: string }[]; qoder: { id: string; label: string; region: string }[]; doubao: { id: string; label: string }[] }; missing: { id: string; label: string; action?: 'workbuddy' | 'qoder' | 'doubao'; reason?: string }[] }> {
+  async checkinStatus(): Promise<{ auto: boolean; date: string; results: (CheckinItem & { advice?: string })[]; available: { id: CheckinId; label: string }[]; qoder: { configured: boolean; region?: string }; accounts: { workbuddy: { uid: string; label: string }[]; qoder: { id: string; label: string; region: string }[]; doubao: { id: string; label: string }[] }; missing: { id: string; label: string; action?: 'workbuddy' | 'qoder' | 'doubao'; reason?: string; found?: string[] }[]; localRead: 'mac' | 'win' | null }> {
     const file = await loadCheckin(this.ctx.paths.home)
     const checkers = await this.checkers()
     const qoders = await loadQoders(this.ctx)
@@ -807,11 +808,14 @@ export class Daemon {
         qoder: qoders.map((q, i) => ({ id: q.id, label: checkers.find((c) => c.id === (i === 0 ? 'qoder' : `qoder:${q.id}`))?.label ?? q.id, region: q.region })),
         doubao: (await loadDoubaos(this.ctx)).map((d, i) => ({ id: d.id, label: checkers.find((c) => c.id === (i === 0 ? 'doubao' : `doubao:${d.id}`))?.label ?? d.id })),
       },
+      // 能不能从本机的豆包电脑版 / 浏览器读登录（看守护进程所在的机器，不是看浏览器）
+      localRead: process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : null,
       // 支持、但这台还没设置的（签到卡片里列出来，旁边就是「添加」）
       missing: [
         ...(checkers.some((c) => checkinKind(c.id) === 'workbuddy') ? [] : [{ id: 'workbuddy', label: L('WorkBuddy 国内版', 'WorkBuddy (China)'), action: 'workbuddy' as const }]),
         ...(checkers.some((c) => checkinKind(c.id) === 'qoder') ? [] : [{ id: 'qoder', label: 'Qoder', action: 'qoder' as const }]),
-        ...(checkers.some((c) => checkinKind(c.id) === 'doubao') ? [] : [{ id: 'doubao', label: L('豆包', 'Doubao'), action: 'doubao' as const }]),
+        // 本机豆包电脑版 / 浏览器登录着豆包：说出来，点「添加」就能自动读（只看有没有登录，不解密）
+        ...(checkers.some((c) => checkinKind(c.id) === 'doubao') ? [] : [{ id: 'doubao', label: L('豆包', 'Doubao'), action: 'doubao' as const, found: (await findDoubaoLogins().catch(() => [])).map((f) => f.label) }]),
         ...(checkers.some((c) => checkinKind(c.id) === 'trae') ? [] : [{ id: 'trae', label: 'Trae', reason: L('这台没装 Trae：要在装了 Trae 的电脑上签', 'Trae is not installed here: it is checked in on a computer with Trae') }]),
       ],
     }
@@ -861,6 +865,45 @@ export class Daemon {
     }
     if (st.checkedIn === null) throw new DshModelError('doubao_no_task', L('这个豆包账号没有签到任务：只有个人账号能领每日额度，飞书企业账号不行。请换成个人账号登录后再复制 Cookie', 'This Doubao account has no check-in task: only personal accounts get the daily credits, not Feishu enterprise accounts. Sign in with a personal account and copy the cookie again'))
     await addDoubao(this.ctx, { cookie, seed, ...(name ? { name } : {}) })
+  }
+
+  /**
+   * 从本机找豆包登录（豆包电脑版、Chrome、Edge、Brave），读出 Cookie 加成签到账号。
+   * macOS 会弹窗问用户是否允许读钥匙串；同一个账号在几处都登录着只加一次，已加过的换成新的 Cookie。
+   */
+  async scanDoubao(): Promise<{ added: string[]; skipped: { label: string; reason: string }[] }> {
+    const logins = await findDoubaoLogins()
+    if (!logins.length) throw new DshModelError('doubao_not_found', L('这台电脑上没找到登录着的豆包：先在豆包电脑版或浏览器里登录 doubao.com，或用下面的「手动粘贴 Cookie」', 'No signed-in Doubao found on this computer: sign in to doubao.com in the Doubao app or a browser first, or paste the cookie by hand below'))
+    const added: string[] = []
+    const skipped: { label: string; reason: string }[] = []
+    const seen = new Set<string>()
+    for (const login of logins) {
+      let cookie: string
+      try {
+        cookie = await readDoubaoCookie(login)
+      } catch (error) {
+        skipped.push({ label: login.label, reason: error instanceof CookieAccessDenied ? L('没有允许读取（钥匙串弹窗里点了拒绝）', 'access was not allowed in the keychain prompt') : String((error as Error).message ?? error) })
+        continue
+      }
+      const uid = cookieValue(cookie, 'uid_tt') ?? cookie
+      if (seen.has(uid)) continue
+      seen.add(uid)
+      const existing = (await loadDoubaos(this.ctx)).find((d) => cookieValue(d.cookie, 'uid_tt') === uid)
+      const seed = existing?.seed ?? randomBytes(16).toString('hex')
+      try {
+        const st = await doubaoStatus(cookie, seed)
+        if (st.checkedIn === null) {
+          skipped.push({ label: login.label, reason: L('登录的是飞书企业账号，没有每日额度（只有个人账号能领）', 'signed in with a Feishu enterprise account, which gets no daily credits (personal accounts only)') })
+          continue
+        }
+      } catch (error) {
+        skipped.push({ label: login.label, reason: error instanceof DoubaoAuthError ? L('登录已过期：在那里重新登录豆包', 'the sign-in expired: sign in to Doubao there again') : String((error as Error).message ?? error) })
+        continue
+      }
+      await addDoubao(this.ctx, { cookie, seed, from: login.label, ...(existing?.name ? {} : { name: login.label }) })
+      added.push(login.label)
+    }
+    return { added, skipped }
   }
 
   /** 加一个 WorkBuddy 签到账号：打开链接授权（同来源登录一样），存成单独一份，只用来签到 */
@@ -1221,6 +1264,11 @@ export class Daemon {
       if (method === 'POST' && path === '/checkin/import') {
         const n = await importCheckin(this.ctx, String(b.text ?? ''), String(b.code ?? ''))
         return ok({ imported: n, ...(await this.checkinNow(true)) })
+      }
+      if (method === 'POST' && path === '/checkin/doubao/scan') {
+        const found = await this.scanDoubao()
+        if (found.added.length) await this.checkinNow(false).catch(() => null)
+        return ok({ ...found, status: await this.checkinStatus() })
       }
       if (method === 'POST' && path === '/checkin/doubao') {
         await this.addDoubaoCookie(String(b.cookie ?? ''), typeof b.name === 'string' ? b.name : undefined)
