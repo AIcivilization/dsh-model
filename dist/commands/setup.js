@@ -173,7 +173,8 @@ export async function ensureEngine(ctx, all, opts = {}) {
     config.engine.version = version;
     if (!state.engine.versions.includes(version))
         state.engine.versions.push(version);
-    (installed ? ok : skip)(L(`引擎 CLIProxyAPI v${version}${installed ? ' 已下载并校验' : ' 已安装'}`, `Engine CLIProxyAPI v${version} ${installed ? 'downloaded and verified' : 'already installed'}`));
+    const how = installed === 'npm' ? L('（随 npm 装好）', ' (installed via npm)') : installed === 'download' ? L('，已下载并校验', ', downloaded and verified') : L('，已安装', ', already installed');
+    (installed ? ok : skip)(L(`引擎 CLIProxyAPI v${version}${how}`, `Engine CLIProxyAPI v${version}${how}`));
     const { created } = ensureDshKey(keys);
     if (created)
         await saveKeys(ctx, keys);

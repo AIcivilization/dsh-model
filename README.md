@@ -171,7 +171,7 @@ dsh · 编辑器 · 脚本 ──Bearer key──▶ 引擎 127.0.0.1:8317/v1（
 - 适合个人使用：每家用自己的一个账号，不要拿来对外提供服务。
 - 订阅和 WorkBuddy 的凭据在官方客户端之外使用，可能不符合服务商的条款，账号有风险，请自行判断。
 - 支持 Windows 10 / 11（x64、ARM64）、macOS、Linux，需要 Node ≥ 20。
-- 下载引擎要连 GitHub：setup 会自动用上系统代理（Windows、macOS）或 `HTTPS_PROXY`；连不上时会说明原因，可以用 `--proxy <地址>` 指定代理，或手动下载后设置 `DSH_MODEL_ENGINE_ARCHIVE`。
+- 引擎随 npm 一起装，国内免代理：引擎（CLIProxyAPI）按平台拆成了几个 npm 包，装 dsh-model 时只把当前平台那一个带下来（npm 国内有镜像），setup 不用再连 GitHub。npm 上没有对应平台的包时，才回退到从 GitHub 下载：这时 setup 会自动用上系统代理（Windows、macOS）或 `HTTPS_PROXY`，也可以用 `--proxy <地址>` 指定代理，或手动下载后设置 `DSH_MODEL_ENGINE_ARCHIVE`。
 - Windows：后台服务登录后自动运行、不弹窗口。如果被杀毒软件拦下（程序不见了或启动不了），把 `%USERPROFILE%\.dsh-model` 加入信任，再执行 `dsh-model repair`。
 
 ## License

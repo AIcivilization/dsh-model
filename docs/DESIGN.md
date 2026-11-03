@@ -281,11 +281,16 @@ dsh 走本机回环，引擎不暴露任何端口。dsh-vps 已经负责浏览�
 
 ## 8. 引擎分发与升级
 
-自用场景不发布分平台子包，引擎在 `setup` 时从 GitHub Release 下载：
+引擎优先随 npm 一起装（国内免代理），装不到再从 GitHub Release 下载：
 
-- 仓库内维护 `engine-manifest.json`：`{ version, assets: { "darwin-arm64": { url, sha256 }, "linux-amd64": {...}, ... } }`；
-- 下载 → **sha256 校验，不匹配直接失败** → 解压到 `engine/versions/<ver>/` → 切换 `current`；
-- **不使用 npm postinstall**，`npm i -g` 只装 dsh-model 本身；
+- 仓库内维护 `engine-manifest.json`：`{ version, assets: { "darwin-aarch64": { url, sha256 }, "linux-amd64": {...}, ... } }`（键是上游发布包的 os-arch 命名）；
+- **分平台 npm 包（2026-11-02 加，解决国内装不了）**：引擎按平台拆成 `dsh-model-engine-<process.platform>-<process.arch>`（darwin-arm64、linux-x64、win32-x64…），包里就是解压好的二进制，package.json 带 `os`/`cpu`（npm 只装当前平台那一个）、`engineVersion`、`engineSha256`。dsh-model 把这 6 个包列为 **optionalDependencies**，钉在引擎版本（如 8.0.13，不是 dsh-model 的版本）。
+  - 插件市场装 dsh-model 走 npm，npm 国内有镜像，引擎就跟着下来了，`setup` 不碰 GitHub；
+  - `installVersion` 先用 `localEngineBinary()`（`createRequire` 从本包解析平台包）找到二进制，校验 `engineSha256` 后拷进 `engine/versions/<ver>/`；找不到（没发布 / 老环境 / 设了 `DSH_MODEL_ENGINE_ARCHIVE`）才回退下载；
+  - optionalDependencies 装不上不报错（npm 容忍），自然回退，所以可以只发常用平台，其余照旧下载；
+  - 包的版本 = 引擎版本，引擎很少换，平时发 dsh-model 不用重发这些包；换引擎时跑 `scripts/build-engine-packages.mjs`（按 manifest 下载、校验、裁出二进制）再 `scripts/publish-engine-packages.sh` 逐个发布。
+- 下载路径：**sha256 校验（对 manifest），不匹配直接失败** → 解压到 `engine/versions/<ver>/` → 切换 `current`；
+- **不使用 npm postinstall**，`npm i -g` 只装 dsh-model 和当前平台的引擎包；
 - 检测到本机已有 CLIProxyAPI 实例占用端口时，不复用也不接管，端口顺延并提示；
 - `dsh-model engine upgrade [<ver>]`：显式升级，先在临时端口启动新版本跑一遍 `doctor --e2e`，通过后才切换 `current`；`engine rollback` 切回上一个版本。不做自动升级。
 - 需要改引擎时，fork 到 `AIcivilization/CLIProxyAPI`，manifest 指向 fork 的 release，其余流程不变。

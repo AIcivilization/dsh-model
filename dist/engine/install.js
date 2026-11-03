@@ -3,16 +3,17 @@
 // 只信任仓库里 engine-manifest.json 的 sha256；校验不过直接失败。
 // 版本目录 engine/versions/<v>/，current 软链指向在用版本，升级与回滚只切软链。
 // Windows：发布包是 zip、程序叫 cli-proxy-api.exe；建软链要管理员，所以 current 用目录联接（junction），不需要权限。
-import { chmod, mkdir, readFile, readlink, rename, rm, symlink, unlink } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, readlink, rename, rm, symlink, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DshModelError, isDshModelError } from '../errors.js';
 import { L } from '../i18n.js';
 import { downloadFile, downloadText } from '../util/download.js';
 import { run } from '../util/exec.js';
-import { ensureDir, exists, sha256 } from '../util/fs.js';
+import { ensureDir, exists, sha256, sha256File } from '../util/fs.js';
 import { PKG_ROOT } from '../util/pkg.js';
-export const ENGINE_BIN = process.platform === 'win32' ? 'cli-proxy-api.exe' : 'cli-proxy-api';
+import { ENGINE_BIN, localEngineBinary } from './packages.js';
+export { ENGINE_BIN };
 export async function loadManifest() {
     return JSON.parse(await readFile(join(PKG_ROOT, 'engine-manifest.json'), 'utf8'));
 }
@@ -62,17 +63,42 @@ export async function fetchUpstreamAsset(manifest, version, target, opts = {}) {
     return { file, url: `${base}/${file}`, sha256: sha };
 }
 /**
- * 安装某版本到 versions/<v>/（已装就跳过）。返回是否真的装了。
+ * 安装某版本到 versions/<v>/（已装就跳过）。
+ * 优先用 npm 装好的平台引擎包（国内也能装），没有再按 DSH_MODEL_ENGINE_ARCHIVE / 下载。
  * DSH_MODEL_ENGINE_ARCHIVE 可指向本地 tar.gz（离线 / 测试），同样要过 sha256 校验。
  */
 export async function installVersion(ctx, version, asset, opts = {}) {
     const bin = versionBinary(ctx, version);
     if (await exists(bin))
-        return false;
+        return null;
     await ensureDir(ctx.paths.tmp, { owner: ctx.owner });
     await mkdir(ctx.paths.versionsDir, { recursive: true });
-    const archive = join(ctx.paths.tmp, asset.file);
     const partial = join(ctx.paths.versionsDir, `${version}.partial`);
+    // 先看 npm 有没有装好这个平台的引擎（没配 DSH_MODEL_ENGINE_ARCHIVE 时）
+    const fromNpm = ctx.env.DSH_MODEL_ENGINE_ARCHIVE ? null : localEngineBinary(version);
+    if (fromNpm) {
+        try {
+            await rm(partial, { recursive: true, force: true });
+            await mkdir(partial, { recursive: true });
+            const dest = join(partial, ENGINE_BIN);
+            await copyFile(fromNpm.bin, dest);
+            if (fromNpm.sha256) {
+                const actual = await sha256File(dest);
+                if (actual !== fromNpm.sha256)
+                    throw new DshModelError('engine_checksum_mismatch', L(`npm 里的引擎校验失败：期望 ${fromNpm.sha256}，实际 ${actual}`, `Engine from npm failed checksum: expected ${fromNpm.sha256}, got ${actual}`));
+            }
+            if (process.platform !== 'win32')
+                await chmod(dest, 0o755);
+            await rename(partial, join(ctx.paths.versionsDir, version));
+            if (ctx.owner)
+                await run('chown', ['-R', `${ctx.owner.uid}:${ctx.owner.gid}`, ctx.paths.engineDir]);
+            return 'npm';
+        }
+        finally {
+            await rm(partial, { recursive: true, force: true });
+        }
+    }
+    const archive = join(ctx.paths.tmp, asset.file);
     try {
         const local = ctx.env.DSH_MODEL_ENGINE_ARCHIVE;
         let data;
@@ -110,7 +136,7 @@ export async function installVersion(ctx, version, asset, opts = {}) {
         await rename(partial, join(ctx.paths.versionsDir, version));
         if (ctx.owner)
             await run('chown', ['-R', `${ctx.owner.uid}:${ctx.owner.gid}`, ctx.paths.engineDir]);
-        return true;
+        return 'download';
     }
     finally {
         await rm(archive, { force: true });
