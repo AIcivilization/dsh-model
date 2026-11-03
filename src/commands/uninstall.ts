@@ -1,6 +1,6 @@
 // commands/uninstall.ts — 按台账逆序拆除：remote → dsh 接线 → 服务 → home。每步失败不中断，最后汇总
 
-import { cp, rm } from 'node:fs/promises'
+import { cp, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
@@ -27,6 +27,13 @@ async function confirm(question: string): Promise<boolean> {
     rl.close()
   }
 }
+
+/**
+ * 「用户卸载过」的标记：$DSH_MODEL_HOME 旁边的 <home>.uninstalled（home 本身会被删掉）。
+ * 从插件市场装的插件卸载时可能还留在 dsh 里（不是我们装的不删），插件后台和页面看到这个标记就不自动重装；
+ * 用户主动 setup 时删掉它。插件那边（plugin/index.js）用同样的路径。
+ */
+export const uninstalledMarker = (home: string): string => `${home}.uninstalled`
 
 export async function uninstall(ctx: Ctx, opts: { yes?: boolean; keepAuth?: boolean; removePlugin?: boolean }): Promise<number> {
   requireRootInVps(ctx)
@@ -95,6 +102,7 @@ export async function uninstall(ctx: Ctx, opts: { yes?: boolean; keepAuth?: bool
   }
   // Windows：刚结束的进程可能还没完全退出、还占着目录，删除会短暂报 EBUSY / EPERM，重试一会儿
   await rm(ctx.paths.home, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 })
+  await writeFile(uninstalledMarker(ctx.paths.home), `${new Date().toISOString()}\n`).catch(() => {})
   ok(L(`已删除 ${ctx.paths.home}，卸载完成`, `Deleted ${ctx.paths.home}; uninstall complete`))
   info(L('最后可执行：npm uninstall -g dsh-model', 'Finally you can run: npm uninstall -g dsh-model'))
   return 0

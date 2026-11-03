@@ -157,8 +157,38 @@ function startCli(action, args) {
   return job
 }
 
+/** 「用户卸载过」的标记，和 src/commands/uninstall.ts 的 uninstalledMarker 同一个路径 */
+const uninstalledMarker = () => `${home()}.uninstalled`
+
+/**
+ * dsh 加载插件时，这台还没装好就在后台自动装（用户："插件市场装上就装好"）。
+ * 只在本机（dsh-vps 要 root，交给页面给命令）、还没配置、用户没卸载过时；每个 dsh 进程只试一次，
+ * 失败了打开页面能看到原因、点按钮重试。DSH_MODEL_NO_AUTO_SETUP=1 关掉（测试用）。
+ */
+let autoSetupTried = false
+
+/** 要不要后台自动装：要就返回 null，不要就返回原因。导出给测试 */
+export async function autoSetupSkipReason() {
+  if (process.env.DSH_MODEL_NO_AUTO_SETUP) return 'disabled'
+  if (await exists(VPS_ROOT)) return 'vps'
+  if (await exists(join(home(), 'bridge.json'))) return 'configured'
+  if (await exists(uninstalledMarker())) return 'uninstalled'
+  return null
+}
+
+async function autoSetup() {
+  if (autoSetupTried) return
+  autoSetupTried = true
+  if (await autoSetupSkipReason()) return
+  const lang = /^zh/i.test(Intl.DateTimeFormat().resolvedOptions().locale || process.env.LANG || '') ? 'zh' : 'en'
+  startCli('setup', ['setup', '--skip-dsh-plugin', '--lang', lang])
+}
+
 export function apply(ctx) {
   const token = randomBytes(24).toString('hex')
+  // 等 dsh 自己先起来再装
+  const autoTimer = setTimeout(() => void autoSetup().catch(() => {}), 3000)
+  autoTimer.unref?.()
   ctx.inject(['webServer'], (webCtx) => {
     const ws = webCtx.webServer
     if (!ws || typeof ws.register !== 'function') return
@@ -258,7 +288,9 @@ export function apply(ctx) {
             return json(res, 200, { running: true, output: '', code: null, action: 'repair' })
           }
           // { poll: true }：只取进度；否则开始（已经在跑就接着看同一个）
-          if (body.poll) return json(res, 200, job ? { running: job.running, output: job.output, code: job.code, action: job.action } : { running: false, output: '', code: null })
+          // local / uninstalled：页面据此决定接着看后台安装、显示结果，还是自己开始
+          const extra = { local: true, uninstalled: await exists(uninstalledMarker()) }
+          if (body.poll) return json(res, 200, job ? { running: job.running, output: job.output, code: job.code, action: job.action, ...extra } : { running: false, output: '', code: null, ...extra })
           const action = body.action === 'repair' ? 'repair' : 'setup'
           const lang = body.lang === 'en' ? 'en' : 'zh'
           const j = startCli(action, action === 'repair' ? ['repair', '--lang', lang] : ['setup', '--skip-dsh-plugin', '--lang', lang])

@@ -756,13 +756,28 @@ window.__ModuleLoader__.load({
           setBusy(false)
         }
       }
-      // 从插件市场装好、第一次打开：直接开始安装，不用再点「一键安装」（用户说"能自动干嘛还要人工"）。
-      // 每个浏览器会话只自动一次，失败了不会反复重试，按钮还在。没装好的「修复」不自动（可能正在更新）。
+      // 从插件市场装好：dsh 加载插件时已经在后台开始装了（plugin/index.js 的 autoSetup）。打开页面时：
+      //   后台还在装 → 接着显示进度；装完了 → 成功就加载、失败就显示原因（按钮重试）；
+      //   用户卸载过 → 不自动装；都没有 → 页面自己开始装（每个浏览器会话只自动一次，失败不循环）。
+      // 「服务没在运行」的修复不自动（可能正在更新）。
       useEffect(() => {
         if (!notInstalled) return
-        const KEY = 'dsh-model.autoSetup'
-        try { if (window.sessionStorage.getItem(KEY)) return; window.sessionStorage.setItem(KEY, '1') } catch { /* 存不了也照样装一次 */ }
-        void run()
+        let stop = false
+        ;(async () => {
+          const p = await setupCall({ poll: true }).catch(() => ({}))
+          if (stop) return
+          if (p.local && p.running) return void run()
+          if (p.local && p.code !== null && p.code !== undefined && p.action === 'setup') {
+            if (p.code === 0) return void onDone()
+            setRes(p)
+            return
+          }
+          if (p.uninstalled) return
+          const KEY = 'dsh-model.autoSetup'
+          try { if (window.sessionStorage.getItem(KEY)) return; window.sessionStorage.setItem(KEY, '1') } catch { /* 存不了也照样装一次 */ }
+          void run()
+        })()
+        return () => { stop = true }
       }, [])
       const cmds = notInstalled ? ['npm install -g dsh-model', 'dsh-model setup'] : ['dsh-model repair']
       // setup 什么缺了补什么（卸载到一半、服务被删了也能救回来），比 repair 稳

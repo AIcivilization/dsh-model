@@ -21,5 +21,7 @@ describe('uninstall', () => {
     await writeFile(join(t.ctx.paths.home, 'state.json'), '{}')
     expect(await uninstall(t.ctx, { yes: true, removePlugin: true })).toBe(0)
     expect(existsSync(t.ctx.paths.home)).toBe(false)
+    // 留下「卸载过」标记：插件还留在 dsh 里时，它不会在后台把 dsh-model 又装回来
+    expect(existsSync(`${t.ctx.paths.home}.uninstalled`)).toBe(true)
   })
 })

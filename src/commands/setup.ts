@@ -25,6 +25,8 @@ import { ensureDaemon } from '../daemon/service.js'
 import { installDshPlugin } from '../integrations/dshplugin.js'
 import { enableCaddy } from './remote.js'
 import { installAdmin } from '../service/admin.js'
+import { rm } from 'node:fs/promises'
+import { uninstalledMarker } from './uninstall.js'
 import { DEFAULT_PUBLIC_PORT, publicHost } from '../remote/public.js'
 
 export interface SetupOptions {
@@ -43,6 +45,8 @@ export async function setup(ctx: Ctx, opts: SetupOptions): Promise<number> {
   return withLock(ctx, async () => {
     const all = await loadAll(ctx)
     await ensureDir(ctx.paths.home, { owner: ctx.owner })
+    // 主动安装：不再是「卸载过」，插件可以照常自动修好
+    await rm(uninstalledMarker(ctx.paths.home), { force: true })
     resolveProxy(all, opts, await detectProxy(ctx.env, ctx.platform))
     if (opts.profile) all.config.dsh.profile = opts.profile
 

@@ -12,6 +12,7 @@ type Handler = (call: { method: string; path: string; body?: unknown }) => [numb
 let handler: Handler = () => [404, {}]
 let hostInfo: unknown = { running: '1.0.0', installed: '1.0.0', restart: 'desktop' }
 let setupReplies: unknown[] = []
+let setupBodies: { poll?: boolean; action?: string }[] = []
 let Section: React.ComponentType
 let Overlay: React.ComponentType
 let CheckinOverlay: React.ComponentType
@@ -28,7 +29,7 @@ beforeAll(async () => {
   w.fetch = async (url: string, opts: { body: string }) => {
     if (url === '/api-dsh-model/token') return reply(200, { token: 't' })
     if (url === '/api-dsh-model/host') return reply(200, hostInfo)
-    if (url === '/api-dsh-model/setup') return reply(200, setupReplies.length > 1 ? setupReplies.shift() : setupReplies[0])
+    if (url === '/api-dsh-model/setup') return setupBodies.push(JSON.parse(opts.body)), reply(200, setupReplies.length > 1 ? setupReplies.shift() : setupReplies[0])
     const [status, body] = handler(JSON.parse(opts.body))
     return reply(status, body)
   }
@@ -46,6 +47,7 @@ beforeAll(async () => {
 afterEach(async () => {
   hostInfo = { running: '1.0.0', installed: '1.0.0', restart: 'desktop' }
   window.sessionStorage.clear()
+  setupBodies = []
   await act(async () => root?.unmount())
   root = undefined
   container?.remove()
@@ -215,6 +217,36 @@ describe('settings page', () => {
     await waitText('一键安装')
     await act(async () => new Promise((r) => setTimeout(r, 100)))
     expect(container.textContent).not.toContain('SHOULD-NOT-RUN')
+  })
+
+  it('follows a set-up already running in the background (started when dsh loaded the plugin)', async () => {
+    handler = () => [503, { error: { code: 'daemon_not_configured', message: 'not configured' } }]
+    setupReplies = [
+      { local: true, running: true, output: '后台：下载引擎…', code: null, action: 'setup' },
+      { local: true, running: true, output: '后台：下载引擎…', code: null, action: 'setup' },
+      { local: true, running: false, output: '后台：下载引擎…\n✓ 完成', code: 1, action: 'setup' },
+    ]
+    await render()
+    await waitText('后台：下载引擎…')
+    await waitText('没有完成（退出码 1）', 5000)
+  })
+
+  it('shows why a background set-up failed instead of starting another one', async () => {
+    handler = () => [503, { error: { code: 'daemon_not_configured', message: 'not configured' } }]
+    setupReplies = [{ local: true, running: false, output: 'BG-FAILED: Bootstrap failed', code: 1, action: 'setup' }]
+    await render()
+    await waitText('BG-FAILED')
+    expect(container.textContent).toContain('没有完成（退出码 1）')
+    expect(setupBodies.every((b) => b.poll)).toBe(true)
+  })
+
+  it('does not set itself up again after the user uninstalled', async () => {
+    handler = () => [503, { error: { code: 'daemon_not_configured', message: 'not configured' } }]
+    setupReplies = [{ local: true, uninstalled: true, running: false, output: '', code: null }]
+    await render()
+    await waitText('一键安装')
+    await act(async () => new Promise((r) => setTimeout(r, 100)))
+    expect(setupBodies.every((b) => b.poll)).toBe(true)
   })
 
   it('low quota: a notice in the shell overlay, dismissed for a day with "Got it"', async () => {

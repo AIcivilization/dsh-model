@@ -634,3 +634,12 @@ Gemini（Google AI Studio 的 OpenAI 兼容接口 `…/v1beta/openai`）、Groq�
 - **只读 doubao.com**（`doubao.com`、`.doubao.com`、`www.doubao.com` 三个域），读到后先用签到任务面板验证：飞书企业账号没有签到任务，不加。
 - **同一账号按 `uid_tt` 认**：几处都登录着只加一次；再读一次就是换成新的 Cookie（种子和名字不变），所以过期后再点一次即可。
 - 不在自动签到时读（那时用户可能不在，弹窗没人点）。读到的 Cookie 存 secrets.json，和手动粘贴的一样，也能复制到 VPS。
+
+### 14.22 插件市场装上就装好
+
+用户要求"插件市场装上就装好，不用再在设置页安装"（2026-11-03）。插件市场只下载文件，不跑我们的代码；dsh 加载插件时宿主端（plugin/index.js）才第一次运行，所以在那里自动装：
+
+- **宿主端**：`apply()` 后 3 秒检查 `autoSetupSkipReason()`：不是 dsh-vps（要 root，仍由页面给命令）、没有 `bridge.json`（没配置）、没有「卸载过」标记，就用和页面同一个任务（`startCli('setup', …)`）在后台跑 `setup --skip-dsh-plugin`。每个 dsh 进程只试一次；`DSH_MODEL_NO_AUTO_SETUP=1` 关掉（vitest 全局设了，测试里绝不能真装）。
+- **页面**：打开时先取后台任务的状态。还在装就接着显示进度；装完成功就直接加载；失败就显示原因、留「一键安装」重试，不自动再起一个；卸载过就不自动装；都没有才自己开始（每个浏览器会话一次）。
+- **「卸载过」标记** `<DSH_MODEL_HOME>.uninstalled`：插件从市场装时 uninstall 不删它（不是我们装的），没有标记的话下次 dsh 启动又会被装回去。uninstall 删掉 home 后写这个标记，主动 `setup` 时删掉。
+- 顺带修了新 Mac 上注册后台服务报 `Bootstrap failed: 5: Input/output error`：`launchctl bootout` 是异步的，现在等旧服务卸干净再 bootstrap，失败再试几次（§9）。

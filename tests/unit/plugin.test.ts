@@ -72,6 +72,30 @@ describe('dsh plugin host side', () => {
   })
 })
 
+describe('dsh plugin background auto set-up', () => {
+  it('only sets up a local machine that is not configured and was not uninstalled', async () => {
+    const plugin = await import('../../plugin/index.js')
+    const home = await mkdtemp(join(tmpdir(), 'dsh-model-auto-'))
+    const saved = { home: process.env.DSH_MODEL_HOME, off: process.env.DSH_MODEL_NO_AUTO_SETUP }
+    try {
+      expect(await plugin.autoSetupSkipReason()).toBe('disabled') // 测试里一直关着
+      delete process.env.DSH_MODEL_NO_AUTO_SETUP
+      process.env.DSH_MODEL_HOME = join(home, '.dsh-model')
+      // /opt/dsh-vps 在 CI 和开发机上都没有，所以下面看的是本机规则
+      expect(await plugin.autoSetupSkipReason()).toBeNull()
+      await writeFile(`${process.env.DSH_MODEL_HOME}.uninstalled`, 'x')
+      expect(await plugin.autoSetupSkipReason()).toBe('uninstalled')
+      process.env.DSH_MODEL_HOME = home
+      await writeFile(join(home, 'bridge.json'), '{}')
+      expect(await plugin.autoSetupSkipReason()).toBe('configured')
+    } finally {
+      process.env.DSH_MODEL_NO_AUTO_SETUP = saved.off ?? '1'
+      if (saved.home === undefined) delete process.env.DSH_MODEL_HOME
+      else process.env.DSH_MODEL_HOME = saved.home
+    }
+  })
+})
+
 describe('dsh plugin client side', () => {
   it('loads with a stub React and registers the settings section', () => {
     const src = readFileSync(join(__dirname, '../../plugin/client.js'), 'utf8')
