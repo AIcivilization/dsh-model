@@ -67,6 +67,8 @@ for (const [target, asset] of Object.entries(manifest.assets)) {
     mkdirSync(pkgDir, { recursive: true })
     copyFileSync(src, join(pkgDir, binName))
     if (platform !== 'win32') chmodSync(join(pkgDir, binName), 0o755)
+    // MIT 要求随二进制带上上游的许可证
+    if (readdirSync(tmp).includes('LICENSE')) copyFileSync(join(tmp, 'LICENSE'), join(pkgDir, 'LICENSE'))
     const engineSha256 = sha256(readFileSync(join(pkgDir, binName)))
     writeFileSync(
       join(pkgDir, 'package.json'),
@@ -80,7 +82,7 @@ for (const [target, asset] of Object.entries(manifest.assets)) {
           license: manifest.license,
           os: [platform],
           cpu: [cpu],
-          files: [binName],
+          files: [binName, 'LICENSE'],
           repository: 'https://github.com/AIcivilization/dsh-model',
         },
         null,
