@@ -756,6 +756,14 @@ window.__ModuleLoader__.load({
           setBusy(false)
         }
       }
+      // 从插件市场装好、第一次打开：直接开始安装，不用再点「一键安装」（用户说"能自动干嘛还要人工"）。
+      // 每个浏览器会话只自动一次，失败了不会反复重试，按钮还在。没装好的「修复」不自动（可能正在更新）。
+      useEffect(() => {
+        if (!notInstalled) return
+        const KEY = 'dsh-model.autoSetup'
+        try { if (window.sessionStorage.getItem(KEY)) return; window.sessionStorage.setItem(KEY, '1') } catch { /* 存不了也照样装一次 */ }
+        void run()
+      }, [])
       const cmds = notInstalled ? ['npm install -g dsh-model', 'dsh-model setup'] : ['dsh-model repair']
       // setup 什么缺了补什么（卸载到一半、服务被删了也能救回来），比 repair 稳
       const vpsCmds = notInstalled ? ['sudo npm install -g dsh-model', 'sudo dsh-model setup'] : ['sudo dsh-model setup']
@@ -764,7 +772,7 @@ window.__ModuleLoader__.load({
         h('div', { style: S.section },
           h('div', { style: S.h }, notInstalled ? L('还差一步：在这台机器上装好 dsh-model', 'One more step: set up dsh-model on this machine') : L('dsh-model 的服务没在运行', 'The dsh-model service is not running')),
           h('p', { style: S.note }, notInstalled
-            ? L('这个页面只是管理界面；模型由 dsh-model 在本机运行的服务提供（统一端点、WorkBuddy bridge、登录与用量）。装好后，来源、key 和模型都在这里管理。', 'This page is only the control panel; models are served by dsh-model\'s local service (the unified endpoint, WorkBuddy bridge, sign-ins and usage). Once it is set up, manage sources, keys and models here.')
+            ? L('这个页面只是管理界面；模型由 dsh-model 在本机运行的服务提供（统一端点、WorkBuddy bridge、登录与用量）。第一次打开会自动安装（约 1 分钟，不用联 GitHub），装好后来源、key 和模型都在这里管理。', 'This page is only the control panel; models are served by dsh-model\'s local service (the unified endpoint, WorkBuddy bridge, sign-ins and usage). It sets itself up the first time you open it (about a minute, no GitHub needed); then manage sources, keys and models here.')
             : L('可能是电脑重启后服务没起来，或者刚升级。修复会按记录重新注册并启动服务。', 'The service may not have started after a reboot, or was just upgraded. Repair re-registers and starts it from the saved records.')),
           res?.vps ? h('div', null,
             h('p', { style: { ...S.note, color: C.text } }, L('这是 dsh-vps 服务器：这一步要 root 权限，而这台机器上还没有 dsh-model 的管理员服务。请在服务器终端里执行一次（之后页面上的按钮就能用）：', 'This is a dsh-vps server: this needs root, and dsh-model\'s admin service is not on this machine yet. Run this once in a server terminal (the page buttons work afterwards):')),

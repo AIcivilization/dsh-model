@@ -3,6 +3,7 @@ import { rm } from 'node:fs/promises';
 import { info } from '../util/output.js';
 import { DshModelError } from '../errors.js';
 import { L } from '../i18n.js';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { run } from '../util/exec.js';
 import { atomicWrite, exists } from '../util/fs.js';
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -39,7 +40,8 @@ ${envBlock}  <key>WorkingDirectory</key>
 </plist>
 `;
 }
-export function launchd(spec) {
+export function launchd(spec, deps = { run, sleep }) {
+    const run = deps.run;
     const domain = `gui/${process.getuid?.() ?? 501}`;
     const target = `${domain}/${spec.label}`;
     /**
@@ -55,16 +57,29 @@ export function launchd(spec) {
         return true;
     };
     const loaded = async () => (await run('launchctl', ['print', target])).code === 0;
+    /**
+     * 加载服务。bootout 是异步的：命令返回时旧服务可能还没卸干净，紧接着 bootstrap 会报 5: Input/output error
+     * （2026-11-03 新电脑上「一键安装」实测，过一会儿点「修复」就好）。所以失败了等一下再试，最多 5 次。
+     */
     const bootstrap = async () => {
         await reenable();
-        const r = await run('launchctl', ['bootstrap', domain, spec.file]);
-        // 已经加载过会报错（5 / 37 等）：不看错误码，直接看它到底加载上没有
+        let r = await run('launchctl', ['bootstrap', domain, spec.file]);
+        for (let i = 0; r.code !== 0 && i < 4; i++) {
+            // 已经加载过也会报错（5 / 37 等）：不看错误码，直接看它到底加载上没有
+            if (await loaded())
+                return;
+            await deps.sleep(1000);
+            r = await run('launchctl', ['bootstrap', domain, spec.file]);
+        }
         if (r.code !== 0 && !(await loaded())) {
             throw new DshModelError('service_failed', L(`后台服务 ${spec.label} 没能加载：${r.stderr.trim()}`, `Could not load background service ${spec.label}: ${r.stderr.trim()}`), L('看一下「系统设置 → 通用 → 登录项与扩展 → 允许在后台」里它是否被关掉了', 'Check System Settings → General → Login Items & Extensions → Allow in the Background'));
         }
     };
+    /** 卸下服务，并等它真的卸干净（最多约 5 秒） */
     const bootout = async () => {
         await run('launchctl', ['bootout', target]);
+        for (let i = 0; i < 25 && (await loaded()); i++)
+            await deps.sleep(200);
     };
     return {
         kind: 'launchd',

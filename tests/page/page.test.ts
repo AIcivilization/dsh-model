@@ -45,6 +45,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   hostInfo = { running: '1.0.0', installed: '1.0.0', restart: 'desktop' }
+  window.sessionStorage.clear()
   await act(async () => root?.unmount())
   root = undefined
   container?.remove()
@@ -194,7 +195,7 @@ describe('settings page', () => {
     await waitText('可用 · 1.2 秒 · 好')
   })
 
-  it('one-click set-up shows progress while it runs', async () => {
+  it('first open starts the set-up by itself and shows progress (once per session)', async () => {
     handler = () => [503, { error: { code: 'daemon_not_configured', message: 'not configured' } }]
     setupReplies = [
       { running: true, output: '统一端点（引擎）\n下载引擎…', code: null },
@@ -202,12 +203,18 @@ describe('settings page', () => {
       { running: false, output: '统一端点（引擎）\n下载引擎…\n✓ 引擎已在 127.0.0.1:8317 运行\n✓ 完成', code: 1 },
     ]
     await render()
-    await waitText('一键安装')
-    await click('一键安装')
+    // 不点按钮就开始装
     await waitText('下载引擎…')
     expect(container.textContent).toContain('进行中…')
     await waitText('没有完成（退出码 1）', 5000)
     expect(container.textContent).toContain('✓ 完成')
+    // 同一会话再打开不再自动装（失败了不会循环），按钮还在
+    await act(async () => root?.unmount())
+    setupReplies = [{ running: false, output: 'SHOULD-NOT-RUN', code: 0 }]
+    await render()
+    await waitText('一键安装')
+    await act(async () => new Promise((r) => setTimeout(r, 100)))
+    expect(container.textContent).not.toContain('SHOULD-NOT-RUN')
   })
 
   it('low quota: a notice in the shell overlay, dismissed for a day with "Got it"', async () => {

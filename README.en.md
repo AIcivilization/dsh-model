@@ -94,7 +94,7 @@ On a dsh-vps server, use `sudo dsh-model setup`. On Windows, run it in a normal 
 | **Model stats** | Success rate, latency and speed per model |
 | **About** | Current and latest npm version; one-click Update and Uninstall (on a VPS these need root, so the commands are shown instead) |
 
-If the service is not set up on this machine yet, the page says what is missing and offers a "Set up now" button with live progress. A "Getting started" guide appears on a fresh install; a banner shows when the plugin was updated but dsh not restarted (one-click restart on dsh-vps); a low-quota notice appears in the corner of any dsh page. so you can also start by installing dsh-model from the dsh plugin marketplace and finish from this page.
+If the service is not set up on this machine yet, opening the page for the first time starts the set-up by itself (the engine comes with npm, no GitHub needed) with live progress; if it does not finish, "Set up now" tries again. A "Getting started" guide appears on a fresh install; a banner shows when the plugin was updated but dsh not restarted (one-click restart on dsh-vps); a low-quota notice appears in the corner of any dsh page. So installing dsh-model from the dsh plugin marketplace and opening this page is all it takes.
 
 dsh-model does every sign-in itself. No provider CLI is installed and the server needs no browser:
 
