@@ -5,17 +5,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 dir=engine-packages
-[ -d "$dir" ] || { echo "没有 $dir，先运行：node scripts/build-engine-packages.mjs"; exit 1; }
+[ -d "$dir" ] || { echo "没有 ${dir}，先运行：node scripts/build-engine-packages.mjs"; exit 1; }
 
 for pkg in "$dir"/*/; do
   name=$(node -p "require('./$pkg/package.json').name")
   ver=$(node -p "require('./$pkg/package.json').version")
-  have=$(npm view "$name@$ver" version 2>/dev/null || true)
+  have=$(npm view "${name}@${ver}" version 2>/dev/null || true)
   if [ "$have" = "$ver" ]; then
-    echo "跳过 $name@$ver（已发布）"
+    echo "跳过 ${name}@${ver}（已发布）"
     continue
   fi
-  echo "发布 $name@$ver …"
+  echo "发布 ${name}@${ver} …"
   ( cd "$pkg" && npm publish --access public )
 done
 echo "完成。"
