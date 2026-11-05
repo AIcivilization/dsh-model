@@ -43,6 +43,14 @@ export const KEY_PROVIDERS: KeyProvider[] = [
   { id: 'ark', label: '火山方舟（豆包大模型）', base: 'https://ark.cn-beijing.volces.com/api/v3', keyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey', fallbackModels: ['doubao-seed-1-6-flash-250615', 'doubao-seed-1-6-250615', 'deepseek-v3-1-250821'], direct: true },
   { id: 'minimax', label: 'MiniMax 开放平台', base: 'https://api.minimaxi.com/v1', keyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key', fallbackModels: ['MiniMax-M2', 'MiniMax-M1', 'MiniMax-Text-01'], direct: true },
   { id: 'modelarts', label: '华为云 ModelArts', base: 'https://api.modelarts-maas.com/v1', keyUrl: 'https://console.huaweicloud.com/modelarts/?region=cn-southwest-2#/model-studio/authmanage', fallbackModels: ['DeepSeek-V3', 'DeepSeek-R1', 'qwen3-235b-a22b'], direct: true },
+  // 更多官方来源（2026-11-05 加，见设计 §14.23）：地址都实测过（不带 key 返回 401 / 列表），免费档按各家公开说明
+  { id: 'modelscope', label: '魔搭 ModelScope', base: 'https://api-inference.modelscope.cn/v1', keyUrl: 'https://modelscope.cn/my/myaccesstoken', freeRe: /./, direct: true },
+  { id: 'hunyuan', label: '腾讯混元', base: 'https://api.hunyuan.cloud.tencent.com/v1', keyUrl: 'https://console.cloud.tencent.com/hunyuan/start', fallbackModels: ['hunyuan-lite', 'hunyuan-turbos-latest'], freeRe: /^hunyuan-lite$/i, direct: true },
+  { id: 'dashscope', label: '阿里云百炼', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', keyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key', fallbackModels: ['qwen-turbo', 'qwen-plus', 'qwen-max'], direct: true },
+  { id: 'moonshot', label: 'Moonshot（Kimi 开放平台）', base: 'https://api.moonshot.cn/v1', keyUrl: 'https://platform.moonshot.cn/console/api-keys', direct: true },
+  { id: 'stepfun', label: '阶跃星辰 StepFun', base: 'https://api.stepfun.com/v1', keyUrl: 'https://platform.stepfun.com/interface-key', direct: true },
+  { id: 'mistral', label: 'Mistral', base: 'https://api.mistral.ai/v1', keyUrl: 'https://console.mistral.ai/api-keys' },
+  { id: 'nvidia', label: 'NVIDIA（build.nvidia.com）', base: 'https://integrate.api.nvidia.com/v1', keyUrl: 'https://build.nvidia.com/settings/api-keys' },
   { id: 'deepseek', label: 'DeepSeek 官方', base: 'https://api.deepseek.com/v1', keyUrl: 'https://platform.deepseek.com/api_keys' },
   { id: 'custom', label: '其他 OpenAI 兼容服务', base: '', keyUrl: '' },
 ]

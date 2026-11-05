@@ -249,6 +249,30 @@ describe('settings page', () => {
     expect(setupBodies.every((b) => b.poll)).toBe(true)
   })
 
+  it('shows 24-hour token totals and a request log whose failed rows say why', async () => {
+    const now = Date.now()
+    const at = (ago: number) => new Date(now - ago).toISOString()
+    const d1 = { requests: 3, failures: 1, successRate: 2 / 3, avgLatencyMs: 1200, tokensPerSec: 40, lastUsedAt: at(0), lastFailureAt: at(0), inputTokens: 2000, outputTokens: 100, cachedTokens: 800, cacheHitRate: 0.4 }
+    handler = normal((c) => {
+      if (c.path === '/failures') return [200, [{ at: at(1000), model: 'codex/gpt-5', status: 429, kind: 'rate', advice: '限流了：稍后再试', message: 'rate limited' }]]
+      if (c.path === '/requests') return [200, [
+        { at: at(0), key: 'dsh', source: 'codex', model: 'codex/gpt-5', latencyMs: 300, inputTokens: 0, outputTokens: 0, cachedTokens: 0, failed: true },
+        { at: at(5000), key: 'dsh', source: 'workbuddy', model: 'workbuddy/a', latencyMs: 1500, inputTokens: 1200, outputTokens: 50, cachedTokens: 600, failed: false },
+      ]]
+      return [404, {}]
+    })
+    const base = handler
+    handler = (c) => (c.path === '/stats' ? [200, { total: { h1: d1, d1 }, byKey: {}, bySource: {}, byModel: { 'workbuddy/a': { source: 'workbuddy', h1: d1, d1 } } }] : base(c))
+    await render()
+    await waitText('请求 3 次')
+    expect(container.textContent).toContain('输入 2.0k / 输出 100 tokens')
+    expect(container.textContent).toContain('缓存命中 40%')
+    await click('▸ 最近请求')
+    await waitText('workbuddy/a')
+    expect(container.textContent).toContain('失败：限流了：稍后再试')
+    expect(container.textContent).toContain('1.2k / 50')
+  })
+
   it('low quota: a notice in the shell overlay, dismissed for a day with "Got it"', async () => {
     window.localStorage.clear()
     handler = (c) => (c.path === '/usage' ? [200, [{ source: 'workbuddy-ai', label: 'WorkBuddy AI', windows: [], credits: { remaining: 50, total: 670 }, fetchedAt: new Date().toISOString() }, { source: 'workbuddy', label: 'WorkBuddy', windows: [], credits: { remaining: 3000, total: 4000 }, fetchedAt: new Date().toISOString() }]] : [404, {}])

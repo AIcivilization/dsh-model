@@ -643,3 +643,44 @@ Gemini（Google AI Studio 的 OpenAI 兼容接口 `…/v1beta/openai`）、Groq�
 - **页面**：打开时先取后台任务的状态。还在装就接着显示进度；装完成功就直接加载；失败就显示原因、留「一键安装」重试，不自动再起一个；卸载过就不自动装；都没有才自己开始（每个浏览器会话一次）。
 - **「卸载过」标记** `<DSH_MODEL_HOME>.uninstalled`：插件从市场装时 uninstall 不删它（不是我们装的），没有标记的话下次 dsh 启动又会被装回去。uninstall 删掉 home 后写这个标记，主动 `setup` 时删掉。
 - 顺带修了新 Mac 上注册后台服务报 `Bootstrap failed: 5: Input/output error`：`launchctl bootout` 是异步的，现在等旧服务卸干净再 bootstrap，失败再试几次（§9）。
+
+### 14.23 和 dsh-free-model 竞争（2026-11-05）
+
+调研对象：npm 上的 `dsh-free-model`（别人插件的精简 fork，渠道代码打包自 Jet 的 `dsh-providers-hub`，MIT）。
+
+- **它强在哪**：十五个 IDE / Agent 账号渠道能直接在 dsh 里对话；逐请求的看板（首字延迟、速度、缓存命中、Token 账本）；直接跑在 dsh 进程里，不用后台服务；附出网审计文档。
+- **它的代价**：
+  - 渠道是各家客户端的私有接口：包里带了从 Qoder 客户端拿的登录 WASM；
+  - 有"腾讯系内容指纹改写"，专门对付 WorkBuddy 的拦截码 11128；
+  - 这正是我们说定不做的（伪装、绕过拦截、私有对话接口）。
+- **我们的打法**（都不越线）：
+  1. **定位**：README 顶部对比表，加 [docs/EGRESS.md](EGRESS.md) 出网清单（没有自己的服务器、没有遥测）。
+  2. **用正规渠道把来源做多**：新增魔搭 ModelScope、腾讯混元、阿里云百炼、Moonshot、阶跃星辰、Mistral、NVIDIA，共 31 个来源。地址都实测过（不带 key 回 401 或列表），免费档按各家公开说明写。
+     - 没加 GitHub Models：有消息说已于 2026-07 下线，确认不了。
+     - 没加 Cerebras：经代理回 403，这边验证不了。
+  3. **看板**：引擎的用量记录里有输入、输出、推理、缓存 token，于是加了：
+     - 24 小时合计；
+     - 每个模型的 token 和缓存命中率；
+     - 「最近请求」逐条列表（最近 200 条，失败的按模型和时间对上「最近失败」写原因）。
+
+     引擎不报首字时间，要测就得自己代理每一条流，所以不做首字延迟，也不硬凑。
+  4. **签到**：加 OfficeAce（§14.24）。
+
+### 14.24 OfficeAce（华为云）每日积分（实验）
+
+- 照 Jet 渠道包的 `officeace-auth.ts`（MIT）搬「登录 + 续期 + 领奖励」，**只签到，不接它的模型**（同 Qoder、Trae）。
+- **登录**：
+  - 华为云账号在浏览器里正常登录（OAuth 授权码 + PKCE + DPoP），用的是 OfficeAce 客户端（OfficeClaw）的 client id `pdp5_for_agentarts`；
+  - 回调落在华为云的 AgentArts 服务，按 state 轮询取回授权码，向 STS 换临时 AK/SK + security token；
+  - 因为回调不在本机，VPS 上也能登录。
+- **续期**：
+  - refresh token **只能用一次**，换完马上写回 secrets.json；
+  - 所以不能复制到别的机器（同 WorkBuddy），每台各自登录。
+- **领取**：`POST /v1/subscription/bonus/claim`，用华为云 APIG 的 V11-HMAC-SHA256 签名。
+  - 返回的 `bonus_skus` 积分大于 0 记为「签到成功」，否则记为「今天已领过」；
+  - 401、403 或 STS 4xx 记为登录失效，建议删掉重加。
+- **没搬的**：渠道包里读 OfficeClaw 客户端的 Windows 凭据管理器、本地 Redis 和 DPAPI cookie 的分支。我们不读别的软件的本地凭据。
+- **未实测**（没有账号）：
+  - 登录状态接口能拿到 state；
+  - 领取接口不带签名时回 `APIG.0301`（说明地址和鉴权方式都对）；
+  - 签名按渠道包逐行移植，有单测。

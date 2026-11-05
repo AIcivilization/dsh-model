@@ -33,6 +33,36 @@ describe('stats', () => {
     expect(again.snapshot().byKey.laptop!.d1.requests).toBe(1)
   })
 
+  it('adds up input / output / cached tokens, a cache hit rate, and lists recent requests newest first', async () => {
+    const s = new Stats(join(await mkdtemp(join(tmpdir(), 'dsh-model-stats-')), 'stats.json'))
+    const now = Date.now()
+    s.add(
+      [
+        rec({ timestamp: new Date(now - 2000).toISOString(), tokens: { input_tokens: 1000, cached_tokens: 600, output_tokens: 40, reasoning_tokens: 10 } }),
+        rec({ timestamp: new Date(now - 1000).toISOString(), tokens: { input_tokens: 1000, cached_tokens: 200, output_tokens: 50 } }),
+        rec({ timestamp: new Date(now).toISOString(), alias: 'gpt-5', provider: 'codex', failed: true, tokens: {} }),
+      ],
+      () => 'dsh',
+    )
+    const t = s.snapshot().total.d1
+    expect(t).toMatchObject({ requests: 3, inputTokens: 2000, outputTokens: 100, cachedTokens: 800, cacheHitRate: 0.4 })
+    expect(s.snapshot().byModel['workbuddy/hy3']!.d1.cacheHitRate).toBe(0.4)
+    const recent = s.recent(10)
+    expect(recent.map((r) => [r.model, r.failed])).toEqual([['gpt-5', true], ['workbuddy/hy3', false], ['workbuddy/hy3', false]])
+    expect(recent[2]).toMatchObject({ key: 'dsh', source: 'workbuddy', inputTokens: 1000, cachedTokens: 600, outputTokens: 50 })
+    expect(s.recent(1)).toHaveLength(1)
+  })
+
+  it('reads records saved by an older version (no input / cached tokens) as zero', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-model-stats-'))
+    const { writeFile } = await import('node:fs/promises')
+    await writeFile(join(dir, 'stats.json'), JSON.stringify({ recs: [{ t: Date.now(), k: 'dsh', p: 'codex', m: 'gpt-5', l: 800, o: 20, f: 0 }] }))
+    const s = new Stats(join(dir, 'stats.json'))
+    await s.load()
+    expect(s.snapshot().total.d1).toMatchObject({ requests: 1, inputTokens: 0, cachedTokens: 0, cacheHitRate: null })
+    expect(s.recent()[0]).toMatchObject({ model: 'gpt-5', inputTokens: 0, cachedTokens: 0 })
+  })
+
   it('maps prefixed aliases to their source and falls back to provider', () => {
     expect(sourceOf({ timestamp: '', latency_ms: 0, failed: false, alias: 'opencode/big-pickle' })).toBe('opencode')
     expect(sourceOf({ timestamp: '', latency_ms: 0, failed: false, alias: 'gpt-5', provider: 'codex' })).toBe('codex')

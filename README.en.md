@@ -2,7 +2,7 @@
 
 # dsh-model
 
-**📅 Daily check-in credits claimed for you (Trae, Qoder, WorkBuddy, Doubao) · 🔁 one address that relays every model · 🧩 free and subscription models, your pick**
+**📅 Daily check-in credits claimed for you (Trae, Qoder, WorkBuddy, Doubao, OfficeAce) · 🔁 one address that relays every model · 🧩 31 sources, free and subscription, your pick**
 
 Install once and all three are taken care of. dsh gets a management page; without dsh, the command line does everything.
 
@@ -19,6 +19,18 @@ English · [中文](README.md)
 
 </div>
 
+## ✅ Why dsh-model
+
+| | dsh-model | Typical "free model" plugins |
+|---|---|---|
+| How models are connected | Each vendor's **official** API and proper subscription sign-ins | IDE clients' private APIs, some rewriting requests to get past the vendor's blocking |
+| Account safety | **No disguise, no getting around blocks**: if a vendor blocks it, we stop | Breaks when the vendor changes its protocol; accounts can be banned |
+| Where it works | One address for dsh, editors, scripts and other computers | Mostly inside dsh only |
+| Sources | **31**: free, subscription, local and pay as you go | A dozen or so account channels |
+| Check-in | Trae, Qoder, WorkBuddy, Doubao, OfficeAce, **several accounts each**, can run on an always-on VPS | Some |
+| Install | Installing from the plugin marketplace **sets itself up**; no GitHub needed in China | Restart dsh after installing |
+| Transparency | No server of our own, no telemetry; every address it talks to is in the [egress list](docs/EGRESS.md) | — |
+
 ## 📅 1. Daily check-in: credits land on their own
 
 **The most hands-off part: no more remembering to claim the daily check-in credits.**
@@ -29,11 +41,12 @@ English · [中文](README.md)
 | **Qoder** | Paste a personal access token once (China or international) | That day's check-in credits |
 | **WorkBuddy (China)** | Sign in once (several accounts are fine) | Check-in credits |
 | **Doubao** (experimental) | On Mac / Windows click "Read from this computer" to use the account signed in to the Doubao app or a browser; or paste the cookie by hand (personal accounts only) | Daily trial credits |
+| **OfficeAce** (Huawei Cloud, experimental) | Click "+ Add OfficeAce" and sign in to Huawei Cloud in the browser (works on a VPS too) | Daily points |
 
 - **Automatic by default**: done at a random 5–55 minutes after midnight Beijing time; failures retry an hour later; if the computer was off, it catches up within a minute of starting.
 - **You can see it**: one line at the top of the settings page, "Checked in today: …", with a one-click "Check in all" for anything missed, plus a one-time notice in the corner of dsh.
 - **What else this machine can do**: the card lists the supported products not set up here yet, each with "+ Add".
-- **Move it to an always-on VPS**: "Copy check-in accounts to another machine" gives an encrypted text and a code to import on the VPS page (Qoder and Doubao; sign in to WorkBuddy on the VPS itself, and Trae stays on the computer that has Trae).
+- **Move it to an always-on VPS**: "Copy check-in accounts to another machine" gives an encrypted text and a code to import on the VPS page (Qoder and Doubao; sign in to WorkBuddy and OfficeAce on the VPS itself, and Trae stays on the computer that has Trae).
 - **Several accounts**: each product can have more than one. In the check-in card's Details: "+ Add a WorkBuddy account" (approve through a link) and "+ Add another Qoder account"; several Trae installs are checked in once per account automatically.
 - **Check-in only, credits untouched**: they stay on your account for use in each product's own app. Command line: `dsh-model checkin`.
 
@@ -44,7 +57,7 @@ Your model sources each have their own API and sign-in. dsh-model puts them behi
 - **Shows up in dsh**: every model, grouped by source, with nothing to configure.
 - **Works in other tools**: Cline, Continue, Cherry Studio, scripts: anything that speaks the OpenAI API uses the same address and key.
 - **Rate limits are not the end**: build a combo (say Codex → Kimi → Gemini) and the next model takes over on a rate limit, used-up quota or error.
-- **Know where you stand**: plan usage with reset countdowns, success rate and speed per model, recent failures with what to do, and a notice when quota runs low.
+- **Know where you stand**: plan usage with reset countdowns; success rate, latency, speed, token usage and cache hits per model; a "Recent requests" log where failed rows say why and what to do; and a notice when quota runs low.
 - **Secure by default**: a key is always required, one per device, revocable any time; every sign-in happens on your own machine.
 - **Laptop or server**: Windows, macOS, Linux; on a VPS (with [dsh-vps](https://github.com/AIcivilization/dsh-vps)) it opens an https address you can use from anywhere. Uninstall restores dsh's config byte for byte.
 
@@ -53,10 +66,10 @@ Your model sources each have their own API and sign-in. dsh-model puts them behi
 | Kind | Sources |
 |---|---|
 | **Free (suggested)** | **SiliconFlow** (reachable from China; some models free after identity verification), **Gemini** (if you can reach Google; the best free models) |
-| Free · limited | **Zhipu GLM** (the Flash models), **iFlytek Spark** (Spark Lite), Baidu Qianfan (ERNIE Speed / Lite), Groq, OpenRouter (`:free` models) |
+| Free · limited | **ModelScope** (about 2,000 calls a day), **Zhipu GLM** (the Flash models), **iFlytek Spark** (Spark Lite), Tencent Hunyuan (hunyuan-lite), Baidu Qianfan (ERNIE Speed / Lite), Mistral, NVIDIA, Groq, OpenRouter (`:free` models) |
 | Local | Ollama, LM Studio: appear once started, no sign-in |
 | Subscription | Codex (ChatGPT Plus / Pro), Kimi Code, Grok, Muse, Devin: sign in from the management page |
-| Pay as you go | DeepSeek official, OpenCode Zen, any OpenAI-compatible service |
+| Pay as you go | DeepSeek official, Alibaba Cloud Bailian (new users get about 1M free tokens per model), Moonshot, StepFun, Volcengine Ark, MiniMax, Huawei Cloud ModelArts, OpenCode Zen, any OpenAI-compatible service |
 
 Every source is tagged Free / Free · limited / Paid; see [Sources and cost](#sources-and-cost) below. dsh-model only connects; it provides no quota of its own.
 
@@ -117,6 +130,11 @@ If a source is signed in but has no usable plan (say, a Kimi account without Kim
 | Zhipu GLM | Free · limited | The Flash models (e.g. GLM-4.7-Flash) are free; reachable from China |
 | iFlytek Spark | Free · limited | Spark Lite is free with no token cap, 2 requests per second; use the console's APIPassword as the key |
 | Baidu Qianfan | Free · limited | ERNIE Speed / Lite are free for now (rate limited) |
+| ModelScope | Free · limited | About 2,000 calls a day (each model has its own cap; resets at midnight Beijing time); link an Alibaba Cloud account first and use your ModelScope access token |
+| Tencent Hunyuan | Free · limited | hunyuan-lite is free (limited concurrency); new users get some free tokens |
+| Mistral | Free · limited | Free Experiment plan with a verified phone number; free-tier requests may be used for training |
+| NVIDIA (build.nvidia.com) | Free · limited | Free developer trial, rate limited per minute |
+| Alibaba Cloud Bailian, Moonshot, StepFun | Paid | Official APIs; Bailian gives new users about 1M free tokens per model (Beijing region, about 90 days) |
 | Volcengine Ark (Doubao models), MiniMax, Huawei Cloud ModelArts | Paid | Official APIs, just add a key; Ark and Huawei Cloud have free quotas for new users |
 | DeepSeek official, any OpenAI-compatible service | Paid | Paste an API key (and a URL for other services) |
 | Codex | Paid | ChatGPT Plus / Pro |
@@ -137,7 +155,7 @@ dsh-model only connects; it provides no quota of its own.
 | `sources` | Sources: switch, cost, sign-in state, usage |
 | `source enable\|disable\|logout <source>` | Turn on (signing in if needed) / off / sign out |
 | `key list\|add\|revoke\|rotate <name>` | Access keys, one per device |
-| `checkin` | Check in now (WorkBuddy China, Qoder, Trae; automatic daily by default) |
+| `checkin` | Check in now (WorkBuddy China, Qoder, Trae, Doubao, OfficeAce; automatic daily by default) |
 | `combo list\|add <name> <model…>\|remove <id>` | Combos: try several models in order |
 | `failures` | Failed requests in the last 24 hours, with advice |
 | `stats` | Success rate, latency and speed by key, source and model |

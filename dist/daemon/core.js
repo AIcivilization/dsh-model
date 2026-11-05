@@ -21,8 +21,9 @@ import { QODER_REGIONS, exchangePat, qoderCheckin } from '../checkin/qoder.js';
 import { findTraeCredentials, traeCheckin } from '../checkin/trae.js';
 import { DoubaoAuthError, doubaoCheckin, doubaoStatus, normalizeCookie } from '../checkin/doubao.js';
 import { CookieAccessDenied, findDoubaoLogins, readDoubaoCookie } from '../checkin/browser-cookies.js';
+import { exchangeOfficeAceCode, officeAceClaim, officeAceExpiring, pollOfficeAceCode, refreshOfficeAce, startOfficeAceLogin } from '../checkin/officeace.js';
 import { exportCheckin, importCheckin } from '../checkin/transfer.js';
-import { accountTag, addDoubao, checkinKind, cookieValue, addQoder, listWorkbuddyAccounts, loadDoubaos, loadQoders, removeDoubao, removeQoder, removeWorkbuddyAccount, workbuddyAccountStore, workbuddyAccountsDir } from '../checkin/accounts.js';
+import { accountTag, addDoubao, addOfficeAce, loadOfficeAces, removeOfficeAce, updateOfficeAce, checkinKind, cookieValue, addQoder, listWorkbuddyAccounts, loadDoubaos, loadQoders, removeDoubao, removeQoder, removeWorkbuddyAccount, workbuddyAccountStore, workbuddyAccountsDir } from '../checkin/accounts.js';
 import { CN_VARIANT } from '../bridge/workbuddy/variants.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
 import { randomBytes } from 'node:crypto';
@@ -764,6 +765,23 @@ export class Daemon {
             const tag = d.name || (doubaos.length > 1 ? `#${d.id}` : '');
             out.push({ id: i === 0 ? 'doubao' : `doubao:${d.id}`, label: tag ? L(`豆包（${tag}）`, `Doubao (${tag})`) : L('豆包', 'Doubao'), run: () => doubaoCheckin(d.cookie, d.seed) });
         });
+        // OfficeAce（华为云）：浏览器登录过的账号；临时密钥快到期先续期（续期令牌只能用一次，换完马上存）
+        const officeaces = await loadOfficeAces(this.ctx);
+        officeaces.forEach((o, i) => {
+            const tag = o.name || (officeaces.length > 1 ? `#${o.id}` : '');
+            out.push({
+                id: i === 0 ? 'officeace' : `officeace:${o.id}`,
+                label: tag ? `OfficeAce（${tag}）` : 'OfficeAce',
+                run: async () => {
+                    let cred = ((await loadOfficeAces(this.ctx)).find((x) => x.id === o.id) ?? o).cred;
+                    if (officeAceExpiring(cred)) {
+                        cred = await refreshOfficeAce(cred);
+                        await updateOfficeAce(this.ctx, o.id, cred);
+                    }
+                    return officeAceClaim(cred);
+                },
+            });
+        });
         // Trae：本机装了并登录过 Trae 才有（读它自己的登录信息，不需要另外设置；VPS 上一般没有）。每个账号签一次
         const traes = await findTraeCredentials().catch(() => []);
         traes.forEach((t, i) => {
@@ -793,6 +811,7 @@ export class Daemon {
                 workbuddy: extra.map((a) => ({ uid: a.uid, label: `WorkBuddy（${accountTag(a.nickname, a.uid)}）` })),
                 qoder: qoders.map((q, i) => ({ id: q.id, label: checkers.find((c) => c.id === (i === 0 ? 'qoder' : `qoder:${q.id}`))?.label ?? q.id, region: q.region })),
                 doubao: (await loadDoubaos(this.ctx)).map((d, i) => ({ id: d.id, label: checkers.find((c) => c.id === (i === 0 ? 'doubao' : `doubao:${d.id}`))?.label ?? d.id })),
+                officeace: (await loadOfficeAces(this.ctx)).map((o, i) => ({ id: o.id, label: checkers.find((c) => c.id === (i === 0 ? 'officeace' : `officeace:${o.id}`))?.label ?? o.id })),
             },
             // 能不能从本机的豆包电脑版 / 浏览器读登录（看守护进程所在的机器，不是看浏览器）
             localRead: process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : null,
@@ -802,6 +821,7 @@ export class Daemon {
                 ...(checkers.some((c) => checkinKind(c.id) === 'qoder') ? [] : [{ id: 'qoder', label: 'Qoder', action: 'qoder' }]),
                 // 本机豆包电脑版 / 浏览器登录着豆包：说出来，点「添加」就能自动读（只看有没有登录，不解密）
                 ...(checkers.some((c) => checkinKind(c.id) === 'doubao') ? [] : [{ id: 'doubao', label: L('豆包', 'Doubao'), action: 'doubao', found: (await findDoubaoLogins().catch(() => [])).map((f) => f.label) }]),
+                ...(checkers.some((c) => checkinKind(c.id) === 'officeace') ? [] : [{ id: 'officeace', label: L('OfficeAce（华为云）', 'OfficeAce (Huawei Cloud)'), action: 'officeace' }]),
                 ...(checkers.some((c) => checkinKind(c.id) === 'trae') ? [] : [{ id: 'trae', label: 'Trae', reason: L('这台没装 Trae：要在装了 Trae 的电脑上签', 'Trae is not installed here: it is checked in on a computer with Trae') }]),
             ],
         };
@@ -895,6 +915,52 @@ export class Daemon {
             added.push(login.label);
         }
         return { added, skipped };
+    }
+    /**
+     * 加一个 OfficeAce 签到账号：给出华为云登录链接，用户在浏览器里登录后，我们按 state 取回授权码换临时密钥。
+     * 回调落在华为云自己的服务上，所以 VPS 上也能用（链接在哪台电脑的浏览器里打开都行）。
+     */
+    async startOfficeAceCheckinLogin() {
+        const start = await startOfficeAceLogin().catch((error) => {
+            throw new DshModelError('login_failed', String(error.message ?? error));
+        });
+        const s = {
+            id: `oa-${randomBytes(8).toString('hex')}`,
+            source: 'officeace-checkin',
+            kind: 'link',
+            status: 'pending',
+            needsPaste: false,
+            url: start.url,
+            startedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+            abort: new AbortController(),
+        };
+        this.sessions.set(s.id, s);
+        void (async () => {
+            const deadline = Date.parse(s.expiresAt);
+            while (s.status === 'pending' && !s.abort.signal.aborted && Date.now() < deadline) {
+                const code = await pollOfficeAceCode(start.state);
+                if (code) {
+                    try {
+                        const cred = await exchangeOfficeAceCode(code, start.codeVerifier, start.dpopPrivateJwk);
+                        await addOfficeAce(this.ctx, cred);
+                        s.status = 'ok';
+                        void this.checkinNow(false).catch(() => { });
+                    }
+                    catch (error) {
+                        s.status = 'error';
+                        s.error = String(error.message ?? error);
+                    }
+                    return;
+                }
+                await new Promise((r) => setTimeout(r, 2000));
+            }
+            if (s.status === 'pending') {
+                s.status = 'error';
+                s.error = L('等待登录超时：请重新点「添加」再登录一次', 'Timed out waiting for sign-in: click Add and sign in again');
+            }
+        })();
+        return publicSession(s);
     }
     /** 加一个 WorkBuddy 签到账号：打开链接授权（同来源登录一样），存成单独一份，只用来签到 */
     async startWorkbuddyCheckinLogin() {
@@ -1253,6 +1319,8 @@ export class Daemon {
                 return ok(this.statsSnapshot());
             if (method === 'GET' && path === '/endpoints')
                 return ok(await this.endpoints());
+            if (method === 'GET' && path === '/requests')
+                return ok(this.stats.recent(200));
             if (method === 'GET' && path === '/self')
                 return ok(await this.selfInfo());
             if (method === 'GET' && path === '/checkin')
@@ -1273,6 +1341,8 @@ export class Daemon {
             }
             if (method === 'POST' && path === '/checkin/workbuddy')
                 return ok({ login: await this.startWorkbuddyCheckinLogin() });
+            if (method === 'POST' && path === '/checkin/officeace')
+                return ok({ login: await this.startOfficeAceCheckinLogin() });
             if (method === 'POST' && path === '/checkin/export')
                 return ok(await exportCheckin(this.ctx));
             if (method === 'POST' && path === '/checkin/import') {
@@ -1291,6 +1361,11 @@ export class Daemon {
             }
             if (method === 'DELETE' && seg[0] === 'checkin' && seg[1] === 'doubao' && seg[2]) {
                 if (!(await removeDoubao(this.ctx, seg[2])))
+                    throw new DshModelError('no_account', L('没有这个签到账号', 'No such check-in account'));
+                return ok(await this.checkinStatus());
+            }
+            if (method === 'DELETE' && seg[0] === 'checkin' && seg[1] === 'officeace' && seg[2]) {
+                if (!(await removeOfficeAce(this.ctx, seg[2])))
                     throw new DshModelError('no_account', L('没有这个签到账号', 'No such check-in account'));
                 return ok(await this.checkinStatus());
             }

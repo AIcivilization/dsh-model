@@ -17,6 +17,8 @@ export interface Secrets {
     qoders?: { id: string; pat: string; region: 'cn' | 'intl'; name?: string; savedAt?: string }[]
     /** 豆包：用户从浏览器复制的登录 Cookie；seed 派生这个账号固定的网页标识 */
     doubaos?: { id: string; cookie: string; seed: string; name?: string; from?: string; savedAt?: string }[]
+    /** OfficeAce（华为云）：浏览器登录换来的临时密钥 + 一次性续期令牌（checkin/officeace.ts）；不能复制到别的机器 */
+    officeaces?: { id: string; name?: string; savedAt?: string; cred: import('./checkin/officeace.js').OfficeAceCredential }[]
   }
 }
 

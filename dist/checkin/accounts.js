@@ -5,7 +5,8 @@
 //   各存一份 $DSH_MODEL_HOME/workbuddy/checkin/<uid>.json（与 dsh-model 自己登录的格式相同，0600），不接模型。
 // - Qoder：secrets.json 里一组个人访问令牌，各带一个名字（Qoder 的接口不返回账号名）。
 // - Trae：本机装的每个 Trae 都读，按账号（userId）去重，每个账号签一次。
-// - 豆包：secrets.json 里一组 Cookie（用户从浏览器复制），各带一个名字。
+// - 豆包：secrets.json 里一组 Cookie（用户从浏览器复制或从本机读到），各带一个名字。
+// - OfficeAce：secrets.json 里一组华为云登录（临时密钥 + 一次性续期令牌），续期后马上写回。
 import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { bridgeDir } from '../bridge/runtime.js';
@@ -160,5 +161,57 @@ export async function removeDoubao(ctx, id) {
     if (next.length === list.length)
         return false;
     await saveDoubaos(ctx, next);
+    return true;
+}
+export async function loadOfficeAces(ctx) {
+    return (await loadSecrets(ctx)).checkin?.officeaces ?? [];
+}
+async function saveOfficeAces(ctx, list) {
+    const secrets = await loadSecrets(ctx);
+    const checkin = { ...secrets.checkin };
+    if (list.length)
+        checkin.officeaces = list;
+    else
+        delete checkin.officeaces;
+    secrets.checkin = Object.keys(checkin).length ? checkin : undefined;
+    await saveSecrets(ctx, secrets);
+}
+/** 加一个 OfficeAce 账号；同一个华为云项目（projectId）再登录 = 换成新的登录。返回 id */
+export async function addOfficeAce(ctx, cred, name) {
+    const list = await loadOfficeAces(ctx);
+    const same = cred.projectId ? list.find((o) => o.cred.projectId === cred.projectId) : undefined;
+    const n = name?.trim().slice(0, 20);
+    if (same) {
+        same.cred = cred;
+        if (n)
+            same.name = n;
+        same.savedAt = new Date().toISOString();
+        await saveOfficeAces(ctx, list);
+        return same.id;
+    }
+    const used = new Set(list.map((o) => o.id));
+    let i = list.length + 1;
+    while (used.has(String(i)))
+        i++;
+    const id = String(i);
+    list.push({ id, ...(n ? { name: n } : {}), savedAt: new Date().toISOString(), cred });
+    await saveOfficeAces(ctx, list);
+    return id;
+}
+/** 续期后写回（refresh token 只能用一次，新的必须马上存） */
+export async function updateOfficeAce(ctx, id, cred) {
+    const list = await loadOfficeAces(ctx);
+    const e = list.find((o) => o.id === id);
+    if (!e)
+        return;
+    e.cred = cred;
+    await saveOfficeAces(ctx, list);
+}
+export async function removeOfficeAce(ctx, id) {
+    const list = await loadOfficeAces(ctx);
+    const next = list.filter((o) => o.id !== id);
+    if (next.length === list.length)
+        return false;
+    await saveOfficeAces(ctx, next);
     return true;
 }

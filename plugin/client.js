@@ -702,21 +702,66 @@ window.__ModuleLoader__.load({
               f.message ? h('div', { style: { ...S.meta, ...S.mono, wordBreak: 'break-all' } }, f.message) : null))) : null))
     }
 
+    /** token 数：1234 → 1.2k，1234567 → 1.2M */
+    const tok = (n) => (!n ? '0' : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n))
+
     function ModelsCard({ stats }) {
       const rows = Object.entries(stats?.byModel || {}).sort((a, b) => b[1].d1.requests - a[1].d1.requests).slice(0, 30)
       if (!rows.length) return null
+      const t = stats.total && stats.total.d1
       return h('div', { style: S.section },
         h('div', { style: S.h }, L('模型统计', 'Models')),
         h('p', { style: S.note }, L('最近 24 小时经统一端点的请求，按模型。挑模型时参考成功率和速度。', 'Requests through the unified endpoint in the last 24 hours, by model.')),
+        // 24 小时合计：一眼看出今天用了多少
+        t && t.requests ? h('div', { style: { ...S.line, flexWrap: 'wrap', gap: 16, fontSize: 13, marginBottom: 8 } },
+          h('span', null, L(`请求 ${t.requests} 次`, `${t.requests} requests`)),
+          h('span', { style: { color: rateColor(t.successRate) } }, L(`成功率 ${pct(t.successRate)}`, `${pct(t.successRate)} succeeded`)),
+          h('span', null, L(`输入 ${tok(t.inputTokens)} / 输出 ${tok(t.outputTokens)} tokens`, `${tok(t.inputTokens)} in / ${tok(t.outputTokens)} out tokens`)),
+          t.cacheHitRate != null ? h('span', { title: L('输入里命中缓存的比例：越高越省钱、越快', 'Share of input tokens served from cache: higher is cheaper and faster') }, L(`缓存命中 ${pct(t.cacheHitRate)}`, `${pct(t.cacheHitRate)} cache hits`)) : null) : null,
         h('div', { style: S.card }, h('table', { style: S.table },
-          h('thead', null, h('tr', null, [L('模型', 'Model'), L('来源', 'Source'), L('请求', 'Requests'), L('成功率', 'Success'), L('平均延迟', 'Latency'), 'tokens/s'].map((t, i) => h('th', { key: i, style: S.th }, t)))),
+          h('thead', null, h('tr', null, [L('模型', 'Model'), L('来源', 'Source'), L('请求', 'Requests'), L('成功率', 'Success'), L('平均延迟', 'Latency'), 'tokens/s', L('输入 / 输出', 'In / out'), L('缓存命中', 'Cache')].map((t, i) => h('th', { key: i, style: S.th }, t)))),
           h('tbody', null, rows.map(([m, v]) => h('tr', { key: m },
             h('td', { style: S.td }, m),
             h('td', { style: { ...S.td, color: C.sub } }, v.source),
             h('td', { style: S.td }, v.d1.requests),
             h('td', { style: { ...S.td, color: rateColor(v.d1.successRate) } }, pct(v.d1.successRate)),
             h('td', { style: S.td }, ms(v.d1.avgLatencyMs)),
-            h('td', { style: S.td }, v.d1.tokensPerSec ?? '-')))))))
+            h('td', { style: S.td }, v.d1.tokensPerSec ?? '-'),
+            h('td', { style: S.td }, `${tok(v.d1.inputTokens)} / ${tok(v.d1.outputTokens)}`),
+            h('td', { style: S.td }, pct(v.d1.cacheHitRate))))))))
+    }
+
+    /** 最近请求：逐条看（时间、模型、耗时、token），失败的直接写原因（从「最近失败」里按模型和时间对上）。不含对话内容 */
+    function RequestsCard({ failures }) {
+      const [open, setOpen] = useState(false)
+      const [rows, setRows] = useState(null)
+      const [err, setErr] = useState('')
+      const load = useCallback(() => api('GET', '/requests').then((r) => { setRows(r); setErr('') }, (e) => setErr(e.code === 'not_found' ? L('后台服务是旧版，点「关于 → 更新」后可用', 'The background service is older; update it under About') : e.message)), [])
+      useEffect(() => { if (open) void load() }, [open, load])
+      const reason = (r) => {
+        if (!r.failed) return ''
+        const t = Date.parse(r.at)
+        const f = (failures || []).find((x) => x.model === r.model && Math.abs(Date.parse(x.at) - t) < 90_000)
+        return f ? f.advice || f.message || '' : ''
+      }
+      return h('div', { style: S.section },
+        h('div', { style: S.line },
+          h('button', { type: 'button', 'aria-expanded': open, onClick: () => setOpen(!open), style: { ...S.grow, textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', ...S.h, marginBottom: 0 } }, `${open ? '▾' : '▸'} ${L('最近请求', 'Recent requests')}`),
+          open ? h('button', { type: 'button', style: S.btn, onClick: () => void load() }, L('刷新', 'Refresh')) : null),
+        open ? h('div', { style: { marginTop: 8 } },
+          h('p', { style: S.note }, L('经统一端点的每一条请求（最近 200 条、24 小时内）。只记录模型、耗时和 token 数，不记录对话内容。', 'Every request through the unified endpoint (latest 200, last 24 hours). Only the model, time taken and token counts are kept, never the conversation.')),
+          err ? h('div', { style: { fontSize: 12, color: C.err } }, err) : null,
+          rows && !rows.length ? h('div', { style: S.meta }, L('还没有请求', 'No requests yet')) : null,
+          rows && rows.length ? h('div', { style: { ...S.card, maxHeight: 420, overflow: 'auto' } }, h('table', { style: S.table },
+            h('thead', null, h('tr', null, [L('时间', 'Time'), L('模型', 'Model'), 'key', L('耗时', 'Time taken'), L('输入 / 输出', 'In / out'), L('缓存', 'Cache'), L('结果', 'Result')].map((t, i) => h('th', { key: i, style: S.th }, t)))),
+            h('tbody', null, rows.map((r, i) => h('tr', { key: `${r.at}-${i}` },
+              h('td', { style: { ...S.td, color: C.sub, whiteSpace: 'nowrap' } }, ago(r.at)),
+              h('td', { style: { ...S.td, ...S.mono } }, r.model),
+              h('td', { style: { ...S.td, color: C.sub } }, r.key),
+              h('td', { style: S.td }, ms(r.latencyMs)),
+              h('td', { style: S.td }, `${tok(r.inputTokens)} / ${tok(r.outputTokens)}`),
+              h('td', { style: S.td }, r.cachedTokens ? tok(r.cachedTokens) : '-'),
+              h('td', { style: { ...S.td, color: r.failed ? C.err : C.ok } }, r.failed ? (reason(r) ? h('span', { title: reason(r) }, L('失败：', 'Failed: '), reason(r)) : L('失败', 'Failed')) : L('成功', 'OK'))))))) : null) : null)
     }
 
     /** 守护进程还没装 / 没在运行：说明 + 一键安装（本机）或命令（VPS 上要 root） */
@@ -1109,7 +1154,7 @@ window.__ModuleLoader__.load({
       }
       if (mode === 'export') {
         return h(Modal, { title: L('复制签到账号到另一台机器', 'Copy check-in accounts to another machine'), onClose },
-          h('p', { style: S.note }, L('比如搬到不关机的 VPS 上签，就不会漏。会复制 Qoder 令牌和豆包 Cookie；WorkBuddy 请在那台机器上各自登录（复制过去两边会互相顶掉），Trae 要在装了 Trae 的电脑上签。', 'For example move them to an always-on VPS so no day is missed. Qoder tokens and Doubao cookies are copied; sign in to WorkBuddy on that machine itself (a copied sign-in would knock the other out), and Trae needs a computer with Trae.')),
+          h('p', { style: S.note }, L('比如搬到不关机的 VPS 上签，就不会漏。会复制 Qoder 令牌和豆包 Cookie；WorkBuddy、OfficeAce 请在那台机器上各自登录（复制过去两边会互相顶掉），Trae 要在装了 Trae 的电脑上签。', 'For example move them to an always-on VPS so no day is missed. Qoder tokens and Doubao cookies are copied; sign in to WorkBuddy and OfficeAce on that machine itself (a copied sign-in would knock the other out), and Trae needs a computer with Trae.')),
           out ? h('div', null,
             h('div', { style: { ...S.meta, marginBottom: 4 } }, L(`1. 复制这段文本（${out.counts.qoder} 个 Qoder、${out.counts.doubao} 个豆包）：`, `1. Copy this text (${out.counts.qoder} Qoder, ${out.counts.doubao} Doubao):`)),
             h('div', { style: S.line },
@@ -1138,6 +1183,7 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = useState(false)
       const [qoder, setQoder] = useState(false)
       const [wbLogin, setWbLogin] = useState(null)
+      const [oaLogin, setOaLogin] = useState(null)
       const [doubao, setDoubao] = useState(false)
       const [transfer, setTransfer] = useState('')
       const [err, setErr] = useState('')
@@ -1145,6 +1191,10 @@ window.__ModuleLoader__.load({
       const addWorkbuddy = async () => {
         setErr('')
         try { setWbLogin((await api('POST', '/checkin/workbuddy')).login) } catch (e) { setErr(e.message) }
+      }
+      const addOfficeAce = async () => {
+        setErr('')
+        try { setOaLogin((await api('POST', '/checkin/officeace')).login) } catch (e) { setErr(e.message) }
       }
       const removeAccount = async (kind, id, label) => {
         if (!window.confirm(L(`不再给「${label}」签到？`, `Stop checking in "${label}"?`))) return
@@ -1191,21 +1241,22 @@ window.__ModuleLoader__.load({
             h('span', null, L('这台还能签：', 'Also available here:')),
             (st.missing || []).map((m) => h('span', { key: m.id, style: { display: 'inline-flex', alignItems: 'center', gap: 4 } },
               m.found && m.found.length ? L(`${m.label}（本机 ${m.found.join('、')} 已登录）`, `${m.label} (signed in: ${m.found.join(', ')})`) : m.label,
-              m.action ? h('button', { type: 'button', style: { ...S.btn, padding: '1px 6px', fontSize: 11 }, onClick: () => { if (m.action === 'workbuddy') void addWorkbuddy(); else if (m.action === 'qoder') setQoder(true); else setDoubao(true) } }, L('+ 添加', '+ Add')) : h('span', { style: { color: C.faint } }, `（${m.reason}）`)))) : null,
+              m.action ? h('button', { type: 'button', style: { ...S.btn, padding: '1px 6px', fontSize: 11 }, onClick: () => { if (m.action === 'workbuddy') void addWorkbuddy(); else if (m.action === 'officeace') void addOfficeAce(); else if (m.action === 'qoder') setQoder(true); else setDoubao(true) } }, L('+ 添加', '+ Add')) : h('span', { style: { color: C.faint } }, `（${m.reason}）`)))) : null,
           open ? h('div', { style: { marginTop: 8 } },
             st.results.map((r) => h('div', { key: r.id, style: { fontSize: 12, lineHeight: 1.8, color: r.state === 'failed' ? C.err : C.text } },
               `${r.label}：${CHECKIN_TEXT(r)}`, r.advice ? h('span', { style: { color: C.sub, marginLeft: 6 } }, r.advice) : null)),
             // 多账号：多加的 WorkBuddy 签到账号、每个 Qoder 令牌，都能删；再加一个
             h('div', { style: { marginTop: 8, borderTop: `1px solid ${C.border}`, paddingTop: 8 } },
               h('div', { style: { ...S.meta, marginBottom: 4 } }, L('签到账号（同一家可以加几个账号）', 'Check-in accounts (several per product are fine)')),
-              [...((st.accounts && st.accounts.workbuddy) || []).map((a) => ({ kind: 'workbuddy', id: a.uid, label: a.label })), ...((st.accounts && st.accounts.qoder) || []).map((q) => ({ kind: 'qoder', id: q.id, label: q.label })), ...((st.accounts && st.accounts.doubao) || []).map((d) => ({ kind: 'doubao', id: d.id, label: d.label }))].map((a) =>
+              [...((st.accounts && st.accounts.workbuddy) || []).map((a) => ({ kind: 'workbuddy', id: a.uid, label: a.label })), ...((st.accounts && st.accounts.qoder) || []).map((q) => ({ kind: 'qoder', id: q.id, label: q.label })), ...((st.accounts && st.accounts.doubao) || []).map((d) => ({ kind: 'doubao', id: d.id, label: d.label })), ...((st.accounts && st.accounts.officeace) || []).map((o) => ({ kind: 'officeace', id: o.id, label: o.label }))].map((a) =>
                 h('div', { key: `${a.kind}:${a.id}`, style: { ...S.line, minHeight: 24, fontSize: 12 } },
                   h('span', { style: S.grow }, a.label),
                   h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, onClick: () => void removeAccount(a.kind, a.id, a.label) }, L('删除', 'Remove')))),
               h('div', { style: { ...S.line, marginTop: 4, flexWrap: 'wrap' } },
                 h('button', { type: 'button', style: S.btn, onClick: () => void addWorkbuddy() }, L('+ 添加 WorkBuddy 账号', '+ Add a WorkBuddy account')),
                 h('button', { type: 'button', style: S.btn, onClick: () => setQoder(true) }, st.qoder.configured ? L('+ 再加一个 Qoder 账号', '+ Add another Qoder account') : L('+ 添加 Qoder', '+ Add Qoder')),
-                h('button', { type: 'button', style: S.btn, onClick: () => setDoubao(true) }, (st.accounts && st.accounts.doubao && st.accounts.doubao.length) ? L('+ 再加一个豆包账号', '+ Add another Doubao account') : L('+ 添加豆包', '+ Add Doubao'))),
+                h('button', { type: 'button', style: S.btn, onClick: () => setDoubao(true) }, (st.accounts && st.accounts.doubao && st.accounts.doubao.length) ? L('+ 再加一个豆包账号', '+ Add another Doubao account') : L('+ 添加豆包', '+ Add Doubao')),
+                h('button', { type: 'button', style: S.btn, onClick: () => void addOfficeAce() }, (st.accounts && st.accounts.officeace && st.accounts.officeace.length) ? L('+ 再加一个 OfficeAce 账号', '+ Add another OfficeAce account') : L('+ 添加 OfficeAce（华为云）', '+ Add OfficeAce (Huawei Cloud)'))),
               h('div', { style: { ...S.line, marginTop: 4, flexWrap: 'wrap' } },
                 h('button', { type: 'button', style: S.btn, onClick: () => setTransfer('export') }, L('复制签到账号到另一台机器', 'Copy check-in accounts to another machine')),
                 h('button', { type: 'button', style: S.btn, onClick: () => setTransfer('import') }, L('导入签到账号', 'Import check-in accounts')))),
@@ -1216,6 +1267,7 @@ window.__ModuleLoader__.load({
         qoder ? h(QoderDialog, { another: st.qoder.configured, onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null,
         transfer ? h(TransferDialog, { mode: transfer, onDone: (r) => { setTransfer(''); setSt(r); setOpen(true) }, onClose: () => setTransfer('') }) : null,
         doubao ? h(DoubaoDialog, { another: Boolean(st.accounts && st.accounts.doubao && st.accounts.doubao.length), localRead: st.localRead, found: ((st.missing || []).find((m) => m.id === 'doubao') || {}).found, onDone: (next, note) => { setDoubao(false); setOpen(true); if (next) setSt(next); else void refresh(); if (note) setErr(note) }, onClose: () => setDoubao(false) }) : null,
+        oaLogin ? h(LoginDialog, { source: { id: 'officeace-checkin', label: L('OfficeAce（华为云）签到账号', 'OfficeAce (Huawei Cloud) check-in account'), login: 'link' }, session: oaLogin, onDone: () => { setOaLogin(null); setOpen(true); setTimeout(() => void refresh(), 3000) }, onClose: () => { setOaLogin(null); void refresh() } }) : null,
         wbLogin ? h(LoginDialog, { source: { id: 'workbuddy-checkin', label: L('WorkBuddy 签到账号', 'WorkBuddy check-in account'), login: 'link' }, session: wbLogin, onDone: () => { setWbLogin(null); setOpen(true); setTimeout(() => void refresh(), 3000) }, onClose: () => { setWbLogin(null); void refresh() } }) : null)
     }
 
@@ -1346,6 +1398,7 @@ window.__ModuleLoader__.load({
         h(KeysCard, { keys: data.keys, reload: () => load(false) }),
         h(ModelsCard, { stats: data.stats }),
         h(FailuresCard, { failures: data.failures }),
+        h(RequestsCard, { failures: data.failures }),
         h(AboutCard, { onJob: setSelfJob }),
         login ? h(LoginDialog, { source: login.source, session: login.session, onDone: () => { setLogin(null); void load(true) }, onClose: () => { setLogin(null); void load(false) } }) : null,
         keyDialog ? h(KeyDialog, { source: keyDialog === true ? null : keyDialog, onDone: () => { setKeyDialog(false); void load(true) }, onClose: () => setKeyDialog(false) }) : null)
