@@ -37,7 +37,8 @@ describe('manual check-in credentials (several accounts, works without the app)'
     expect(lingxi.accounts).toEqual([{ id: '1', name: '主号' }, { id: '2', name: '' }])
     expect(JSON.stringify(kinds)).not.toContain('sid-1')
     const file = join(home, 'secrets.json')
-    expect((await stat(file)).mode & 0o777).toBe(0o600)
+    // Windows 没有 Unix 权限位
+    if (process.platform !== 'win32') expect((await stat(file)).mode & 0o777).toBe(0o600)
     expect(JSON.parse(await readFile(file, 'utf8')).checkin.manual.lingxi.accounts).toHaveLength(2)
     expect(await removeManualAccount('lingxi', '1')).toBe(true)
     expect(await removeManualAccount('lingxi', '9')).toBe(false)
