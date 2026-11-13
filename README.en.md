@@ -2,7 +2,7 @@
 
 # dsh-model
 
-**📅 Daily check-in credits claimed for you (9 products) · 🆓 a free pool: one key for every provider's official free quota · 🔁 one address that relays every model · 🧩 36 sources**
+**📅 Daily check-in credits claimed for you (10 products, plus your own) · 🆓 a free pool: one key for every provider's official free quota · 🔁 one address that relays every model · 🧩 36 sources**
 
 Install once and all of this is taken care of. dsh gets a management page; without dsh, the command line does everything.
 
@@ -24,7 +24,7 @@ English · [中文](README.md)
 | | dsh-model | Typical "free model" plugins |
 |---|---|---|
 | How models are connected | Each vendor's **official** API and proper subscription sign-ins | IDE clients' private APIs, some rewriting requests to get past the vendor's blocking |
-| Account safety | **No disguise, no getting around blocks**: if a vendor blocks it, we stop | Breaks when the vendor changes its protocol; accounts can be banned |
+| Account safety | **No rewritten requests, no getting around a vendor's blocking**: if a vendor blocks it, we stop | Breaks when the vendor changes its protocol; accounts can be banned |
 | Where it works | One address for dsh, editors, scripts and other computers | Mostly inside dsh only |
 | Sources | **36**: free, subscription, local and pay as you go, plus your own | A dozen or so account channels |
 | Free quota | **Free pool** `free/auto`: official free quotas combined, soon-to-expire first, **anything that charges stays out by default** | — |
@@ -125,7 +125,7 @@ On a dsh-vps server, use `sudo dsh-model setup`. On Windows, run it in a normal 
 
 | Section | What it holds |
 |---|---|
-| **Daily check-in** | 9 products checked in automatically every day (or with one click); the card shows what you got today |
+| **Daily check-in** | 10 products checked in automatically every day (or with one click); the card shows what you got today |
 | **Free quota** | Which models are in the `free/auto` pool and the state of each quota (in use / cooling until / charges, not in the pool / not claimed), with "Claim", "Add key", "Look for new" and "+ Add a source" |
 | **Endpoint** | Local and public addresses, each with a Copy button |
 | **Sources** | One switch per provider: on connects (and signs in if needed), off pauses and keeps the sign-in. Each row is tagged Free / Free · limited / Paid and shows plan usage with reset countdowns, or remaining credits and the next batch to expire; a used-up plan shows when it comes back |
@@ -188,7 +188,7 @@ dsh-model only connects; it provides no quota of its own.
 | `sources` | Sources: switch, cost, sign-in state, usage |
 | `source enable\|disable\|logout <source>` | Turn on (signing in if needed) / off / sign out |
 | `key list\|add\|revoke\|rotate <name>` | Access keys, one per device |
-| `checkin` | Check in now (9 products; automatic daily by default) |
+| `checkin` | Check in now (10 products and your custom services; automatic daily by default) |
 | `free [discover\|optin <source> <cap>\|optout <source>\|add <name> <url> <key> [--free <cycle>]]` | Free quota: overview, look for new ones, put a charging quota in the pool, add your own source |
 | `combo list\|add <name> <model…>\|remove <id>` | Combos: try several models in order |
 | `failures` | Failed requests in the last 24 hours, with advice |

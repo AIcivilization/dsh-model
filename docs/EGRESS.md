@@ -86,7 +86,7 @@
 
 ## 不做的事
 
-- **不伪装客户端、不改写请求去绕过厂商的拦截**。比如 WorkBuddy 认出并拦下 dsh 的对话后，dsh-model 就只用它签到，不去规避。
+- **不改写请求去绕过厂商的拦截**。比如 WorkBuddy 认出并拦下 dsh 的对话后，dsh-model 就只用它签到，不去规避。几处签到的登录用的是那家产品自己客户端的登录方式（WorkBuddy、OfficeAce、华为 CodeArts），这一点如实写在设计文档里。
 - **不调各家 IDE 的私有对话接口**（Qoder、Trae 等只签到）。
 - **不读你电脑上别的软件的登录**，例外只有下面几处，都只为签到、只在你本机使用：
   - Trae 签到读 Trae 自己的登录；
@@ -107,6 +107,6 @@
 5. **Install and update**: the npm registry, with GitHub only as the engine fallback (checked against pinned sha256); once a day the free-quota catalog (`free-catalog.json`) from the latest npm package via npmmirror or jsDelivr.
 
 What dsh-model will not do:
-- disguise itself as another client, or rewrite requests to get past a vendor's blocking;
+- rewrite requests to get past a vendor's blocking (a few check-in sign-ins use the product's own client sign-in: WorkBuddy, OfficeAce, Huawei CodeArts, as the design doc says);
 - call IDEs' private chat APIs;
 - read other apps' sign-ins. The exceptions are check-in only, on this machine: Trae, WorkBuddy, MiniMax Code, WPS Lingxi, Baidu DuMate and AStudio, and Doubao when you click "Read from this computer".
