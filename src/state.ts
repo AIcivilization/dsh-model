@@ -29,6 +29,8 @@ export interface Config {
   workbuddyDefault?: 'checkin-only' | 'kept'
   /** 自定义组合切换（combo/<id>），见 combo.ts */
   combos?: { id: string; name: string; models: string[] }[]
+  /** 免费池（设计 §14.25）：手动移出 / 加入的模型、用户打开了的会扣钱的来源及 token 上限 */
+  freePool?: import('./free/pool.js').PoolConfig
   /** WorkBuddy bridge（统一端点下的自有组件） */
   bridge?: { port: number; riskNoticeAt?: string }
 }

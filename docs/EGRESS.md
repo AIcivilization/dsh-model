@@ -4,7 +4,7 @@
 
 > 结论：**dsh-model 没有自己的服务器，也没有遥测**。它只在你用到某个功能时，直接连那一家的官方地址；你的 key、登录和对话不会发给我们或任何第三方。
 >
-> 本清单按 0.29.0 的代码整理。可以自己复核：
+> 本清单按 0.30.0 的代码整理。可以自己复核：
 > `grep -rhoE "https?://[a-zA-Z0-9.-]+" src plugin/index.js | sort -u`
 
 ## 1. 本机
@@ -40,6 +40,11 @@
 | Moonshot | `api.moonshot.cn` |
 | 阶跃星辰 | `api.stepfun.com` |
 | DeepSeek 官方 | `api.deepseek.com` |
+| Cloudflare Workers AI | `api.cloudflare.com` |
+| 超算互联网 | `api.scnet.cn` |
+| 蚂蚁百灵 | `api.ant-ling.com` |
+| 腾讯云 TokenHub | `tokenhub.tencentmaas.com` |
+| 书生 InternLM | `chat.intern-ai.org.cn` |
 | WorkBuddy / WorkBuddy AI | `copilot.tencent.com`、`www.codebuddy.cn` 等 WorkBuddy 自己的地址 |
 | OpenCode Zen | `opencode.ai` |
 | 自定义 | 你填的地址 |
@@ -63,6 +68,10 @@
 | Qoder | `openapi.qoder.com.cn` / `openapi.qoder.sh` |
 | WorkBuddy | WorkBuddy 自己的地址 |
 | 豆包 | `www.doubao.com` |
+| MiniMax Code | `agent.minimax.cn` / `agent.minimax.io`（签到）、`account.minimax.cn` / `account.minimax.io`（登录快过期时续期，和 App 一样） |
+| WPS 灵犀 | `lingxi.wps.cn` |
+| 百度 DuMate | `console.bce.baidu.com` |
+| AStudio | `agent.xfyun.cn` |
 | OfficeAce（华为云） | `auth.huaweicloud.com`（你在浏览器里登录）、`agentarts.cn-southwest-2.myhuaweicloud.com`（取回登录）、`sts.cn-north-4.myhuaweicloud.com`（换临时密钥）、`officeace.cn-southwest-2.huaweicloud-agentarts.com`（领积分） |
 
 ## 5. 安装与更新
@@ -70,14 +79,16 @@
 | 地址 | 做什么 |
 |---|---|
 | `registry.npmjs.org`（或你配置的 npm 镜像） | 安装、检查新版本、引擎平台包 |
+| `registry.npmmirror.com`，不通再 `cdn.jsdelivr.net` | 每天拉一次 npm 上最新 dsh-model 包里的免费额度目录（`free-catalog.json`，一个公开的 JSON 文件），不带任何你的信息 |
 | `github.com/router-for-me/CLIProxyAPI/releases` | 只在 npm 上没有你这个平台的引擎包时，回退下载引擎；按仓库里锁定的 sha256 校验 |
 
 ## 不做的事
 
 - **不伪装客户端、不改写请求去绕过厂商的拦截**。比如 WorkBuddy 认出并拦下 dsh 的对话后，dsh-model 就只用它签到，不去规避。
 - **不调各家 IDE 的私有对话接口**（Qoder、Trae 等只签到）。
-- **不读你电脑上别的软件的登录**，例外只有三处，而且都只在你本机使用：
+- **不读你电脑上别的软件的登录**，例外只有下面几处，都只为签到、只在你本机使用：
   - Trae 签到读 Trae 自己的登录；
+  - MiniMax Code、WPS 灵犀、百度 DuMate、AStudio 签到读它们各自 App 的登录（MiniMax 快过期时按 App 的规矩续期并写回）；
   - Mac 上 WorkBuddy 读 WorkBuddy App 的登录；
   - 你点「从本机自动读取」时，读豆包电脑版或浏览器里 doubao.com 的登录（macOS 会弹窗问你）。
 - 签到账号「复制到另一台机器」是你自己发起的：加密的文本加提取码，不经过任何服务器。
@@ -91,9 +102,9 @@
 2. **Model sources**: each provider's official API, only for sources you turned on.
 3. **Usage checks**: only for subscriptions you signed in to.
 4. **Check-in**: only for the accounts you added.
-5. **Install and update**: the npm registry, with GitHub only as the engine fallback (checked against pinned sha256).
+5. **Install and update**: the npm registry, with GitHub only as the engine fallback (checked against pinned sha256); once a day the free-quota catalog (`free-catalog.json`) from the latest npm package via npmmirror or jsDelivr.
 
 What dsh-model will not do:
 - disguise itself as another client, or rewrite requests to get past a vendor's blocking;
 - call IDEs' private chat APIs;
-- read other apps' sign-ins. The exceptions are Trae and WorkBuddy on this machine, and Doubao when you click "Read from this computer".
+- read other apps' sign-ins. The exceptions are check-in only, on this machine: Trae, WorkBuddy, MiniMax Code, WPS Lingxi, Baidu DuMate and AStudio, and Doubao when you click "Read from this computer".

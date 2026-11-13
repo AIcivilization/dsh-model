@@ -6,7 +6,7 @@ import { createElement } from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import * as React from 'react'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 type Handler = (call: { method: string; path: string; body?: unknown }) => [number, unknown]
 let handler: Handler = () => [404, {}]
@@ -414,6 +414,60 @@ describe('settings page', () => {
     await click('保存')
     await waitText('combo/c1')
     expect(posted).toEqual([{ name: '备用', models: ['workbuddy/a', 'gpt-5'] }])
+  })
+
+  it('free quota: shows the pool and quotas, opts a charging quota in with a cap, accepts a discovery, adds a custom source', async () => {
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    const posts: { path: string; body: unknown }[] = []
+    const overview = {
+      catalogUpdatedAt: '2026-11-13',
+      summary: { connected: 2, missing: 1, missingCny: 60, checkinConnected: 1, checkinMissing: 0, poolModels: { auto: 2, smart: 1, fast: 1 } },
+      entries: [
+        { id: 'ms', kind: 'api', name: '魔搭每天免费调用', amount: '每天约 2000 次', cycle: 'daily', charges: false, gates: [], url: 'https://modelscope.cn/', source: 'modelscope', status: 'connected' },
+        { id: 'ds', kind: 'api', name: '百炼新人额度', amount: '每个模型 100 万', cycle: 'once', charges: true, gates: ['用完自动转付费'], url: 'https://bailian.test/', source: 'dashscope', status: 'optin' },
+        { id: 'sc', kind: 'api', name: '超算互联网 1 亿 Token', amount: '1 亿', cycle: 'once', cny: 60, charges: true, gates: [], until: '2026-12-31', url: 'https://www.scnet.cn/', source: 'scnet', status: 'missing' },
+        { id: 'ck', kind: 'checkin', name: 'Trae 每天签到', amount: '每天 100', cycle: 'daily', charges: false, gates: [], url: 'https://www.trae.cn/', checkin: 'trae', status: 'connected' },
+      ],
+      pool: [{ tier: 'auto', models: [{ alias: 'modelscope/Qwen3-235B', source: 'modelscope', cycle: 'daily', charges: false }, { alias: 'ollama/llama', source: 'ollama', cycle: 'local', charges: false }] }, { tier: 'smart', models: [] }, { tier: 'fast', models: [] }],
+      custom: [],
+      discoveries: [{ id: 'model:siliconflow/new-free', kind: 'model', source: 'siliconflow', model: 'new-free', at: 'x', title: 'siliconflow 上新了免费模型 new-free' }],
+      config: {},
+    }
+    handler = normal((c) => {
+      if (c.path === '/free' && c.method === 'GET') return [200, overview]
+      if (c.method === 'POST' && (c.path.startsWith('/free/') || c.path === '/custom-sources')) {
+        posts.push({ path: c.path, body: c.body })
+        return [200, c.path === '/custom-sources' ? { id: 'custom-mine', models: 3, free: 0 } : { ...overview, discoveries: c.path === '/free/discovery' ? [] : overview.discoveries }]
+      }
+      return [404, {}]
+    })
+    await render()
+    await waitText('免费池现有 2 个模型')
+    expect(container.textContent).toContain('还有 1 份可领（一次性和每月的约 ¥60）')
+    expect(container.textContent).toContain('会扣钱，没放进池')
+    // 已在签的签到条目默认收起
+    expect(container.textContent).not.toContain('Trae 每天签到')
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('2,000,000')
+    await click('放进免费池…')
+    expect(prompt).toHaveBeenCalled()
+    expect(posts.at(-1)).toEqual({ path: '/free/optin', body: { source: 'dashscope', capTokens: 2000000 } })
+    await click('加进免费池')
+    expect(posts.at(-1)).toEqual({ path: '/free/discovery', body: { id: 'model:siliconflow/new-free', accept: true } })
+    await click('+ 手动添加来源')
+    await waitText('任何 OpenAI 兼容的服务都行')
+    const setValue = async (el: HTMLInputElement, v: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v)
+      await act(async () => el.dispatchEvent(new Event('input', { bubbles: true })))
+    }
+    const inputs = [...container.querySelectorAll('input')].filter((i) => /名字，如：某某平台|api\.example\.com|API key/.test(i.placeholder))
+    await setValue(inputs.find((i) => i.placeholder.startsWith('名字'))!, '我的平台')
+    await setValue(inputs.find((i) => i.placeholder.includes('example'))!, 'https://api.mine.test/v1')
+    await setValue(inputs.find((i) => i.placeholder === 'API key')!, 'sk-abcdefgh')
+    const saveBtns = [...container.querySelectorAll('button')].filter((b) => b.textContent === '保存')
+    await act(async () => saveBtns.at(-1)!.click())
+    await new Promise((r) => setTimeout(r, 20))
+    expect(posts.at(-1)).toEqual({ path: '/custom-sources', body: { name: '我的平台', baseUrl: 'https://api.mine.test/v1', key: 'sk-abcdefgh', free: true, cycle: 'daily' } })
+    prompt.mockRestore()
   })
 
   it('usage: expiring credits are called out; a used-up plan gets a badge with the time back', async () => {

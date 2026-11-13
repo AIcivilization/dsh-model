@@ -29,6 +29,10 @@ export interface KeyProvider {
   freeRe?: RegExp
   /** 国内平台：直连，不走出站代理 */
   direct?: boolean
+  /** 地址要用户填（custom；Cloudflare 的地址里带账户 ID） */
+  needsBase?: boolean
+  /** 填地址时的提示 */
+  baseHint?: string
 }
 
 export const KEY_PROVIDERS: KeyProvider[] = [
@@ -52,10 +56,46 @@ export const KEY_PROVIDERS: KeyProvider[] = [
   { id: 'mistral', label: 'Mistral', base: 'https://api.mistral.ai/v1', keyUrl: 'https://console.mistral.ai/api-keys' },
   { id: 'nvidia', label: 'NVIDIA（build.nvidia.com）', base: 'https://integrate.api.nvidia.com/v1', keyUrl: 'https://build.nvidia.com/settings/api-keys' },
   { id: 'deepseek', label: 'DeepSeek 官方', base: 'https://api.deepseek.com/v1', keyUrl: 'https://platform.deepseek.com/api_keys' },
-  { id: 'custom', label: '其他 OpenAI 兼容服务', base: '', keyUrl: '' },
+  // 免费额度来源（2026-11-13 加，见设计 §14.25）：地址都实测过（不带 key 回 401 / 400）
+  { id: 'scnet', label: '超算互联网 SCNet', base: 'https://api.scnet.cn/api/llm/v1', keyUrl: 'https://www.scnet.cn/', direct: true },
+  { id: 'ling', label: '蚂蚁百灵 Ling', base: 'https://api.ant-ling.com/v1', keyUrl: 'https://ling.tbox.cn/open', direct: true },
+  { id: 'tokenhub', label: '腾讯云 TokenHub', base: 'https://tokenhub.tencentmaas.com/v1', keyUrl: 'https://console.cloud.tencent.com/tokenhub', direct: true },
+  { id: 'intern', label: '书生 InternLM', base: 'https://chat.intern-ai.org.cn/api/v1', keyUrl: 'https://internlm.intern-ai.org.cn/api/tokens', direct: true },
+  // Cloudflare：地址里带账户 ID，GET /models 不支持（实测 405），用常用模型验证 key
+  { id: 'cloudflare', label: 'Cloudflare Workers AI', base: '', keyUrl: 'https://dash.cloudflare.com/profile/api-tokens', needsBase: true, baseHint: 'https://api.cloudflare.com/client/v4/accounts/<账户 ID>/ai/v1', fallbackModels: ['@cf/openai/gpt-oss-120b', '@cf/openai/gpt-oss-20b', '@cf/meta/llama-4-scout-17b-16e-instruct'], freeRe: /./ },
+  { id: 'custom', label: '其他 OpenAI 兼容服务', base: '', keyUrl: '', needsBase: true },
 ]
 
-export const keyProvider = (id: string) => KEY_PROVIDERS.find((p) => p.id === id)
+/** 用户手动加的来源：custom-<短名>，可以有很多个（设计 §14.26） */
+export const CUSTOM_PREFIX = 'custom-'
+export const isCustomId = (id: string) => /^custom-[a-z0-9][a-z0-9-]{0,31}$/.test(id)
+
+export const keyProvider = (id: string): KeyProvider | undefined => {
+  const p = KEY_PROVIDERS.find((x) => x.id === id)
+  if (p) return p
+  if (isCustomId(id)) return { id, label: id.slice(CUSTOM_PREFIX.length), base: '', keyUrl: '', needsBase: true }
+  return undefined
+}
+
+/** 名字 → custom-<短名>：英文数字保留，其余去掉；剩不下就用 custom-1、custom-2… */
+export function customId(name: string, taken: string[]): string {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24)
+  const want = base ? `${CUSTOM_PREFIX}${base}` : ''
+  if (want && !taken.includes(want)) return want
+  for (let i = 1; ; i++) {
+    const id = `${want || 'custom'}-${i}`
+    if (!taken.includes(id)) return id
+  }
+}
+
+/** 手动加的来源的额外设置 */
+export interface CustomOpts {
+  label?: string
+  /** 勾了「这是免费额度」：它的模型全部进免费池 */
+  free?: boolean
+  cycle?: 'daily' | 'monthly' | 'forever' | 'once'
+  until?: string
+}
 
 export interface KeyModel {
   id: string
@@ -157,14 +197,23 @@ export async function fetchKeyModels(provider: KeyProvider, key: string, base: s
 }
 
 /** 实测并保存 key、写模型目录 */
-export async function setApiKey(ctx: Ctx, id: string, key: string, baseUrl: string | undefined, proxy: string | null | undefined): Promise<{ models: number; free: number }> {
+export async function setApiKey(ctx: Ctx, id: string, key: string, baseUrl: string | undefined, proxy: string | null | undefined, custom: CustomOpts = {}): Promise<{ models: number; free: number }> {
   const provider = keyProvider(id)
   if (!provider) throw new DshModelError('unknown_source', L(`没有这个来源：${id}`, `No such source: ${id}`))
   if (!key || /\s/.test(key) || key.length < 8) throw new DshModelError('invalid_key', L('这看起来不是一把 API key', 'That does not look like an API key'))
-  const base = normalizeBase(provider.id === 'custom' ? (baseUrl ?? '') : provider.base)
+  // 换 key 没填地址：沿用原来的
+  if (provider.needsBase && !baseUrl?.trim()) baseUrl = (await loadSecrets(ctx)).apikeys?.[id]?.base
+  if (provider.needsBase && !baseUrl?.trim()) throw new DshModelError('invalid_base_url', L(`${provider.label} 要填地址${provider.baseHint ? `（${provider.baseHint}）` : ''}`, `${provider.label} needs a URL${provider.baseHint ? ` (${provider.baseHint})` : ''}`))
+  const base = normalizeBase(provider.needsBase ? (baseUrl ?? '') : provider.base)
   const models = await fetchKeyModels(provider, key, base, proxy)
   const secrets = await loadSecrets(ctx)
-  secrets.apikeys = { ...secrets.apikeys, [id]: { key, ...(provider.id === 'custom' ? { base } : {}), verifiedAt: new Date().toISOString() } }
+  // 换 key 时没给的设置沿用原来的（名字、免费额度）
+  const prev = secrets.apikeys?.[id]
+  if (isCustomId(id) && prev && custom.label === undefined) custom = { label: prev.label, free: prev.free, cycle: prev.cycle, until: prev.until }
+  const extra = isCustomId(id)
+    ? { ...(custom.label ? { label: custom.label.slice(0, 30) } : {}), ...(custom.free ? { free: true, cycle: custom.cycle ?? 'forever', ...(custom.until ? { until: custom.until } : {}) } : {}) }
+    : {}
+  secrets.apikeys = { ...secrets.apikeys, [id]: { key, ...(provider.needsBase ? { base } : {}), ...extra, verifiedAt: new Date().toISOString() } }
   await saveSecrets(ctx, secrets)
   const cat = await loadKeyCatalog(ctx.paths.home)
   cat[id] = { updatedAt: new Date().toISOString(), models }

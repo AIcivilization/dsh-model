@@ -312,7 +312,9 @@ window.__ModuleLoader__.load({
     /** 填 API key：OpenCode Zen，以及 Gemini / Groq / OpenRouter / 硅基流动 / DeepSeek / 其他 OpenAI 兼容服务 */
     function KeyDialog({ source, onDone, onClose }) {
       const opencode = !source || source.kind === 'opencode'
-      const custom = source && source.id === 'custom'
+      // 地址要用户填的：其他 OpenAI 兼容服务、手动加的 custom-*、Cloudflare（地址里带账户 ID）
+      const custom = Boolean(source && (source.id === 'custom' || source.id === 'cloudflare' || /^custom-/.test(source.id)))
+      const basePlaceholder = source && source.id === 'cloudflare' ? 'https://api.cloudflare.com/client/v4/accounts/<账户 ID>/ai/v1' : 'https://api.example.com/v1'
       const [key, setKey] = useState('')
       const [base, setBase] = useState('')
       const [busy, setBusy] = useState(false)
@@ -339,10 +341,10 @@ window.__ModuleLoader__.load({
               ? L('填服务的地址（以 /v1 结尾）和 API key。保存前会用它读取一次模型列表，读得到才保存。', 'Enter the service URL (ending in /v1) and the API key. It reads the model list once before saving.')
               : L(`填 ${label} 的 API key。保存前会用它读取一次模型列表（不花额度），读得到才保存。${source.pricing ? source.pricing.zh + '。' : ''}`, `Enter your ${label} API key. It reads the model list once before saving (no quota used).${source.pricing ? ' ' + source.pricing.en + '.' : ''}`),
           link ? h('a', { href: link, target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent, marginLeft: 6 } }, L('去创建 key ↗', 'Create a key ↗')) : null),
-        custom ? h('div', { style: { ...S.line, marginBottom: 8 } }, h('input', { style: { ...S.input, ...S.grow }, placeholder: 'https://api.example.com/v1', value: base, onChange: (e) => setBase(e.target.value) })) : null,
+        custom ? h('div', { style: { ...S.line, marginBottom: 8 } }, h('input', { style: { ...S.input, ...S.grow }, placeholder: basePlaceholder, value: base, onChange: (e) => setBase(e.target.value) })) : null,
         h('div', { style: S.line },
           h('input', { type: 'password', style: { ...S.input, ...S.grow }, placeholder: 'API key', value: key, onChange: (e) => setKey(e.target.value) }),
-          h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !key.trim() || (custom && !base.trim()), onClick: submit }, L('保存', 'Save'))),
+          h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !key.trim() || (custom && !base.trim() && !/^custom-/.test(source.id)), onClick: submit }, L('保存', 'Save'))),
         msg ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null)
     }
 
@@ -668,6 +670,169 @@ window.__ModuleLoader__.load({
           msg ? h('span', { style: { ...S.grow, fontSize: 12, color: C.err } }, msg) : h('span', { style: S.grow }),
           h('button', { type: 'button', style: S.btn, onClick: () => onClose(false) }, L('取消', 'Cancel')),
           h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !name.trim() || list.length < 2, onClick: () => void save() }, busy ? L('保存中…', 'Saving…') : L('保存', 'Save'))))
+    }
+
+    // —— 免费额度（设计 §14.25–14.27）——
+    const CYCLE_LABEL = {
+      daily: () => L('每天', 'daily'),
+      monthly: () => L('每月', 'monthly'),
+      once: () => L('一次性', 'one-off'),
+      limited: () => L('限时', 'limited time'),
+      forever: () => L('长期', 'ongoing'),
+      local: () => L('本机', 'local'),
+    }
+    const FREE_SHOW_ALL = 'dsh-model.freeShowAll'
+    const fmtTokens = (n) => (n >= 1e8 ? L(`${(n / 1e8).toFixed(1)} 亿`, `${(n / 1e6).toFixed(0)}M`) : n >= 1e4 ? L(`${Math.round(n / 1e4)} 万`, `${Math.round(n / 1e3)}k`) : String(n))
+    const hhmm = (iso) => { try { return new Date(iso).toLocaleString(isZh() ? 'zh-CN' : 'en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch { return iso } }
+
+    /** 一把 key 用上各家官方的免费额度：羊毛目录、免费池、防扣费、探测、手动添加来源 */
+    function FreeCard({ sources, onKey, reload }) {
+      const [data, setData] = useState(null)
+      const [err, setErr] = useState('')
+      const [busy, setBusy] = useState('')
+      const [showAll, setShowAll] = useState(() => { try { return window.localStorage.getItem(FREE_SHOW_ALL) === '1' } catch { return false } })
+      const [showPool, setShowPool] = useState(false)
+      const [adding, setAdding] = useState(false)
+      const load = useCallback(() => api('GET', '/free').then((d) => { setData(d); setErr('') }, (e) => setErr(e.message)), [])
+      useEffect(() => { void load() }, [load])
+      // 来源列表变了（填了 key、开关）也刷新一次
+      const sig = (sources || []).map((s) => `${s.id}:${s.loggedIn ? 1 : 0}${s.enabled ? 1 : 0}`).join(',')
+      useEffect(() => { void load() }, [sig, load])
+      if (!data) return err ? h('div', { style: S.section }, h('div', { style: S.h }, L('免费额度', 'Free quota')), h('div', { style: { fontSize: 12, color: C.err } }, err)) : null
+      const act = async (tag, method, path, body) => {
+        setBusy(tag)
+        try { setData(await api(method, path, body)); setErr('') } catch (e) { setErr(e.hint ? `${e.message}（${e.hint}）` : e.message) }
+        setBusy('')
+      }
+      const sourceOf = (id) => (sources || []).find((s) => s.id === id)
+      const fill = (e) => { const s = sourceOf(e.source); if (s) onKey(s) }
+      const optIn = (e) => {
+        const v = window.prompt(L(`「${e.name}」用完会自动扣钱（${(e.gates || []).join('、') || '转按量付费'}）。\n放进免费池要设一个 token 上限，用到 90% 就自动移出。\n上限（token 数）：`, `"${e.name}" charges you once used up.\nSet a token cap to add it to the free pool; it is taken out at 90%.\nCap (tokens):`), String(e.capTokens || 1000000))
+        if (v == null) return
+        void act(e.id, 'POST', '/free/optin', { source: e.source, capTokens: Number(String(v).replace(/[,\s_]/g, '')) })
+      }
+      const sum = data.summary
+      const list = showAll ? data.entries : data.entries.filter((e) => e.status !== 'connected' || e.kind === 'api')
+      const statusTag = (e) => {
+        const color = { connected: C.ok, cooling: C.warn, optin: C.warn, capped: C.err, missing: C.faint }[e.status]
+        const text = {
+          connected: e.kind === 'checkin' ? L('已在签', 'checking in') : L('在免费池里', 'in the pool'),
+          cooling: L(`冷却到 ${hhmm(e.coolingUntil)}`, `cooling until ${hhmm(e.coolingUntil)}`),
+          optin: L('会扣钱，没放进池', 'charges, not in the pool'),
+          capped: L('已到上限', 'cap reached'),
+          missing: L('还没领', 'not claimed'),
+        }[e.status]
+        return h('span', { style: { fontSize: 12, color, whiteSpace: 'nowrap' } }, text)
+      }
+      const actions = (e) => {
+        if (e.kind === 'checkin') return e.status === 'missing' ? h('a', { href: e.url, target: '_blank', rel: 'noopener noreferrer', style: { ...S.btn, textDecoration: 'none' } }, L('官网 ↗', 'Site ↗')) : null
+        const out = []
+        if (e.status === 'missing') {
+          out.push(h('a', { key: 'go', href: e.url, target: '_blank', rel: 'noopener noreferrer', style: { ...S.btn, textDecoration: 'none' } }, L('去领 ↗', 'Claim ↗')))
+          if (sourceOf(e.source)) out.push(h('button', { key: 'key', type: 'button', style: S.btnPrimary, onClick: () => fill(e) }, L('填 key', 'Add key')))
+        }
+        if (e.status === 'optin') out.push(h('button', { key: 'in', type: 'button', style: S.btn, disabled: busy === e.id, onClick: () => optIn(e) }, L('放进免费池…', 'Add to pool…')))
+        if (e.charges && (e.status === 'connected' || e.status === 'capped')) {
+          out.push(h('button', { key: 'cap', type: 'button', style: S.btn, onClick: () => optIn(e) }, L('改上限', 'Change cap')))
+          out.push(h('button', { key: 'out', type: 'button', style: S.btn, disabled: busy === e.id, onClick: () => void act(e.id, 'POST', '/free/optout', { source: e.source }) }, L('移出', 'Remove')))
+        }
+        if (e.status === 'cooling') out.push(h('button', { key: 'retry', type: 'button', style: S.btn, disabled: busy === e.id, onClick: () => void act(e.id, 'POST', '/free/cooldown/clear', { source: e.source }) }, L('现在再试', 'Retry now')))
+        return out
+      }
+      const excluded = data.config.exclude || []
+      return h('div', { style: S.section },
+        h('div', { style: S.line },
+          h('div', { style: { ...S.h, ...S.grow, margin: 0 } }, L('免费额度', 'Free quota')),
+          h('button', { type: 'button', style: S.btn, disabled: busy === 'discover', onClick: () => void act('discover', 'POST', '/free/discover') }, busy === 'discover' ? L('探测中…', 'Checking…') : L('探测新额度', 'Look for new')),
+          h('button', { type: 'button', style: S.btn, onClick: () => setAdding(true) }, L('+ 手动添加来源', '+ Add a source'))),
+        h('p', { style: S.note }, L('一把 key 用上各家官方 API 的免费额度：在 dsh 里选「免费池」分组（其他软件用 free/auto、free/smart、free/fast）。每天、每月重置的和快过期的先用，一家限流或用完就冷却到它重置、换下一家。用完会扣钱的额度默认不进池，要你设上限才放进来。只签到的积分在上面的签到卡片里。', 'One key for the free quotas of official APIs: pick the "Free pool" group in dsh (other tools use free/auto, free/smart, free/fast). Daily and monthly quotas and soon-to-expire ones go first; a provider that hits its limit cools down until it resets and the next one takes over. Quotas that charge you once used up stay out until you set a cap. Check-in-only credits are in the check-in card above.')),
+        h('div', { style: { ...S.card, padding: '10px 14px', marginBottom: 10 } },
+          h('div', { style: { fontSize: 13, lineHeight: 1.8 } },
+            L(`已接入 ${sum.connected} 份 · 免费池现有 ${sum.poolModels.auto} 个模型`, `${sum.connected} connected · ${sum.poolModels.auto} models in the pool`),
+            sum.missing ? h('span', { style: { color: C.sub } }, L(` · 还有 ${sum.missing} 份可领${sum.missingCny ? `（一次性和每月的约 ¥${sum.missingCny}）` : ''}`, ` · ${sum.missing} more to claim${sum.missingCny ? ` (one-off and monthly ≈ ¥${sum.missingCny})` : ''}`)) : null,
+            h('span', { style: { color: C.sub } }, L(` · 签到 ${sum.checkinConnected}/${sum.checkinConnected + sum.checkinMissing} 家`, ` · check-in ${sum.checkinConnected}/${sum.checkinConnected + sum.checkinMissing}`))),
+          sum.poolModels.auto ? h('div', { style: { ...S.line, marginTop: 4 } },
+            h('span', { style: { ...S.meta, ...S.grow } }, L('模型名：', 'Model names: '), h('span', { style: S.mono }, 'free/auto · free/smart · free/fast')),
+            h(CopyButton, { get: 'free/auto', label: L('复制 free/auto', 'Copy free/auto') })) : h('div', { style: { ...S.meta, marginTop: 4 } }, L('免费池还是空的：在下面挑一份「还没领」的，领好填 key 就会进池。', 'The free pool is empty: claim one below and add its key.'))),
+        err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
+        data.discoveries.length ? h('div', { style: { ...S.card, marginBottom: 10 } }, data.discoveries.map((d, i) => h('div', { key: d.id, style: i ? S.row : S.rowFirst },
+          h('div', { style: S.line },
+            h('span', { style: { fontSize: 12, color: C.accent } }, L('新发现', 'New')),
+            h('span', { style: { ...S.grow, fontSize: 13 } }, d.title),
+            h('button', { type: 'button', style: S.btnPrimary, disabled: busy === d.id, onClick: () => {
+              if (d.kind === 'offer' && d.url) window.open(d.url, '_blank', 'noopener,noreferrer')
+              void act(d.id, 'POST', '/free/discovery', { id: d.id, accept: true })
+            } }, d.kind === 'offer' ? L('去看看', 'Open') : L('加进免费池', 'Add to pool')),
+            h('button', { type: 'button', style: S.btn, disabled: busy === d.id, onClick: () => void act(d.id, 'POST', '/free/discovery', { id: d.id, accept: false }) }, L('忽略', 'Dismiss')))))) : null,
+        h('div', { style: S.card }, list.map((e, i) => h('div', { key: e.id, style: i ? S.row : S.rowFirst },
+          h('div', { style: S.line },
+            h('div', { style: S.grow },
+              h('div', { style: { fontSize: 13, color: C.text } }, e.name, e.cny ? h('span', { style: { ...S.meta, marginLeft: 6 } }, `≈ ¥${e.cny}`) : null),
+              h('div', { style: { ...S.meta, marginTop: 2, lineHeight: 1.6 } },
+                [CYCLE_LABEL[e.cycle] ? CYCLE_LABEL[e.cycle]() : e.cycle, e.amount, ...(e.gates || []), e.until ? L(`到 ${e.until}`, `until ${e.until}`) : '', e.kind === 'checkin' ? L('只能签到，在产品里用', 'check-in only, used inside the product') : '', e.charges && e.kind === 'api' ? L('用完会扣钱', 'charges once used up') : ''].filter(Boolean).join(' · '),
+                e.used != null && e.capTokens ? h('span', { style: { marginLeft: 6 } }, h(Bar, { pct: (e.used / e.capTokens) * 100 }), ` ${fmtTokens(e.used)} / ${fmtTokens(e.capTokens)}`) : null,
+                e.note ? h('div', null, e.note) : null)),
+            statusTag(e),
+            actions(e))))),
+        h('div', { style: { ...S.line, marginTop: 8 } },
+          h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: 0, color: C.sub }, onClick: () => { const v = !showAll; setShowAll(v); try { window.localStorage.setItem(FREE_SHOW_ALL, v ? '1' : '0') } catch { /* 无痕 */ } } }, showAll ? L('▾ 收起已在签的', '▾ Hide check-ins already running') : L('▸ 也显示已在签的', '▸ Also show check-ins already running')),
+          h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: 0, color: C.sub }, onClick: () => setShowPool(!showPool) }, showPool ? L('▾ 收起免费池顺序', '▾ Hide pool order') : L('▸ 看免费池顺序', '▸ Show pool order')),
+          h('span', { style: { ...S.meta, ...S.grow, textAlign: 'right' } }, L(`目录 ${data.catalogUpdatedAt}`, `Catalog ${data.catalogUpdatedAt}`))),
+        showPool ? h('div', { style: { ...S.card, marginTop: 8, padding: '8px 14px' } },
+          data.pool.map((p) => h('div', { key: p.tier, style: { padding: '4px 0' } },
+            h('div', { style: { ...S.meta, ...S.mono } }, `free/${p.tier}`),
+            p.models.length ? h('div', { style: { fontSize: 12, lineHeight: 1.9 } }, p.models.map((m, j) => h('span', { key: m.alias, style: { whiteSpace: 'nowrap', marginRight: 6 } },
+              `${j + 1}. ${m.alias}`,
+              h('span', { style: { color: C.faint } }, ` (${(CYCLE_LABEL[m.cycle] || (() => m.cycle))()}${m.charges ? L('，扣钱', ', charges') : ''})`),
+              h('button', { type: 'button', title: L('移出免费池', 'Remove from the pool'), style: { ...S.btn, border: 'none', padding: '0 4px', color: C.faint }, onClick: () => void act(m.alias, 'POST', '/free/model', { alias: m.alias, on: false }) }, '✕')))) : h('div', { style: S.meta }, L('（没有）', '(none)')))),
+          excluded.length ? h('div', { style: { ...S.meta, marginTop: 6 } }, L('移出的：', 'Removed: '), excluded.map((a) => h('span', { key: a, style: { marginRight: 8 } }, a, h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: '0 4px', color: C.accent }, onClick: () => void act(a, 'POST', '/free/model', { alias: a, on: true }) }, L('放回', 'Restore'))))) : null) : null,
+        adding ? h(CustomSourceDialog, { onClose: (saved) => { setAdding(false); if (saved) { void load(); reload() } } }) : null)
+    }
+
+    /** 手动添加一个 OpenAI 兼容来源（可以勾成免费额度，进免费池） */
+    function CustomSourceDialog({ onClose }) {
+      const [name, setName] = useState('')
+      const [base, setBase] = useState('')
+      const [key, setKey] = useState('')
+      const [free, setFree] = useState(true)
+      const [cycle, setCycle] = useState('daily')
+      const [until, setUntil] = useState('')
+      const [busy, setBusy] = useState(false)
+      const [msg, setMsg] = useState('')
+      const save = async () => {
+        setBusy(true)
+        setMsg(L('正在用这把 key 读取模型列表…', 'Reading the model list with this key…'))
+        try {
+          const r = await api('POST', '/custom-sources', { name: name.trim(), baseUrl: base.trim(), key: key.trim(), free, cycle, ...(until ? { until } : {}) })
+          setMsg(L(`已添加，读到 ${r.models} 个模型`, `Added, ${r.models} models found`))
+          onClose(true)
+        } catch (e) {
+          setMsg(e.hint ? `${e.message}（${e.hint}）` : e.message)
+          setBusy(false)
+        }
+      }
+      return h(Modal, { title: L('手动添加来源', 'Add a source'), onClose: () => onClose(false) },
+        h('p', { style: S.note }, L('任何 OpenAI 兼容的服务都行：填名字、地址（以 /v1 结尾）和 key。保存前会读一次模型列表，读得到才保存。可以加很多个。', 'Any OpenAI-compatible service: a name, the URL (ending in /v1) and a key. It reads the model list once before saving. Add as many as you like.')),
+        h('div', { style: { display: 'grid', gap: 8 } },
+          h('input', { style: S.input, placeholder: L('名字，如：某某平台', 'Name, e.g. My provider'), maxLength: 30, value: name, onChange: (e) => setName(e.target.value) }),
+          h('input', { style: S.input, placeholder: 'https://api.example.com/v1', value: base, onChange: (e) => setBase(e.target.value) }),
+          h('input', { type: 'password', style: S.input, placeholder: 'API key', value: key, onChange: (e) => setKey(e.target.value) }),
+          h('label', { style: { ...S.line, fontSize: 13 } },
+            h('input', { type: 'checkbox', checked: free, onChange: (e) => setFree(e.target.checked) }),
+            L('这是免费额度：它的模型全部进免费池（会不会扣钱你自己把关）', 'This is a free quota: all its models join the free pool (you make sure it never charges)')),
+          free ? h('div', { style: S.line },
+            h('span', { style: S.meta }, L('多久重置：', 'Resets:')),
+            h('select', { style: S.input, value: cycle, onChange: (e) => setCycle(e.target.value) },
+              h('option', { value: 'daily' }, L('每天', 'Daily')),
+              h('option', { value: 'monthly' }, L('每月', 'Monthly')),
+              h('option', { value: 'once' }, L('一次性', 'One-off')),
+              h('option', { value: 'forever' }, L('长期免费', 'Always free'))),
+            h('span', { style: S.meta }, L('到期日（可不填）：', 'Expires (optional):')),
+            h('input', { type: 'date', style: S.input, value: until, onChange: (e) => setUntil(e.target.value) })) : null),
+        h('div', { style: { ...S.line, marginTop: 12 } },
+          msg ? h('span', { style: { ...S.grow, fontSize: 12, color: busy ? C.sub : C.err } }, msg) : h('span', { style: S.grow }),
+          h('button', { type: 'button', style: S.btn, onClick: () => onClose(false) }, L('取消', 'Cancel')),
+          h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !name.trim() || !base.trim() || !key.trim(), onClick: () => void save() }, busy ? L('保存中…', 'Saving…') : L('保存', 'Save'))))
     }
 
     function FailuresCard({ failures }) {
@@ -1391,6 +1556,7 @@ window.__ModuleLoader__.load({
         banner,
         h(Guide, { sources: data.sources, onConnect: (s) => void connect(s) }),
         h(CheckinCard, null),
+        h(FreeCard, { sources: data.sources, onKey: (s) => setKeyDialog(s), reload: () => load(true) }),
         err ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 12 } }, err) : null,
         h(EndpointCard, { endpoints: data.endpoints }),
         h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: (s) => setKeyDialog(s || true) }),

@@ -2,9 +2,9 @@
 
 # dsh-model
 
-**📅 Daily check-in credits claimed for you (Trae, Qoder, WorkBuddy, Doubao, OfficeAce) · 🔁 one address that relays every model · 🧩 31 sources, free and subscription, your pick**
+**📅 Daily check-in credits claimed for you (9 products) · 🆓 a free pool: one key for every provider's official free quota · 🔁 one address that relays every model · 🧩 36 sources**
 
-Install once and all three are taken care of. dsh gets a management page; without dsh, the command line does everything.
+Install once and all of this is taken care of. dsh gets a management page; without dsh, the command line does everything.
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/AIcivilization/dsh-model" alt="MIT license"></a>
@@ -26,8 +26,9 @@ English · [中文](README.md)
 | How models are connected | Each vendor's **official** API and proper subscription sign-ins | IDE clients' private APIs, some rewriting requests to get past the vendor's blocking |
 | Account safety | **No disguise, no getting around blocks**: if a vendor blocks it, we stop | Breaks when the vendor changes its protocol; accounts can be banned |
 | Where it works | One address for dsh, editors, scripts and other computers | Mostly inside dsh only |
-| Sources | **31**: free, subscription, local and pay as you go | A dozen or so account channels |
-| Check-in | Trae, Qoder, WorkBuddy, Doubao, OfficeAce, **several accounts each**, can run on an always-on VPS | Some |
+| Sources | **36**: free, subscription, local and pay as you go, plus your own | A dozen or so account channels |
+| Free quota | **Free pool** `free/auto`: official free quotas combined, soon-to-expire first, **anything that charges stays out by default** | — |
+| Check-in | Trae, Qoder, WorkBuddy, Doubao, OfficeAce, MiniMax Code, WPS Lingxi, DuMate, AStudio, **several accounts each**, can run on an always-on VPS | Some |
 | Install | Installing from the plugin marketplace **sets itself up**; no GitHub needed in China | Restart dsh after installing |
 | Transparency | No server of our own, no telemetry; every address it talks to is in the [egress list](docs/EGRESS.md) | — |
 
@@ -42,6 +43,10 @@ English · [中文](README.md)
 | **WorkBuddy (China)** | Sign in once (several accounts are fine) | Check-in credits |
 | **Doubao** (experimental) | On Mac / Windows click "Read from this computer" to use the account signed in to the Doubao app or a browser; or paste the cookie by hand (personal accounts only) | Daily trial credits |
 | **OfficeAce** (Huawei Cloud, experimental) | Click "+ Add OfficeAce" and sign in to Huawei Cloud in the browser (works on a VPS too) | Daily points |
+| **MiniMax Code** | Detected automatically if installed and signed in | Check-in credits (400 a day) |
+| **WPS Lingxi** | Detected automatically if installed and signed in (Node ≥ 22.5) | Points (100 a day, 200 from day 7) |
+| **Baidu DuMate** | Detected automatically if installed and signed in | Check-in credits |
+| **AStudio** | Detected automatically if installed and signed in | Daily sign-in credits |
 
 - **Automatic by default**: done at a random 5–55 minutes after midnight Beijing time; failures retry an hour later; if the computer was off, it catches up within a minute of starting.
 - **You can see it**: one line at the top of the settings page, "Checked in today: …", with a one-click "Check in all" for anything missed, plus a one-time notice in the corner of dsh.
@@ -61,6 +66,25 @@ Your model sources each have their own API and sign-in. dsh-model puts them behi
 - **Secure by default**: a key is always required, one per device, revocable any time; every sign-in happens on your own machine.
 - **Laptop or server**: Windows, macOS, Linux; on a VPS (with [dsh-vps](https://github.com/AIcivilization/dsh-vps)) it opens an https address you can use from anywhere. Uninstall restores dsh's config byte for byte.
 
+## 🆓 Free pool: one key for every provider's official free quota
+
+ModelScope's daily free calls, Cloudflare's daily Neurons, OpenRouter's `:free` models, the free models of Zhipu / Spark / Qianfan / Hunyuan, the free tiers of Gemini and Groq… they all exist, spread over a dozen platforms. dsh-model turns them into **three models**:
+
+| Model | Uses |
+|---|---|
+| `free/auto` | every free model, stronger ones first |
+| `free/smart` | large models only |
+| `free/fast` | small, fast models only |
+
+- **Soon-to-expire first**: daily quotas → monthly → ones with an end date → always-free → local models as the last resort.
+- **Moves on when one runs out**: a provider that hits its limit cools down until it resets (daily ones at midnight Beijing time, monthly ones on the 1st) and the next one takes over.
+- **Never spends your money**: new-user vouchers and quotas that "switch to pay as you go" stay **out** of the pool; to add one you set a token cap, and it is taken out at 90%.
+- **See what is left to claim**: the "Free quota" card lists every quota (cycle, amount, requirements, end date, value), with "Claim" to open the official page and "Add key" to put it in the pool.
+- **Finds new ones**: once a day it checks the quota catalog for new entries and connected platforms for new free models, and **asks you** before adding.
+- **Add your own**: any OpenAI-compatible service, as many as you like; tick "free quota" and it joins the pool.
+
+Check-in credits that only work inside a product (Trae, Qoder, MiniMax Code…) never go through the key; the check-in above claims them. Command line: `dsh-model free`.
+
 ## 🧩 3. Models: free or subscription, connect what you have
 
 | Kind | Sources |
@@ -69,7 +93,9 @@ Your model sources each have their own API and sign-in. dsh-model puts them behi
 | Free · limited | **ModelScope** (about 2,000 calls a day), **Zhipu GLM** (the Flash models), **iFlytek Spark** (Spark Lite), Tencent Hunyuan (hunyuan-lite), Baidu Qianfan (ERNIE Speed / Lite), Mistral, NVIDIA, Groq, OpenRouter (`:free` models) |
 | Local | Ollama, LM Studio: appear once started, no sign-in |
 | Subscription | Codex (ChatGPT Plus / Pro), Kimi Code, Grok, Muse, Devin: sign in from the management page |
-| Pay as you go | DeepSeek official, Alibaba Cloud Bailian (new users get about 1M free tokens per model), Moonshot, StepFun, Volcengine Ark, MiniMax, Huawei Cloud ModelArts, OpenCode Zen, any OpenAI-compatible service |
+| Free · daily | **Cloudflare Workers AI** (10,000 Neurons a day, stops when used up), **InternLM** (monthly credits during the beta) |
+| New-user / monthly credits (charge once used up) | SCNet (100M tokens), Ant Ling (¥10 a month), Tencent Cloud TokenHub (1M tokens), Alibaba Cloud Bailian, Volcengine Ark |
+| Pay as you go | DeepSeek official, Alibaba Cloud Bailian (new users get about 1M free tokens per model), Moonshot, StepFun, Volcengine Ark, MiniMax, Huawei Cloud ModelArts, OpenCode Zen, any OpenAI-compatible service (add several) |
 
 Every source is tagged Free / Free · limited / Paid; see [Sources and cost](#sources-and-cost) below. dsh-model only connects; it provides no quota of its own.
 
@@ -96,7 +122,8 @@ On a dsh-vps server, use `sudo dsh-model setup`. On Windows, run it in a normal 
 
 | Section | What it holds |
 |---|---|
-| **Daily check-in** | WorkBuddy (China), Qoder and Trae are checked in automatically every day (or with one click); the card shows what you got today |
+| **Daily check-in** | 9 products checked in automatically every day (or with one click); the card shows what you got today |
+| **Free quota** | Which models are in the `free/auto` pool and the state of each quota (in use / cooling until / charges, not in the pool / not claimed), with "Claim", "Add key", "Look for new" and "+ Add a source" |
 | **Endpoint** | Local and public addresses, each with a Copy button |
 | **Sources** | One switch per provider: on connects (and signs in if needed), off pauses and keeps the sign-in. Each row is tagged Free / Free · limited / Paid and shows plan usage with reset countdowns, or remaining credits and the next batch to expire; a used-up plan shows when it comes back |
 | **Models** | Pick which models of each source appear in dsh (5 suggested per source by default); the rest stay available through the endpoint; a "Test" button per model |
@@ -136,7 +163,10 @@ If a source is signed in but has no usable plan (say, a Kimi account without Kim
 | NVIDIA (build.nvidia.com) | Free · limited | Free developer trial, rate limited per minute |
 | Alibaba Cloud Bailian, Moonshot, StepFun | Paid | Official APIs; Bailian gives new users about 1M free tokens per model (Beijing region, about 90 days) |
 | Volcengine Ark (Doubao models), MiniMax, Huawei Cloud ModelArts | Paid | Official APIs, just add a key; Ark and Huawei Cloud have free quotas for new users |
-| DeepSeek official, any OpenAI-compatible service | Paid | Paste an API key (and a URL for other services) |
+| Cloudflare Workers AI | Free · limited | 10,000 Neurons a day on the free plan, stops (no charge) when used up; the URL includes your account ID |
+| InternLM | Free · limited | Monthly credits during the beta |
+| SCNet, Ant Ling, Tencent Cloud TokenHub | Paid | New-user / monthly credits, then your balance, so they stay out of the free pool by default |
+| DeepSeek official, any OpenAI-compatible service | Paid | Paste an API key (and a URL for other services; add several, tick "free quota" to put one in the pool) |
 | Codex | Paid | ChatGPT Plus / Pro |
 | Kimi | Paid | Kimi Code plan |
 | Grok | Paid | SuperGrok / X Premium+ |
@@ -155,7 +185,8 @@ dsh-model only connects; it provides no quota of its own.
 | `sources` | Sources: switch, cost, sign-in state, usage |
 | `source enable\|disable\|logout <source>` | Turn on (signing in if needed) / off / sign out |
 | `key list\|add\|revoke\|rotate <name>` | Access keys, one per device |
-| `checkin` | Check in now (WorkBuddy China, Qoder, Trae, Doubao, OfficeAce; automatic daily by default) |
+| `checkin` | Check in now (9 products; automatic daily by default) |
+| `free [discover\|optin <source> <cap>\|optout <source>\|add <name> <url> <key> [--free <cycle>]]` | Free quota: overview, look for new ones, put a charging quota in the pool, add your own source |
 | `combo list\|add <name> <model…>\|remove <id>` | Combos: try several models in order |
 | `failures` | Failed requests in the last 24 hours, with advice |
 | `stats` | Success rate, latency and speed by key, source and model |

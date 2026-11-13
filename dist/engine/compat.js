@@ -9,6 +9,9 @@ import { readJson } from '../util/fs.js';
 import { LOCAL_SERVERS, loadLocalCatalog } from '../integrations/local.js';
 import { keyProvider, loadKeyCatalog } from '../integrations/apikeys.js';
 import { COMBO_PREFIX } from '../combo.js';
+import { activeEntries, loadCatalog } from '../free/catalog.js';
+import { loadPoolState, poolCandidates } from '../free/pool.js';
+import { freeUpstream, poolSourcesFrom } from '../free/service.js';
 export const OPENCODE_BASE = 'https://opencode.ai/zen/v1';
 export const OPENCODE_PREFIX = 'opencode';
 export function opencodeModelsPath(ctx) {
@@ -78,14 +81,15 @@ export async function loadCompatUpstreams(ctx) {
         const models = keyCat[id]?.models ?? [];
         if (!p || !models.length || disabled.has(id))
             continue;
+        const label = s.label ?? p.label;
         out.push({
             name: id,
-            label: p.label,
+            label,
             baseUrl: s.base ?? p.base,
             apiKey: s.key,
             // 国内平台直连，不绕出站代理
             ...(p.direct ? { direct: true } : {}),
-            models: models.map((m) => ({ name: m.id, alias: `${id}/${m.id}`, displayName: `${p.label} · ${m.id}`, dshName: m.free ? `${m.id} · Free` : m.id, ...(m.free ? { rate: 0 } : {}), group: id, groupLabel: p.label })),
+            models: models.map((m) => ({ name: m.id, alias: `${id}/${m.id}`, displayName: `${label} · ${m.id}`, dshName: m.free ? `${m.id} · Free` : m.id, ...(m.free ? { rate: 0 } : {}), group: id, groupLabel: label })),
         });
     }
     // 本机模型服务（Ollama、LM Studio）：在运行、有模型、没被关掉就接进来
@@ -104,6 +108,13 @@ export async function loadCompatUpstreams(ctx) {
         });
     }
     addAutoModels(out);
+    // 免费池（设计 §14.25）：free/auto、free/smart、free/fast，守护进程请求时现算成员
+    if (bridge) {
+        const cands = poolCandidates(poolSourcesFrom(out, secrets), activeEntries(await loadCatalog(ctx.paths.home)), cfg?.freePool ?? {}, await loadPoolState(ctx.paths.home));
+        const fu = freeUpstream(cands, bridge);
+        if (fu)
+            out.push(fu);
+    }
     // 组合切换：守护进程按顺序逐个调引擎里的真实模型
     if (bridge && cfg?.combos?.length)
         out.push(comboUpstream(cfg.combos, bridge, compatModelIndex(out)));

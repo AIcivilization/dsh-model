@@ -80,6 +80,7 @@ export async function runCombo(run) {
                 return;
             last = { status: 502, text: String(error.message ?? error) };
             tried.push(`${model}: ${last.text.slice(0, 120)}`);
+            run.onFailure?.(model, last.status, last.text);
             continue;
         }
         if (upstream.ok && upstream.body) {
@@ -102,6 +103,7 @@ export async function runCombo(run) {
         const text = await upstream.text().catch(() => '');
         last = { status: upstream.status, text };
         tried.push(`${model}: HTTP ${upstream.status}`);
+        run.onFailure?.(model, upstream.status, text);
         if (!shouldFallBack(upstream.status, text))
             break;
     }

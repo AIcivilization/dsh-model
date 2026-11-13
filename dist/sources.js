@@ -36,13 +36,30 @@ export const SOURCES = [
     { id: 'mistral', label: 'Mistral', kind: 'apikey', login: 'key', subscribeUrl: 'https://console.mistral.ai/api-keys', pricing: { tier: 'limited', zh: '免费的 Experiment 档：验证手机号即可，不用信用卡；限速，免费档的请求可能被用来训练模型', en: 'Free Experiment plan: verify a phone number, no card needed; rate limited, and free-tier requests may be used for training' } },
     { id: 'nvidia', label: 'NVIDIA（build.nvidia.com）', kind: 'apikey', login: 'key', subscribeUrl: 'https://build.nvidia.com/settings/api-keys', pricing: { tier: 'limited', zh: '开发者试用免费，按每分钟次数限速（各模型不同）；不用信用卡', en: 'Free developer trial, rate limited per minute (varies by model); no card needed' } },
     { id: 'deepseek', label: 'DeepSeek 官方', kind: 'apikey', login: 'key', subscribeUrl: 'https://platform.deepseek.com/api_keys', pricing: { tier: 'paid', zh: '按量付费（价格低）', en: 'Pay as you go (low prices)' } },
+    // 免费额度来源（2026-11-13 加，设计 §14.25）：新人 / 每月的额度用完会扣余额，所以默认不进免费池
+    { id: 'cloudflare', label: 'Cloudflare Workers AI', kind: 'apikey', login: 'key', subscribeUrl: 'https://dash.cloudflare.com/profile/api-tokens', pricing: { tier: 'limited', zh: '免费计划每天 1 万 Neurons，超额即停（不扣钱）；地址要填带账户 ID 的', en: '10,000 Neurons a day on the free plan, stops when used up (no charge); the URL includes your account ID' } },
+    { id: 'scnet', label: '超算互联网 SCNet', kind: 'apikey', login: 'key', subscribeUrl: 'https://www.scnet.cn/', pricing: { tier: 'paid', zh: '新用户实名后可领 1 亿 Token（到 2026-12-31，每日限量），用完扣现金余额。国内直连', en: 'New verified users can claim 100M tokens (until 2026-12-31, daily limited); after that it uses your cash balance. Reachable from China' } },
+    { id: 'ling', label: '蚂蚁百灵 Ling', kind: 'apikey', login: 'key', subscribeUrl: 'https://ling.tbox.cn/open', pricing: { tier: 'paid', zh: '每月 1 日送 10 元抵扣券，新用户另送 20 元；用完按量付费。国内直连', en: '¥10 credit on the 1st of each month, ¥20 more for new users; pay as you go after that. Reachable from China' } },
+    { id: 'tokenhub', label: '腾讯云 TokenHub', kind: 'apikey', login: 'key', subscribeUrl: 'https://console.cloud.tencent.com/tokenhub', pricing: { tier: 'paid', zh: '新人语言模型送 100 万 Token（到 2026-12-31）；用完按量付费。国内直连', en: '1M tokens for new users (until 2026-12-31); pay as you go after that. Reachable from China' } },
+    { id: 'intern', label: '书生 InternLM', kind: 'apikey', login: 'key', subscribeUrl: 'https://internlm.intern-ai.org.cn/api/tokens', pricing: { tier: 'limited', zh: '测试期每月送免费额度，以账户为准。国内直连', en: 'Free monthly credits during the beta; see your account. Reachable from China' } },
     { id: 'custom', label: '其他 OpenAI 兼容服务', kind: 'apikey', login: 'key', pricing: { tier: 'paid', zh: '填地址和 key，接入任意 OpenAI 兼容服务', en: 'Enter a URL and a key for any OpenAI-compatible service' } },
     { id: 'opencode', label: 'OpenCode Zen', kind: 'opencode', login: 'key', subscribeUrl: 'https://opencode.ai/zen', pricing: { tier: 'paid', zh: '要先充值拿 key 按量计费；它的免费模型只能在 OpenCode 软件里用', en: 'Top up for a pay-as-you-go key; its free models only work inside the OpenCode app' } },
 ];
 const ALIASES = { grok: 'xai', muse: 'meta', chatgpt: 'codex', openai: 'codex', 'workbuddy-cn': 'workbuddy', wb: 'workbuddy', 'wb-ai': 'workbuddy-ai' };
 export function findSource(id) {
     const k = ALIASES[id.toLowerCase()] ?? id.toLowerCase();
-    return SOURCES.find((s) => s.id === k);
+    return SOURCES.find((s) => s.id === k) ?? (isCustomSourceId(k) ? customSourceDef(k) : undefined);
+}
+/** 用户手动加的来源 custom-<短名>（设计 §14.26）；名字存在 secrets 里，这里先用短名 */
+export const isCustomSourceId = (id) => /^custom-[a-z0-9][a-z0-9-]{0,31}$/.test(id);
+export function customSourceDef(id, label, free) {
+    return {
+        id,
+        label: label || id.slice('custom-'.length),
+        kind: 'apikey',
+        login: 'key',
+        pricing: free ? { tier: 'free', zh: '你标成了免费额度：模型全部进免费池', en: 'You marked it as a free quota: all its models join the free pool' } : { tier: 'paid', zh: '你手动添加的 OpenAI 兼容服务', en: 'An OpenAI-compatible service you added' },
+    };
 }
 /** 凭据属于哪个来源：优先看 provider / type 字段，否则看文件名前缀 */
 export function credsFor(creds, def) {
@@ -59,4 +76,4 @@ export function paymentRequired(cred) {
     return Array.isArray(cooldowns) && cooldowns.some((c) => c?.reason === 'payment_required');
 }
 /** 引擎里作为 openai-compatibility 上游的来源：模型名前缀就是来源 id（同步时据此核对引擎是否已热重载） */
-export const COMPAT_PREFIXES = [...SOURCES.filter((s) => s.kind !== 'engine').map((s) => `${s.variant ?? s.id}/`), 'auto/', 'combo/'];
+export const COMPAT_PREFIXES = [...SOURCES.filter((s) => s.kind !== 'engine').map((s) => `${s.variant ?? s.id}/`), 'auto/', 'combo/', 'free/', 'custom-'];

@@ -92,7 +92,7 @@ describe('daemon core against a real engine', () => {
 
   it('lists every source; engine sources start signed out', async () => {
     const list = await daemon.sources()
-    expect(list.map((s) => s.id)).toEqual(['workbuddy', 'workbuddy-ai', 'codex', 'claude', 'kimi', 'xai', 'meta', 'antigravity', 'devin', 'ollama', 'lmstudio', 'gemini', 'groq', 'openrouter', 'siliconflow', 'zhipu', 'spark', 'qianfan', 'ark', 'minimax', 'modelarts', 'modelscope', 'hunyuan', 'dashscope', 'moonshot', 'stepfun', 'mistral', 'nvidia', 'deepseek', 'custom', 'opencode'])
+    expect(list.map((s) => s.id)).toEqual(['workbuddy', 'workbuddy-ai', 'codex', 'claude', 'kimi', 'xai', 'meta', 'antigravity', 'devin', 'ollama', 'lmstudio', 'gemini', 'groq', 'openrouter', 'siliconflow', 'zhipu', 'spark', 'qianfan', 'ark', 'minimax', 'modelarts', 'modelscope', 'hunyuan', 'dashscope', 'moonshot', 'stepfun', 'mistral', 'nvidia', 'deepseek', 'cloudflare', 'scnet', 'ling', 'tokenhub', 'intern', 'custom', 'opencode'])
     expect(list.find((s) => s.id === 'kimi')).toMatchObject({ loggedIn: false, enabled: false })
     expect(list.find((s) => s.id === 'workbuddy')).toMatchObject({ loggedIn: true, enabled: true, models: 1 })
   })
@@ -224,6 +224,60 @@ describe('daemon core against a real engine', () => {
       await daemon.logout('custom')
     } finally {
       fake.close()
+    }
+  }, 90_000)
+
+  it('the free pool routes free/auto past a rate-limited free source, cools it down, and never takes charging models', async () => {
+    const mk = (status: number, model: string) => {
+      const srv = createServer((req, res) => {
+        if (req.url === '/v1/models') {
+          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: model, object: 'model' }] }))
+          return
+        }
+        req.resume()
+        req.on('end', () => {
+          if (status === 429) res.writeHead(429, { 'content-type': 'application/json' }).end('{"error":{"message":"rate limit"}}')
+          else res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ id: 'x', object: 'chat.completion', created: 0, model, choices: [{ index: 0, message: { role: 'assistant', content: 'free-ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }))
+        })
+      })
+      return srv
+    }
+    const busy = mk(429, 'busy-70b')
+    const good = mk(200, 'good-8b')
+    const bp = await findFreePort(21000 + Math.floor(Math.random() * 90))
+    const gp = await findFreePort(21100 + Math.floor(Math.random() * 90))
+    await new Promise<void>((r) => busy.listen(bp, '127.0.0.1', () => r()))
+    await new Promise<void>((r) => good.listen(gp, '127.0.0.1', () => r()))
+    const waitFor = async (pred: (ids: string[]) => boolean) => {
+      for (let i = 0; i < 60; i++) {
+        if (pred((await listModels(port, dshKey).catch(() => [])).map((m) => m.id))) return true
+        await new Promise((r) => setTimeout(r, 250))
+      }
+      return false
+    }
+    try {
+      // 每天重置的排在长期免费的前面：busy 先被试到
+      const a = await daemon.addCustomSource({ name: 'Busy', baseUrl: `http://127.0.0.1:${bp}/v1`, key: 'sk-test-busy-1234', free: true, cycle: 'daily' })
+      const g = await daemon.addCustomSource({ name: 'Good', baseUrl: `http://127.0.0.1:${gp}/v1`, key: 'sk-test-good-1234', free: true, cycle: 'forever' })
+      expect([a.id, g.id]).toEqual(['custom-busy', 'custom-good'])
+      expect(await waitFor((ids) => ids.includes('free/auto') && ids.includes('custom-busy/busy-70b'))).toBe(true)
+      const before = await daemon.freeOverview()
+      expect(before.pool.find((p) => p.tier === 'auto')!.models.map((m) => m.alias)).toEqual(['custom-busy/busy-70b', 'custom-good/good-8b'])
+      const chat = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${dshKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'free/auto', messages: [{ role: 'user', content: 'ping' }] }) })
+      expect(chat.status).toBe(200)
+      expect(((await chat.json()) as { choices: { message: { content: string } }[] }).choices[0]!.message.content).toBe('free-ok')
+      // busy 回了 429：冷却到北京时间次日 0 点，之后不再先试它
+      const after = await daemon.freeOverview()
+      expect(after.pool.find((p) => p.tier === 'auto')!.models.map((m) => m.alias)).toEqual(['custom-good/good-8b'])
+      // 手动加的、没勾免费的来源不进池
+      expect(after.pool.flatMap((p) => p.models).some((m) => m.alias.startsWith('custom/'))).toBe(false)
+      expect((await daemon.sources()).some((s) => s.id === 'custom-good' && s.label === 'Good')).toBe(true)
+      await daemon.logout('custom-busy')
+      await daemon.logout('custom-good')
+      expect(await waitFor((ids) => !ids.includes('free/auto'))).toBe(true)
+    } finally {
+      busy.close()
+      good.close()
     }
   }, 90_000)
 })

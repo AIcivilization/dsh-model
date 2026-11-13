@@ -62,6 +62,10 @@ export function checkinAdvice(itemId: CheckinId, message: string): string {
     if (id === 'doubao') return L('豆包登录过期：在豆包电脑版或浏览器里重新登录，再点签到卡片里的「+ 添加豆包 → 从本机自动读取」（会换成新的登录）', 'Doubao sign-in expired: sign in again in the Doubao app or a browser, then use "+ Add Doubao → Read from this computer" in the check-in card (it replaces the old sign-in)')
     if (id === 'trae') return L('Trae 登录过期：打开 Trae 重新登录一次', 'Trae sign-in expired: open Trae and sign in again')
     if (id === 'officeace') return L('OfficeAce（华为云）登录过期：在签到卡片里删掉它，再添加一次重新登录', 'The OfficeAce (Huawei Cloud) sign-in expired: remove it in the check-in card and add it again')
+    if (id === 'minimax' || id === 'lingxi' || id === 'dumate' || id === 'astudio') {
+      const app = { minimax: 'MiniMax Code', lingxi: L('WPS 灵犀', 'WPS Lingxi'), dumate: 'DuMate', astudio: 'AStudio' }[id]
+      return L(`${app} 登录过期：打开 ${app} 重新登录一次，下次签到会自动用上`, `${app} sign-in expired: open ${app} and sign in again; the next check-in picks it up`)
+    }
     if (id === 'qoder') return L('Qoder 个人访问令牌失效：在签到卡片里删掉它再添加一个新的', 'The Qoder access token no longer works: remove it in the check-in card and add a new one')
     return itemId.includes(':') ? L('这个 WorkBuddy 签到账号的登录过期：在签到卡片里删掉它再添加一次', 'This WorkBuddy check-in account has expired: remove it in the check-in card and add it again') : L('WorkBuddy 登录过期：在来源里重新登录 WorkBuddy', 'WorkBuddy sign-in expired: sign in to WorkBuddy again under Sources')
   }

@@ -16,6 +16,7 @@ import { opencode } from './commands/opencode.js'
 import { workbuddy } from './commands/workbuddy.js'
 import { bridge } from './commands/bridge.js'
 import { combo } from './commands/combo.js'
+import { free } from './commands/free.js'
 import { checkin, enableInteractive, failures, source, sources, stats } from './commands/sources.js'
 import { createContext } from './context.js'
 import { isDshModelError } from './errors.js'
@@ -76,6 +77,7 @@ function help(): string {
   failures                             最近 24 小时失败的请求，以及该怎么办
   checkin                              现在签到一次（WorkBuddy 国内版、Qoder、Trae；默认每天自动签）
   combo [list|add <名称> <模型…>|remove <id>]  组合切换：按顺序试几个模型，一个不行换下一个
+  free [discover|optin <来源> <上限>|optout <来源>|add <名字> <地址> <key> [--free <周期>]]  免费额度：免费池 free/auto、还能领的、手动添加来源
   status                               一屏总览
   doctor [--e2e] [--all] [--model M]   逐项自检；--e2e 实测流式与工具调用
   connect-dsh [--dry-run] [--force]    写入 / 刷新 dsh 配置
@@ -111,6 +113,7 @@ Usage: dsh-model <command> [options]
   failures                             Failed requests in the last 24 hours, and what to do
   checkin                              Check in now (WorkBuddy China, Qoder, Trae; automatic daily by default)
   combo [list|add <name> <model…>|remove <id>]  Combos: try several models in order, moving on when one fails
+  free [discover|optin <source> <cap>|optout <source>|add <name> <url> <key> [--free <cycle>]]  Free quota: the free/auto pool, what is left to claim, add your own source
   status                               Overview
   doctor [--e2e] [--all] [--model M]   Health checks; --e2e tests streaming and tool calls
   connect-dsh [--dry-run] [--force]    Write / refresh dsh config
@@ -182,6 +185,8 @@ export async function main(argv: string[]): Promise<number> {
         return await failures(ctx)
       case 'checkin':
         return await checkin(ctx)
+      case 'free':
+        return await free(ctx, a1, [a2, ...rest].filter((x): x is string => x !== undefined))
       case 'combo':
         return await combo(ctx, a1, [a2, ...rest].filter((x): x is string => x !== undefined))
       case 'status':

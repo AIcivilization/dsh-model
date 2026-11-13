@@ -23,6 +23,7 @@ import { DoubaoAuthError, doubaoCheckin, doubaoStatus, normalizeCookie } from '.
 import { CookieAccessDenied, findDoubaoLogins, readDoubaoCookie } from '../checkin/browser-cookies.js';
 import { exchangeOfficeAceCode, officeAceClaim, officeAceExpiring, pollOfficeAceCode, refreshOfficeAce, startOfficeAceLogin } from '../checkin/officeace.js';
 import { exportCheckin, importCheckin } from '../checkin/transfer.js';
+import { extCheckers, extMissing } from '../checkin/ext.js';
 import { accountTag, addDoubao, addOfficeAce, loadOfficeAces, removeOfficeAce, updateOfficeAce, checkinKind, cookieValue, addQoder, listWorkbuddyAccounts, loadDoubaos, loadQoders, removeDoubao, removeQoder, removeWorkbuddyAccount, workbuddyAccountStore, workbuddyAccountsDir } from '../checkin/accounts.js';
 import { CN_VARIANT } from '../bridge/workbuddy/variants.js';
 import { PKG_ROOT, pkgVersion } from '../util/pkg.js';
@@ -50,6 +51,10 @@ import { Stats } from './stats.js';
 import { USAGE_UNSUPPORTED, probeEngineSource, fetchEngineUsage, fetchWorkbuddyUsage, usageFilePath } from './usage.js';
 import { writeJson } from '../util/fs.js';
 import { comboId, normalizeCombo, runCombo } from '../combo.js';
+import { FreePool, parseCap, tierOf } from '../free/service.js';
+import { loadCompatUpstreams } from '../engine/compat.js';
+import { customId, isCustomId } from '../integrations/apikeys.js';
+import { customSourceDef } from '../sources.js';
 const LOGIN_POLL_MS = 2000;
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000;
 const USAGE_POLL_MS = 5000;
@@ -81,9 +86,11 @@ export class Daemon {
     keyNames = new Map();
     usageCache = new Map();
     usageInflight;
+    free;
     constructor(ctx) {
         this.ctx = ctx;
         this.stats = new Stats(Stats.path(ctx.paths.home), ctx.owner);
+        this.free = new FreePool(ctx);
     }
     // —— 生命周期 ——
     async start() {
@@ -104,6 +111,9 @@ export class Daemon {
         this.timers.push(setInterval(() => void this.reloadKeyNames(), STATS_SAVE_MS));
         this.timers.push(setInterval(() => void this.refreshUsage(), USAGE_REFRESH_MS));
         setTimeout(() => void this.refreshUsage(), 3000);
+        // 探测新额度（设计 §14.27）：每 6 小时看一眼，距上次拉远程目录超过一天才拉
+        this.timers.push(setInterval(() => void this.discoverFree().catch(() => { }), 6 * 60 * 60 * 1000));
+        setTimeout(() => void this.discoverFree().catch(() => { }), 90_000);
     }
     async stop() {
         for (const t of this.timers)
@@ -135,8 +145,11 @@ export class Daemon {
     async refreshCatalogs() {
         let changed = await refreshLocalCatalog(this.ctx.paths.home, this.ctx.owner).catch(() => false);
         const proxy = (await loadAll(this.ctx).catch(() => null))?.config.proxy;
-        if (await refreshKeyCatalogs(this.ctx, proxy).catch(() => false))
+        if (await refreshKeyCatalogs(this.ctx, proxy).catch(() => false)) {
             changed = true;
+            // 模型目录变了：看看有没有新的免费模型（不拉远程目录）
+            void this.free.discover({ keyCat: await loadKeyCatalog(this.ctx.paths.home) }, { remote: false }).catch(() => 0);
+        }
         for (const rt of this.runtimes) {
             try {
                 if (await refreshCatalog(this.ctx.paths.home, rt, this.ctx.owner))
@@ -156,8 +169,11 @@ export class Daemon {
     async pollUsage() {
         try {
             const batch = await (await this.mgmt()).usageQueue(1000);
-            if (batch.length)
+            if (batch.length) {
                 this.stats.add(batch, (k) => (k ? (this.keyNames.get(k) ?? 'unknown') : 'unknown'));
+                const optIn = (await loadAll(this.ctx)).config.freePool?.optIn;
+                await this.free.recordUsage(batch, optIn);
+            }
         }
         catch {
             // 引擎重启中 / 还没配管理接口：下一轮再取
@@ -214,7 +230,10 @@ export class Daemon {
         }
         const snap = this.stats.snapshot();
         const modelCount = (prefix) => Object.entries(snap.byModel).filter(([m]) => m.startsWith(`${prefix}/`)).length;
-        return SOURCES.map((def) => {
+        const customDefs = Object.entries(secrets.apikeys ?? {})
+            .filter(([id]) => isCustomId(id))
+            .map(([id, v]) => customSourceDef(id, v.label, v.free));
+        return [...SOURCES, ...customDefs].map((def) => {
             const base = { id: def.id, label: def.label, kind: def.kind, login: def.login, riskAck: Boolean(def.riskAck), risky: Boolean(def.risky), pricing: def.pricing, ...(def.subscribeUrl ? { subscribeUrl: def.subscribeUrl } : {}) };
             if (def.kind === 'engine') {
                 const mine = credsFor(creds, def);
@@ -249,7 +268,7 @@ export class Daemon {
                     ...base,
                     loggedIn: has,
                     enabled: has && !disabled.has(def.id),
-                    ...(has ? { account: def.id === 'custom' ? (secrets.apikeys?.[def.id]?.base ?? '') : redactKey(secrets.apikeys[def.id].key) } : {}),
+                    ...(has ? { account: def.id === 'custom' || isCustomId(def.id) ? (secrets.apikeys?.[def.id]?.base ?? '') : redactKey(secrets.apikeys[def.id].key) } : {}),
                     ...(has && free ? { detail: L(`其中 ${free} 个免费`, `${free} of them free`) } : {}),
                     models: has ? models.length : 0,
                 };
@@ -792,6 +811,8 @@ export class Daemon {
                 run: async () => traeCheckin((await findTraeCredentials()).find((x) => (x.accountId ?? x.source) === (t.accountId ?? t.source)) ?? t),
             });
         });
+        // MiniMax Code、WPS 灵犀、DuMate、AStudio（移植自 dsh-checkin-all，设计 §14.28）：本机 App 登录着就签
+        out.push(...(await extCheckers(log_).catch(() => [])));
         return out;
     }
     async checkinStatus() {
@@ -823,6 +844,7 @@ export class Daemon {
                 ...(checkers.some((c) => checkinKind(c.id) === 'doubao') ? [] : [{ id: 'doubao', label: L('豆包', 'Doubao'), action: 'doubao', found: (await findDoubaoLogins().catch(() => [])).map((f) => f.label) }]),
                 ...(checkers.some((c) => checkinKind(c.id) === 'officeace') ? [] : [{ id: 'officeace', label: L('OfficeAce（华为云）', 'OfficeAce (Huawei Cloud)'), action: 'officeace' }]),
                 ...(checkers.some((c) => checkinKind(c.id) === 'trae') ? [] : [{ id: 'trae', label: 'Trae', reason: L('这台没装 Trae：要在装了 Trae 的电脑上签', 'Trae is not installed here: it is checked in on a computer with Trae') }]),
+                ...extMissing(new Set(checkers.map((c) => checkinKind(c.id)))),
             ],
         };
     }
@@ -1191,11 +1213,112 @@ export class Daemon {
     /** 引擎转来的 combo/<id> 请求：按顺序逐个试 */
     async runCombo(id, raw, res, signal, log) {
         const all = await loadAll(this.ctx);
+        const tier = tierOf(id);
+        if (tier) {
+            await this.free.run(tier, await this.poolInputs(), { port: all.config.port, key: dshKey(all.keys), raw, res, signal, ...(log ? { log } : {}) });
+            return true;
+        }
         const combo = all.config.combos?.find((c) => c.id === id);
         if (!combo)
             return false;
         await runCombo({ port: all.config.port, key: dshKey(all.keys), combo, raw, res, signal, ...(log ? { log } : {}) });
         return true;
+    }
+    // —— 免费额度（设计 §14.25–14.27） ——
+    /** 免费池要的输入：配置、将要写进引擎的上游、secrets */
+    async poolInputs() {
+        const all = await loadAll(this.ctx);
+        const checkers = await this.checkers().catch(() => []);
+        return {
+            config: all.config.freePool ?? {},
+            upstreams: await loadCompatUpstreams(this.ctx),
+            secrets: await loadSecrets(this.ctx),
+            disabled: new Set(all.config.disabledSources ?? []),
+            keyCat: await loadKeyCatalog(this.ctx.paths.home),
+            checkinKinds: new Set(checkers.map((c) => checkinKind(c.id))),
+        };
+    }
+    async freeOverview() {
+        return this.free.overview(await this.poolInputs());
+    }
+    /** 定时探测：距上次拉远程目录不到一天就只比对模型 */
+    async discoverFree(force = false) {
+        const st = await this.free.loadState();
+        const stale = force || !st.catalogCheckedAt || Date.now() - Date.parse(st.catalogCheckedAt) > 24 * 60 * 60 * 1000;
+        const n = await this.free.discover({ keyCat: await loadKeyCatalog(this.ctx.paths.home) }, { remote: stale });
+        if (stale)
+            void this.resync(); // 目录可能变了：免费池成员跟着变
+        return n;
+    }
+    async updatePoolConfig(fn) {
+        await withLock(this.ctx, async () => {
+            const all = await loadAll(this.ctx);
+            const cfg = { ...(all.config.freePool ?? {}) };
+            fn(cfg);
+            all.config.freePool = cfg;
+            await saveAll(this.ctx, all);
+        });
+        await this.resync();
+    }
+    /** 会扣钱的额度：用户确认并给 token 上限后进池 */
+    async freeOptIn(source, capTokens) {
+        const cap = parseCap(capTokens);
+        mustSource(source);
+        await this.free.resetUsed(source);
+        await this.updatePoolConfig((c) => {
+            c.optIn = { ...(c.optIn ?? {}), [source]: { capTokens: cap } };
+        });
+    }
+    async freeOptOut(source) {
+        await this.updatePoolConfig((c) => {
+            const o = { ...(c.optIn ?? {}) };
+            delete o[source];
+            c.optIn = Object.keys(o).length ? o : undefined;
+        });
+    }
+    /** 把一个模型移出 / 放回免费池（on=true 放回或点名加入） */
+    async freeToggleModel(alias, on) {
+        if (!/^[^/\s]+\/\S+$/.test(alias))
+            throw new DshModelError('bad_model', L(`模型名不对：${alias}`, `Bad model name: ${alias}`));
+        await this.updatePoolConfig((c) => {
+            const ex = new Set(c.exclude ?? []);
+            const inc = new Set(c.include ?? []);
+            if (on) {
+                ex.delete(alias);
+                inc.add(alias);
+            }
+            else {
+                ex.add(alias);
+                inc.delete(alias);
+            }
+            c.exclude = ex.size ? [...ex] : undefined;
+            c.include = inc.size ? [...inc] : undefined;
+        });
+    }
+    /** 发现的条目：加入（新免费模型 → 放进池；新额度 → 页面去打开领取页）或忽略 */
+    async freeDiscovery(id, accept) {
+        const st = await this.free.loadState();
+        const d = (st.discoveries ?? []).find((x) => x.id === id);
+        if (!d)
+            throw new DshModelError('no_discovery', L('这条已经处理过了', 'This one was already handled'));
+        if (accept && d.kind === 'model' && d.source && d.model)
+            await this.freeToggleModel(`${d.source}/${d.model}`, true);
+        await this.free.dismiss(id);
+    }
+    /** 用户手动加一个 OpenAI 兼容来源（设计 §14.26） */
+    async addCustomSource(b) {
+        const name = String(b.name ?? '').trim();
+        if (!name || name.length > 30)
+            throw new DshModelError('bad_name', L('要起个名字（最多 30 个字）', 'Give it a name (up to 30 characters)'));
+        const cycle = ['daily', 'monthly', 'forever', 'once'].includes(String(b.cycle)) ? String(b.cycle) : 'forever';
+        const until = typeof b.until === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.until) ? b.until : undefined;
+        const secrets = await loadSecrets(this.ctx);
+        const id = customId(name, Object.keys(secrets.apikeys ?? {}));
+        const all = await loadAll(this.ctx);
+        const r = await setApiKey(this.ctx, id, String(b.key ?? '').trim(), String(b.baseUrl ?? ''), all.config.proxy, { label: name, free: b.free === true, cycle, ...(until ? { until } : {}) });
+        await this.setSourceDisabled(id, false);
+        await this.resync();
+        return { id, ...r };
     }
     /** 管理页"复制"用：取一把未吊销 key 的完整值（只经同源、带页面 token 的插件路由转发） */
     async revealKey(name) {
@@ -1265,6 +1388,22 @@ export class Daemon {
                 }
                 return ok(await this.sources());
             }
+            if (method === 'GET' && path === '/free')
+                return ok(await this.freeOverview());
+            if (method === 'POST' && path === '/free/discover')
+                return ok({ found: await this.discoverFree(true), ...(await this.freeOverview()) });
+            if (method === 'POST' && path === '/free/optin')
+                return ok(await this.freeOptIn(String(b.source ?? ''), b.capTokens).then(() => this.freeOverview()));
+            if (method === 'POST' && path === '/free/optout')
+                return ok(await this.freeOptOut(String(b.source ?? '')).then(() => this.freeOverview()));
+            if (method === 'POST' && path === '/free/model')
+                return ok(await this.freeToggleModel(String(b.alias ?? ''), b.on !== false).then(() => this.freeOverview()));
+            if (method === 'POST' && path === '/free/cooldown/clear')
+                return ok(await this.free.clearCooldown(String(b.source ?? '')).then(() => this.freeOverview()));
+            if (method === 'POST' && path === '/free/discovery')
+                return ok(await this.freeDiscovery(String(b.id ?? ''), b.accept === true).then(() => this.freeOverview()));
+            if (method === 'POST' && path === '/custom-sources')
+                return ok(await this.addCustomSource(b));
             if (method === 'GET' && path === '/combos')
                 return ok(await this.combos());
             if (method === 'POST' && path === '/combos')

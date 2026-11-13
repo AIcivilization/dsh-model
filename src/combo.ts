@@ -64,6 +64,8 @@ export interface ComboRun {
   res: ServerResponse
   signal: AbortSignal
   log?: (message: string) => void
+  /** 一个成员失败了（免费池据此冷却来源） */
+  onFailure?: (model: string, status: number, text: string) => void
 }
 
 /** 按顺序试组合里的模型，把第一个成功的响应原样转回客户端 */
@@ -92,6 +94,7 @@ export async function runCombo(run: ComboRun): Promise<void> {
       if (run.signal.aborted) return
       last = { status: 502, text: String((error as Error).message ?? error) }
       tried.push(`${model}: ${last.text.slice(0, 120)}`)
+      run.onFailure?.(model, last.status, last.text)
       continue
     }
     if (upstream.ok && upstream.body) {
@@ -112,6 +115,7 @@ export async function runCombo(run: ComboRun): Promise<void> {
     const text = await upstream.text().catch(() => '')
     last = { status: upstream.status, text }
     tried.push(`${model}: HTTP ${upstream.status}`)
+    run.onFailure?.(model, upstream.status, text)
     if (!shouldFallBack(upstream.status, text)) break
   }
   log(`combo ${combo.id}: all failed (${tried.join(' | ')})`)
