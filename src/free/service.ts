@@ -40,10 +40,13 @@ export function poolSourcesFrom(upstreams: CompatUpstream[], secrets: Secrets): 
 }
 
 const TIER_LABEL: Record<Tier, [string, string]> = {
-  auto: ['免费池 · 自动', 'Free pool · auto'],
-  smart: ['免费池 · 大模型', 'Free pool · smart'],
-  fast: ['免费池 · 快', 'Free pool · fast'],
+  auto: ['🆓 免费池 · 自动（推荐）', '🆓 Free pool · auto (recommended)'],
+  smart: ['🆓 免费池 · 大模型', '🆓 Free pool · smart'],
+  fast: ['🆓 免费池 · 快', '🆓 Free pool · fast'],
 }
+
+/** dsh 模型列表里的分组名：要醒目，一看就知道点进去能用免费额度 */
+export const FREE_GROUP_LABEL: [string, string] = ['🆓 免费池（各家免费额度，自动切换）', '🆓 Free pool (free quotas, auto-switching)']
 
 /** 引擎里的 free/<档>：有成员的档才登记 */
 export function freeUpstream(candidates: Member[], bridge: { port: number; secret: string }): CompatUpstream | null {
@@ -54,7 +57,7 @@ export function freeUpstream(candidates: Member[], bridge: { port: number; secre
     dshName: L(...TIER_LABEL[t]),
     rate: 0,
     group: FREE_PREFIX,
-    groupLabel: L('免费池', 'Free pool'),
+    groupLabel: L(...FREE_GROUP_LABEL),
   }))
   if (!models.length) return null
   return { name: FREE_PREFIX, label: L('免费池', 'Free pool'), baseUrl: `http://127.0.0.1:${bridge.port}/combo/v1`, apiKey: bridge.secret, direct: true, models }

@@ -10,6 +10,16 @@ import { describe, expect, it } from 'vitest'
 type Handler = (req: IncomingMessage, res: ServerResponse) => unknown
 
 describe('dsh plugin host side', () => {
+  it('compares versions to decide whether the background service is older', async () => {
+    const { isNewerVersion } = (await import('../../plugin/index.js')) as unknown as { isNewerVersion: (a: string, b: string) => boolean }
+    expect(isNewerVersion('0.31.0', '0.29.0')).toBe(true)
+    expect(isNewerVersion('0.31.1', '0.31.0')).toBe(true)
+    expect(isNewerVersion('0.31.0', '0.31.0')).toBe(false)
+    expect(isNewerVersion('0.30.9', '0.31.0')).toBe(false)
+    expect(isNewerVersion('1.0.0', '0.99.99')).toBe(true)
+  })
+
+
   it('forwards only allowed calls, with token + same origin, adding the daemon secret', async () => {
     // 假守护进程
     const seen: { auth?: string; path?: string; method?: string }[] = []

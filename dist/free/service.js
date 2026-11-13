@@ -33,10 +33,12 @@ export function poolSourcesFrom(upstreams, secrets) {
     return out;
 }
 const TIER_LABEL = {
-    auto: ['免费池 · 自动', 'Free pool · auto'],
-    smart: ['免费池 · 大模型', 'Free pool · smart'],
-    fast: ['免费池 · 快', 'Free pool · fast'],
+    auto: ['🆓 免费池 · 自动（推荐）', '🆓 Free pool · auto (recommended)'],
+    smart: ['🆓 免费池 · 大模型', '🆓 Free pool · smart'],
+    fast: ['🆓 免费池 · 快', '🆓 Free pool · fast'],
 };
+/** dsh 模型列表里的分组名：要醒目，一看就知道点进去能用免费额度 */
+export const FREE_GROUP_LABEL = ['🆓 免费池（各家免费额度，自动切换）', '🆓 Free pool (free quotas, auto-switching)'];
 /** 引擎里的 free/<档>：有成员的档才登记 */
 export function freeUpstream(candidates, bridge) {
     const models = TIERS.filter((t) => poolOrder(candidates, t, { cooldown: {} }).length > 0).map((t) => ({
@@ -46,7 +48,7 @@ export function freeUpstream(candidates, bridge) {
         dshName: L(...TIER_LABEL[t]),
         rate: 0,
         group: FREE_PREFIX,
-        groupLabel: L('免费池', 'Free pool'),
+        groupLabel: L(...FREE_GROUP_LABEL),
     }));
     if (!models.length)
         return null;

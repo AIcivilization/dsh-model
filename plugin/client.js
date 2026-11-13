@@ -682,6 +682,12 @@ window.__ModuleLoader__.load({
       local: () => L('本机', 'local'),
     }
     const FREE_SHOW_ALL = 'dsh-model.freeShowAll'
+    const FREE_OPEN = 'dsh-model.freeOpen'
+    /** 「免费池」醒目标签：主题色底、白字，一眼能看到，点了展开看顺序 */
+    const PoolPill = ({ onClick, title }) => h(onClick ? 'button' : 'span', {
+      ...(onClick ? { type: 'button', onClick, title } : {}),
+      style: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600, padding: '2px 10px', borderRadius: 999, border: 'none', background: C.accent, color: C.accentFg, cursor: onClick ? 'pointer' : 'default', verticalAlign: 'middle', whiteSpace: 'nowrap' },
+    }, L('🆓 免费池', '🆓 Free pool'))
     const fmtTokens = (n) => (n >= 1e8 ? L(`${(n / 1e8).toFixed(1)} 亿`, `${(n / 1e6).toFixed(0)}M`) : n >= 1e4 ? L(`${Math.round(n / 1e4)} 万`, `${Math.round(n / 1e3)}k`) : String(n))
     const hhmm = (iso) => { try { return new Date(iso).toLocaleString(isZh() ? 'zh-CN' : 'en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch { return iso } }
 
@@ -693,8 +699,11 @@ window.__ModuleLoader__.load({
       const [showAll, setShowAll] = useState(() => { try { return window.localStorage.getItem(FREE_SHOW_ALL) === '1' } catch { return false } })
       const [showPool, setShowPool] = useState(false)
       const [adding, setAdding] = useState(false)
+      // 卡片可折叠：记住用户的选择；没选过时，免费池还空着就展开（引导去领），有了就收起
+      const [open, setOpenRaw] = useState(() => { try { const v = window.localStorage.getItem(FREE_OPEN); return v === '1' ? true : v === '0' ? false : null } catch { return null } })
+      const setOpen = (v) => { setOpenRaw(v); try { window.localStorage.setItem(FREE_OPEN, v ? '1' : '0') } catch { /* 无痕 */ } }
       // 后台服务比页面旧（还没有 /free）：说人话，并且隔一会儿自己再试（后台会自己切到新版，设计 §14.29）
-      const load = useCallback(() => api('GET', '/free').then((d) => { setData(d); setErr('') }, (e) => setErr(e.code === 'not_found' ? L('后台服务还是旧版本，正在切换到新版（一两分钟），好了这里会自动出现', 'The background service is still the old version and is switching to the new one (a minute or two); this card appears by itself when it is ready') : e.message)), [])
+      const load = useCallback(() => api('GET', '/free').then((d) => { setData(d); setErr('') }, (e) => setErr(e.code === 'not_found' ? L('后台服务还是旧版本，还不认识「免费额度」：看页面顶部的提示。它更新好后这里会自动出现', 'The background service is an older version that does not know "Free quota" yet: see the notice at the top of the page. This card appears by itself once it is updated') : e.message)), [])
       useEffect(() => { if (!err || data) return; const t = setInterval(() => void load(), 30_000); return () => clearInterval(t) }, [err, data, load])
       useEffect(() => { void load() }, [load])
       // 来源列表变了（填了 key、开关）也刷新一次
@@ -742,21 +751,31 @@ window.__ModuleLoader__.load({
         return out
       }
       const excluded = data.config.exclude || []
+      const expanded = open == null ? !sum.poolModels.auto : open
+      const fresh = data.discoveries.length
       return h('div', { style: S.section },
         h('div', { style: S.line },
-          h('div', { style: { ...S.h, ...S.grow, margin: 0 } }, L('免费额度', 'Free quota')),
-          h('button', { type: 'button', style: S.btn, disabled: busy === 'discover', onClick: () => void act('discover', 'POST', '/free/discover') }, busy === 'discover' ? L('探测中…', 'Checking…') : L('探测新额度', 'Look for new')),
-          h('button', { type: 'button', style: S.btn, onClick: () => setAdding(true) }, L('+ 手动添加来源', '+ Add a source'))),
-        h('p', { style: S.note }, L('一把 key 用上各家官方 API 的免费额度：在 dsh 里选「免费池」分组（其他软件用 free/auto、free/smart、free/fast）。每天、每月重置的和快过期的先用，一家限流或用完就冷却到它重置、换下一家。用完会扣钱的额度默认不进池，要你设上限才放进来。只签到的积分在上面的签到卡片里。', 'One key for the free quotas of official APIs: pick the "Free pool" group in dsh (other tools use free/auto, free/smart, free/fast). Daily and monthly quotas and soon-to-expire ones go first; a provider that hits its limit cools down until it resets and the next one takes over. Quotas that charge you once used up stay out until you set a cap. Check-in-only credits are in the check-in card above.')),
-        h('div', { style: { ...S.card, padding: '10px 14px', marginBottom: 10 } },
+          h('button', { type: 'button', 'aria-expanded': expanded, onClick: () => setOpen(!expanded), style: { ...S.grow, textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', ...S.h, marginBottom: 0 } },
+            `${expanded ? '▾' : '▸'} ${L('免费额度', 'Free quota')}`,
+            !expanded && fresh ? h('span', { style: { fontSize: 12, fontWeight: 400, color: C.accent, marginLeft: 8 } }, L(`${fresh} 条新发现`, `${fresh} new`)) : null),
+          expanded ? h('button', { type: 'button', style: S.btn, disabled: busy === 'discover', onClick: () => void act('discover', 'POST', '/free/discover') }, busy === 'discover' ? L('探测中…', 'Checking…') : L('探测新额度', 'Look for new')) : null,
+          expanded ? h('button', { type: 'button', style: S.btn, onClick: () => setAdding(true) }, L('+ 手动添加来源', '+ Add a source')) : null),
+        expanded ? h('p', { style: S.note },
+          L('一把 key 用上各家官方 API 的免费额度：在 dsh 的模型列表里选 ', 'One key for the free quotas of official APIs: in the dsh model list pick '),
+          h(PoolPill, null),
+          L(' 分组里的模型（其他软件用 free/auto、free/smart、free/fast）。每天、每月重置的和快过期的先用，一家限流或用完就冷却到它重置、换下一家。用完会扣钱的额度默认不进池，要你设上限才放进来。只签到的积分在上面的签到卡片里。', ' group (other tools use free/auto, free/smart, free/fast). Daily and monthly quotas and soon-to-expire ones go first; a provider that hits its limit cools down until it resets and the next one takes over. Quotas that charge you once used up stay out until you set a cap. Check-in-only credits are in the check-in card above.')) : null,
+        h('div', { style: { ...S.card, padding: '10px 14px', marginBottom: 10, ...(sum.poolModels.auto ? { borderColor: C.accent } : {}) } },
           h('div', { style: { fontSize: 13, lineHeight: 1.8 } },
-            L(`已接入 ${sum.connected} 份 · 免费池现有 ${sum.poolModels.auto} 个模型`, `${sum.connected} connected · ${sum.poolModels.auto} models in the pool`),
+            h(PoolPill, { onClick: () => { setOpen(true); setShowPool(true) }, title: L('看免费池里有哪些模型、先用哪个', 'See which models are in the pool and in what order') }),
+            ' ',
+            L(`现有 ${sum.poolModels.auto} 个模型 · 已接入 ${sum.connected} 份额度`, `${sum.poolModels.auto} models · ${sum.connected} quotas connected`),
             sum.missing ? h('span', { style: { color: C.sub } }, L(` · 还有 ${sum.missing} 份可领${sum.missingCny ? `（一次性和每月的约 ¥${sum.missingCny}）` : ''}`, ` · ${sum.missing} more to claim${sum.missingCny ? ` (one-off and monthly ≈ ¥${sum.missingCny})` : ''}`)) : null,
             h('span', { style: { color: C.sub } }, L(` · 签到 ${sum.checkinConnected}/${sum.checkinConnected + sum.checkinMissing} 家`, ` · check-in ${sum.checkinConnected}/${sum.checkinConnected + sum.checkinMissing}`))),
           sum.poolModels.auto ? h('div', { style: { ...S.line, marginTop: 4 } },
-            h('span', { style: { ...S.meta, ...S.grow } }, L('模型名：', 'Model names: '), h('span', { style: S.mono }, 'free/auto · free/smart · free/fast')),
+            h('span', { style: { ...S.meta, ...S.grow } }, L('在 dsh 里：模型列表 → ', 'In dsh: model list → '), h('b', { style: { color: C.accent } }, L('「🆓 免费池」分组', 'the "🆓 Free pool" group')), L('；其他软件的模型名：', '; model names elsewhere: '), h('span', { style: S.mono }, 'free/auto · free/smart · free/fast')),
             h(CopyButton, { get: 'free/auto', label: L('复制 free/auto', 'Copy free/auto') })) : h('div', { style: { fontSize: 12, color: C.warn, marginTop: 4, lineHeight: 1.6 } }, L('免费池还是空的，所以 dsh 的模型列表里还没有 free/auto。领一份官方免费额度、填上 key 就会出现。最省事的是智谱 GLM（Flash 系列免费）、硅基流动、魔搭 ModelScope，在下面「还没领」里点「去领」再「填 key」。WorkBuddy、Trae 这类积分只能在它们自己的软件里用，不进免费池。', 'The free pool is empty, so free/auto is not in the dsh model list yet. Claim an official free quota and add its key and it appears. The quickest are Zhipu GLM (Flash models are free), SiliconFlow and ModelScope: use "Claim" then "Add key" under "Not claimed" below. Credits from WorkBuddy, Trae and the like only work in their own apps, so they never join the pool.'))),
         err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
+        expanded ? h('div', null,
         data.discoveries.length ? h('div', { style: { ...S.card, marginBottom: 10 } }, data.discoveries.map((d, i) => h('div', { key: d.id, style: i ? S.row : S.rowFirst },
           h('div', { style: S.line },
             h('span', { style: { fontSize: 12, color: C.accent } }, L('新发现', 'New')),
@@ -787,7 +806,7 @@ window.__ModuleLoader__.load({
               `${j + 1}. ${m.alias}`,
               h('span', { style: { color: C.faint } }, ` (${(CYCLE_LABEL[m.cycle] || (() => m.cycle))()}${m.charges ? L('，扣钱', ', charges') : ''})`),
               h('button', { type: 'button', title: L('移出免费池', 'Remove from the pool'), style: { ...S.btn, border: 'none', padding: '0 4px', color: C.faint }, onClick: () => void act(m.alias, 'POST', '/free/model', { alias: m.alias, on: false }) }, '✕')))) : h('div', { style: S.meta }, L('（没有）', '(none)')))),
-          excluded.length ? h('div', { style: { ...S.meta, marginTop: 6 } }, L('移出的：', 'Removed: '), excluded.map((a) => h('span', { key: a, style: { marginRight: 8 } }, a, h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: '0 4px', color: C.accent }, onClick: () => void act(a, 'POST', '/free/model', { alias: a, on: true }) }, L('放回', 'Restore'))))) : null) : null,
+          excluded.length ? h('div', { style: { ...S.meta, marginTop: 6 } }, L('移出的：', 'Removed: '), excluded.map((a) => h('span', { key: a, style: { marginRight: 8 } }, a, h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: '0 4px', color: C.accent }, onClick: () => void act(a, 'POST', '/free/model', { alias: a, on: true }) }, L('放回', 'Restore'))))) : null) : null) : null,
         adding ? h(CustomSourceDialog, { onClose: (saved) => { setAdding(false); if (saved) { void load(); reload() } } }) : null)
     }
 
@@ -1168,6 +1187,20 @@ window.__ModuleLoader__.load({
             host.restart === 'manual' ? h('span', { style: { color: C.sub } }, L('请重启 dsh。', ' Please restart dsh.')) : null),
           host.restart === 'vps' ? h('button', { type: 'button', style: S.btnPrimary, disabled: state === 'restarting', onClick: () => void restart() }, state === 'restarting' ? L('正在重启…', 'Restarting…') : L('重启 dsh', 'Restart dsh')) : null),
         state && state !== 'restarting' ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, state) : null)
+    }
+
+    /** 后台服务比插件旧（设计 §14.31）：宿主端在自动升级；升不上去给命令 */
+    function DaemonBanner({ host }) {
+      if (!host || !host.daemonUpgrade || !host.daemon) return null
+      const stuck = host.daemonUpgrade === 'stuck'
+      return h('div', { style: { ...S.card, padding: '10px 14px', marginBottom: 16, borderColor: stuck ? C.err : C.warn } },
+        h('div', { style: { fontSize: 13, color: C.text, lineHeight: 1.7 } },
+          stuck
+            ? L(`后台服务还是 ${host.daemon}，比插件（${host.running}）旧，自动更新没成功。「免费额度」等新功能要等它更新后才有。请在服务器终端执行：`, `The background service is still ${host.daemon}, older than the plugin (${host.running}), and the automatic update did not work. New features such as "Free quota" need it updated. Run this in a terminal on the server:`)
+            : L(`后台服务是 ${host.daemon}，比插件（${host.running}）旧，正在自动更新到新版（一两分钟）。好了「免费额度」等新功能会自己出现，不用做什么。`, `The background service is ${host.daemon}, older than the plugin (${host.running}); it is updating itself (a minute or two). New features such as "Free quota" appear by themselves when it is done.`)),
+        stuck && host.upgradeCommand ? h('div', { style: { ...S.line, marginTop: 6 } },
+          h('code', { style: { ...S.mono, ...S.grow } }, host.upgradeCommand),
+          h(CopyButton, { get: host.upgradeCommand, label: L('复制', 'Copy') })) : null)
     }
 
     // —— 额度提醒（dsh 任何页面的右下角）——
@@ -1618,7 +1651,7 @@ window.__ModuleLoader__.load({
         const t = setInterval(check, 60_000)
         return () => { stop = true; clearInterval(t) }
       }, [])
-      const banner = h(RestartBanner, { host })
+      const banner = h('div', null, h(DaemonBanner, { host }), h(RestartBanner, { host }))
       const [login, setLogin] = useState(null)
       const [keyDialog, setKeyDialog] = useState(false)
       const alive = useRef(true)

@@ -193,11 +193,79 @@ async function autoSetup() {
   startCli('setup', ['setup', '--skip-dsh-plugin', '--lang', lang])
 }
 
+/** a 比 b 新吗（只比数字段，0.31.0 > 0.29.0）。导出给测试 */
+export function isNewerVersion(a, b) {
+  const pa = String(a).split(/[.-]/).map((x) => Number(x) || 0)
+  const pb = String(b).split(/[.-]/).map((x) => Number(x) || 0)
+  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0)
+  return false
+}
+
+/**
+ * 后台服务比插件旧时自己升级（设计 §14.31）。
+ * 典型场景（2026-11-13 VPS 实测）：插件市场把插件更新到 0.31.0，但系统服务跑的是另一份——npm 全局装的 0.29.0。
+ * 守护进程的自切换（§14.29）只盯它自己那份，永远看不到插件的新版，页面就一直是旧后台。
+ * - dsh-vps：写请求单给 root 的 dsh-model-admin，执行 update（npm 全局更新到最新 + 重装服务）；
+ * - 本机：用插件自带的这份重跑 setup（服务从此指向插件目录，以后插件更新它会自己切）；
+ * - 同一个目标版本 6 小时内只自动做一次，记在 <home>/auto-upgrade.json；10 分钟还没好，页面给命令。
+ */
+const daemonState = { version: '', checkedAt: 0, upgrade: null }
+const UPGRADE_WAIT_MS = 10 * 60 * 1000
+const UPGRADE_RETRY_MS = 6 * 60 * 60 * 1000
+
+async function daemonVersion() {
+  const cfg = await daemonConfig()
+  const r = await fetch(`http://127.0.0.1:${cfg.port}/control/self`, { headers: { Authorization: `Bearer ${cfg.secret}` }, signal: AbortSignal.timeout(20_000) })
+  if (!r.ok) return null
+  const j = await r.json()
+  return typeof j.version === 'string' ? j.version : null
+}
+
+async function checkDaemonVersion({ force = false } = {}) {
+  if (process.env.DSH_MODEL_NO_AUTO_SETUP) return daemonState
+  if (!force && Date.now() - daemonState.checkedAt < 60_000) return daemonState
+  daemonState.checkedAt = Date.now()
+  const v = await daemonVersion().catch(() => null)
+  if (!v) return daemonState
+  daemonState.version = v
+  if (!RUNNING_VERSION || !isNewerVersion(RUNNING_VERSION, v) || (await exists(uninstalledMarker()))) {
+    daemonState.upgrade = null
+    return daemonState
+  }
+  const vps = await exists(VPS_ROOT)
+  const markFile = join(home(), 'auto-upgrade.json')
+  const mark = await readFile(markFile, 'utf8').then((t) => JSON.parse(t), () => ({}))
+  if (mark.target === RUNNING_VERSION && Date.now() - (mark.at || 0) < UPGRADE_RETRY_MS) {
+    daemonState.upgrade = Date.now() - mark.at < UPGRADE_WAIT_MS ? 'upgrading' : 'stuck'
+    return daemonState
+  }
+  if (vps && !(await exists(ADMIN_PATH_UNIT))) {
+    daemonState.upgrade = 'stuck'
+    return daemonState
+  }
+  const lang = /^zh/i.test(Intl.DateTimeFormat().resolvedOptions().locale || process.env.LANG || '') ? 'zh' : 'en'
+  if (vps) await writeFile(join(home(), 'admin', 'request'), JSON.stringify({ action: 'update', lang }), { mode: 0o600 })
+  else startCli('setup', ['setup', '--skip-dsh-plugin', '--lang', lang])
+  await writeFile(markFile, JSON.stringify({ target: RUNNING_VERSION, from: v, how: vps ? 'admin-update' : 'setup', at: Date.now() }), { mode: 0o600 }).catch(() => {})
+  daemonState.upgrade = 'upgrading'
+  return daemonState
+}
+
+/** 页面上给的手动命令 */
+async function upgradeCommand() {
+  return (await exists(VPS_ROOT)) ? 'sudo npm install -g dsh-model@latest && sudo dsh-model setup' : 'npm install -g dsh-model@latest && dsh-model setup'
+}
+
 export function apply(ctx) {
   const token = randomBytes(24).toString('hex')
   // 等 dsh 自己先起来再装
   const autoTimer = setTimeout(() => void autoSetup().catch(() => {}), 3000)
   autoTimer.unref?.()
+  // 后台服务比插件旧就升级（§14.31）：加载后先看一次，之后每 10 分钟
+  const verTimer = setTimeout(() => void checkDaemonVersion({ force: true }).catch(() => {}), 15_000)
+  verTimer.unref?.()
+  const verInterval = setInterval(() => void checkDaemonVersion({ force: true }).catch(() => {}), 10 * 60 * 1000)
+  verInterval.unref?.()
   ctx.inject(['webServer'], (webCtx) => {
     const ws = webCtx.webServer
     if (!ws || typeof ws.register !== 'function') return
@@ -260,7 +328,16 @@ export function apply(ctx) {
             return json(res, 400, { error: { code: 'invalid_json', message: 'invalid JSON' } })
           }
           const mode = await restartMode()
-          if (body.action !== 'restart') return json(res, 200, { running: RUNNING_VERSION, installed: await installedVersion(), restart: mode })
+          if (body.action !== 'restart') {
+            const d = await checkDaemonVersion().catch(() => daemonState)
+            return json(res, 200, {
+              running: RUNNING_VERSION,
+              installed: await installedVersion(),
+              restart: mode,
+              ...(d.version ? { daemon: d.version } : {}),
+              ...(d.upgrade ? { daemonUpgrade: d.upgrade, upgradeCommand: await upgradeCommand() } : {}),
+            })
+          }
           if (mode !== 'vps') return json(res, 409, { error: { code: 'restart_unsupported', message: 'restart dsh manually' } })
           // 写给 root 的 dsh-model-admin：它只认几件固定的事，这里是 restart-dsh
           await writeFile(join(home(), 'admin', 'request'), JSON.stringify({ action: 'restart-dsh' }), { mode: 0o600 })
@@ -332,6 +409,8 @@ export function apply(ctx) {
 
     try {
       webCtx.effect?.(() => () => {
+        clearInterval(verInterval)
+        clearTimeout(verTimer)
         for (const d of disposers.reverse()) {
           try {
             d?.()

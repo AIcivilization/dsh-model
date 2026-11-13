@@ -160,6 +160,19 @@ describe('settings page', () => {
     await waitText('重启 dsh')
   })
 
+  it('background service older than the plugin: says it is updating, or gives the command when stuck', async () => {
+    handler = normal()
+    hostInfo = { running: '0.31.0', installed: '0.31.0', restart: 'vps', daemon: '0.29.0', daemonUpgrade: 'upgrading', upgradeCommand: 'sudo npm install -g dsh-model@latest && sudo dsh-model setup' }
+    await render()
+    await waitText('后台服务是 0.29.0，比插件（0.31.0）旧，正在自动更新')
+    expect(container.textContent).not.toContain('sudo npm install')
+    await act(async () => root?.unmount())
+    hostInfo = { ...(hostInfo as object), daemonUpgrade: 'stuck' }
+    await render()
+    await waitText('自动更新没成功')
+    expect(container.textContent).toContain('sudo npm install -g dsh-model@latest && sudo dsh-model setup')
+  })
+
   it('no banner when the running code is the installed one', async () => {
     handler = normal()
     await render()
@@ -442,7 +455,23 @@ describe('settings page', () => {
       return [404, {}]
     })
     await render()
-    await waitText('免费池现有 2 个模型')
+    await waitText('现有 2 个模型')
+    // 免费池里已有模型：卡片默认收起，只留醒目的「🆓 免费池」一行和新发现的提示
+    expect(container.textContent).toContain('🆓 免费池')
+    expect(container.textContent).toContain('1 条新发现')
+    expect(container.textContent).not.toContain('百炼新人额度')
+    // 点「🆓 免费池」直接展开并显示顺序
+    await click('🆓 免费池')
+    await waitText('free/auto')
+    expect(container.textContent).toContain('1. modelscope/Qwen3-235B')
+    // 收起再展开（点标题）
+    await click('▾ 免费额度')
+    expect(container.textContent).not.toContain('百炼新人额度')
+    expect(container.textContent).toContain('▸ 免费额度1 条新发现')
+    const header = [...container.querySelectorAll('button')].find((x) => x.textContent?.startsWith('▸ 免费额度'))!
+    await act(async () => header.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await waitText('百炼新人额度')
+    expect(window.localStorage.getItem('dsh-model.freeOpen')).toBe('1')
     expect(container.textContent).toContain('还有 1 份可领（一次性和每月的约 ¥60）')
     expect(container.textContent).toContain('会扣钱，没放进池')
     // 已在签的签到条目默认收起
