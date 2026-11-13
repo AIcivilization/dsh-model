@@ -766,5 +766,42 @@ dsh-checkin-all（同作者的独立签到插件，MIT）里已经做好、我�
 - 都是**零配置**：本机装了并登录过就自动出现，没装的列在「这台还能签哪些」里，说明要在装了的电脑上签（同 Trae）。
 - 结果映射：`claimed` → 签到成功，`already_claimed` / `no_task` → 今天已签，`not_yet`、`needs_login`、`failed` → 失败（按原规则一小时后重试）。
 - 改动只有三处：日志前缀、只读开关的环境变量改名 `DSH_MODEL_CHECKIN_READONLY`、`checkin-secrets.js` 换成空实现（dsh-model 这一版不存手动填的签到凭据，provider 自动退回读本机 App）。
-- 没搬的：手动填凭据（VPS 上签这几家要用它，下一版）、华为 CodeArts（要本机回调登录 + 页面里的登录流程，下一版）、DIY 自定义签到服务（下一版）、它自己的面板和调度器（用我们的）。
+- 0.31.0 补上了手动填凭据、华为 CodeArts、自定义签到服务（§14.30）。仍然没搬的：它自己的面板和调度器（用我们的）。
 - 和 dsh-checkin-all 同时装也没问题：各家签到接口都是幂等的，后签的那个只会拿到「今天已签」；MiniMax 续期两边都走 App 的文件锁。
+
+### 14.29 包被换成新版后，后台自己切过去（0.31.0）
+
+问题（2026-11-13 实测）：0.30.0 经 `npm install -g` 装进来，但后台进程还是之前启动的旧代码，没有 `/free`，「免费额度」卡片只显示一行 `GET /free`，`free/auto` 也不出现。「关于」里显示的版本是读磁盘的，所以还显示 0.30.0，用户看不出来。
+
+- **自己重启**：守护进程记下启动时的版本（`RUNNING_VERSION`），每分钟读一次磁盘上的 package.json。版本变了，且连续两次（隔一分钟）都是同一个新版本，就以退出码 75 退出（等一分钟是怕 npm 还没装完）。各平台的服务都会把它拉起来：launchd 有 KeepAlive，systemd 是 `Restart=on-failure`，Windows 有自己的守护循环。拉起来就是新代码。
+- **页面说真话**：`/self` 的 `version` 是正在跑的版本；磁盘上的不同时多给一个 `installed`。「关于」卡片显示「已装 X，后台正在切换到新版」。
+- 「免费额度」卡片遇到旧后台（`not_found`）时也说清楚原因，并且每 30 秒自己再试，后台切过去后卡片就自己出现。
+- 免费池是空的时（一个免费 key 都没填），卡片写明「所以 dsh 的模型列表里还没有 free/auto」，并给出最快能领的几家。
+
+### 14.30 签到补齐：手动凭据、华为 CodeArts、自定义签到服务（0.31.0）
+
+目标：和 dsh-checkin-all 一样全，再多出它没有的。都从 dsh-checkin-all（同作者，MIT）拷代码，接到 §14.15 的签到框架上。
+
+- **手动凭据（多账号）**：`src/checkin/ext/checkin-secrets.js` 换成真实现。存在 dsh-model 的 secrets.json 的 `checkin.manual.<服务>.accounts[]`，结构和 dsh-checkin-all 相同，老的扁平单账号结构读的时候当成 1 个。
+  - 能填的服务：灵犀（`wps_sid`）、DuMate（含 `bce-user-info` 的整串 Cookie）、AStudio（`accountId`、`token`，`ssoSessionId` 可选）、CodeArts（`access_key_id`、`secret_access_key`，`security_token` 可选）。
+  - 填了就不依赖本机 App，**VPS 上也能签**；一家可以加几个账号，各家 provider 自己逐个签、合并结果。
+  - 接口：`GET /checkin/manual`（各服务的字段和已填账号的名字，不返回凭据）、`POST /checkin/manual/<服务>`（填完马上签一次）、`DELETE /checkin/manual/<服务>/<id>`。
+- **华为 CodeArts**：`codearts.js`、`codearts-login.js` 原样拷过来。
+  - 登录：华为云浏览器登录，回调在本机 `127.0.0.1:8791`（占用就随机），用 ticket 换临时 AK/SK。所以浏览器要和 dsh-model 在同一台电脑；VPS 上改为手动填 AK/SK。
+  - 改动：不从后台进程开浏览器，链接交给管理页（同 WorkBuddy、OfficeAce 的登录）。
+  - 临时凭据过期后，「这台还能签」里会出现它，并带「+ 添加」（重新登录）。
+  - 接口：`POST /checkin/codearts` → 登录会话。
+- **自定义签到服务**：`custom-services.js`、`providers/custom.js` 拷过来，存 `<home>/checkin-custom.json`。内置 id 里加上 dsh-model 自己的 `workbuddy`、`officeace`，防重名。
+  - 流程：复制提示词给 dsh 的 AI → 它查好接口给一段 JSON → 粘回来导入。
+  - **导入前**页面显示「会把你填的凭据发给：<域名>」，让用户确认是那家官方的网站。
+  - 比 dsh-checkin-all 多一步：它的面板没法给自定义服务填凭据。我们从定义里找出所有 `{{变量}}`，每个变量一个输入框（没有就默认 `cookie`），导入完直接打开填凭据的对话框。
+  - 删除服务时，它的凭据一起删。
+  - 接口：`GET/POST /checkin/custom`、`DELETE /checkin/custom/<id>`。
+- **和 dsh-checkin-all 的对比**：它的 9 家我们都有，另外还有：
+  - OfficeAce；
+  - WorkBuddy 多账号；
+  - 签到账号复制到 VPS；
+  - 豆包从本机自动读取；
+  - 自定义服务能填凭据。
+
+  它有、我们没有的：连续签到天数的记账（以后再说）。

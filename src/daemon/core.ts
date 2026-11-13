@@ -26,10 +26,10 @@ import { DoubaoAuthError, doubaoCheckin, doubaoStatus, normalizeCookie } from '.
 import { CookieAccessDenied, findDoubaoLogins, readDoubaoCookie } from '../checkin/browser-cookies.js'
 import { exchangeOfficeAceCode, officeAceClaim, officeAceExpiring, pollOfficeAceCode, refreshOfficeAce, startOfficeAceLogin } from '../checkin/officeace.js'
 import { exportCheckin, importCheckin } from '../checkin/transfer.js'
-import { extCheckers, extMissing } from '../checkin/ext.js'
+import { addManualAccount, codeartsProvider, deleteCustom, extCheckers, extMissing, importCustom, listCustom, manualKinds, removeManualAccount } from '../checkin/ext.js'
 import { accountTag, addDoubao, addOfficeAce, loadOfficeAces, removeOfficeAce, updateOfficeAce, checkinKind, cookieValue, addQoder, listWorkbuddyAccounts, loadDoubaos, loadQoders, removeDoubao, removeQoder, removeWorkbuddyAccount, workbuddyAccountStore, workbuddyAccountsDir } from '../checkin/accounts.js'
 import { CN_VARIANT } from '../bridge/workbuddy/variants.js'
-import { PKG_ROOT, pkgVersion } from '../util/pkg.js'
+import { PKG_ROOT, pkgVersion, RUNNING_VERSION } from '../util/pkg.js'
 import { randomBytes } from 'node:crypto'
 import { currentBinary } from '../engine/install.js'
 import { buildRuntime, availableVariants, refreshCatalog, loadCatalogs, type Runtime } from '../bridge/runtime.js'
@@ -160,6 +160,24 @@ export class Daemon {
     // 探测新额度（设计 §14.27）：每 6 小时看一眼，距上次拉远程目录超过一天才拉
     this.timers.push(setInterval(() => void this.discoverFree().catch(() => {}), 6 * 60 * 60 * 1000))
     setTimeout(() => void this.discoverFree().catch(() => {}), 90_000)
+    // 包被换成新版（npm install -g、插件市场、别的途径）但没人重启我：自己退出，让系统服务用新代码拉起来（设计 §14.29）
+    this.timers.push(setInterval(() => this.restartIfUpgraded(), 60_000))
+  }
+
+  private seenNewVersion?: string
+  /** 磁盘上的版本变了：连续两次（隔一分钟）看到同一个新版本才退出，免得 npm 还没装完就重启 */
+  restartIfUpgraded(disk = pkgVersion(), exit: (code: number) => void = (c) => process.exit(c)): boolean {
+    if (disk === RUNNING_VERSION || disk === '0.0.0') {
+      this.seenNewVersion = undefined
+      return false
+    }
+    if (this.seenNewVersion !== disk) {
+      this.seenNewVersion = disk
+      return false
+    }
+    log_(`daemon: dsh-model on disk is ${disk}, running ${RUNNING_VERSION}; restarting to load the new version`)
+    void this.stats.save().catch(() => {}).finally(() => exit(75))
+    return true
   }
 
   async stop(): Promise<void> {
@@ -831,7 +849,7 @@ export class Daemon {
     return out
   }
 
-  async checkinStatus(): Promise<{ auto: boolean; date: string; results: (CheckinItem & { advice?: string })[]; available: { id: CheckinId; label: string }[]; qoder: { configured: boolean; region?: string }; accounts: { workbuddy: { uid: string; label: string }[]; qoder: { id: string; label: string; region: string }[]; doubao: { id: string; label: string }[]; officeace: { id: string; label: string }[] }; missing: { id: string; label: string; action?: 'workbuddy' | 'qoder' | 'doubao' | 'officeace'; reason?: string; found?: string[] }[]; localRead: 'mac' | 'win' | null }> {
+  async checkinStatus(): Promise<{ auto: boolean; date: string; results: (CheckinItem & { advice?: string })[]; available: { id: CheckinId; label: string }[]; qoder: { configured: boolean; region?: string }; accounts: { workbuddy: { uid: string; label: string }[]; qoder: { id: string; label: string; region: string }[]; doubao: { id: string; label: string }[]; officeace: { id: string; label: string }[] }; missing: { id: string; label: string; action?: 'workbuddy' | 'qoder' | 'doubao' | 'officeace' | 'manual' | 'codearts'; reason?: string; found?: string[] }[]; localRead: 'mac' | 'win' | null }> {
     const file = await loadCheckin(this.ctx.paths.home)
     const checkers = await this.checkers()
     const qoders = await loadQoders(this.ctx)
@@ -996,6 +1014,44 @@ export class Daemon {
     return publicSession(s)
   }
 
+  /**
+   * 华为 CodeArts 签到：浏览器登录华为云换临时 AK/SK。回调在本机 127.0.0.1（照 dsh-checkin-all），
+   * 所以浏览器要和 dsh-model 在同一台电脑上；VPS 上改为手动填 AK/SK。
+   */
+  async startCodeArtsLogin(): Promise<LoginSession> {
+    const p = codeartsProvider(log_)
+    p.cancelLogin()
+    const start = (await p.loginStart().catch((error: unknown) => {
+      throw new DshModelError('login_failed', String((error as Error).message ?? error))
+    })) as { verificationUri: string; expiresInSec: number }
+    const s: SessionInternal = {
+      id: `ca-${randomBytes(8).toString('hex')}`,
+      source: 'codearts-checkin',
+      kind: 'link',
+      status: 'pending',
+      needsPaste: false,
+      url: start.verificationUri,
+      startedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + start.expiresInSec * 1000).toISOString(),
+      abort: new AbortController(),
+    }
+    this.sessions.set(s.id, s)
+    void p
+      .loginWait({ timeoutMs: start.expiresInSec * 1000 })
+      .then(() => {
+        s.status = 'ok'
+        void this.checkinNow(false).catch(() => {})
+      })
+      .catch((error: unknown) => {
+        if (s.status === 'pending') {
+          s.status = 'error'
+          s.error = String((error as Error).message ?? error)
+        }
+      })
+    s.abort!.signal.addEventListener('abort', () => p.cancelLogin())
+    return publicSession(s)
+  }
+
   /** 加一个 WorkBuddy 签到账号：打开链接授权（同来源登录一样），存成单独一份，只用来签到 */
   async startWorkbuddyCheckinLogin(): Promise<LoginSession> {
     const all = await loadAll(this.ctx)
@@ -1047,12 +1103,14 @@ export class Daemon {
   private selfJob?: { action: 'update' | 'uninstall'; startedAt: string; log: string; pid?: number }
 
   /** 版本与能不能在页面上自管理（VPS 上要 root，只给命令） */
-  async selfInfo(): Promise<{ version: string; latest: string | null; canManage: boolean; job?: { action: string; startedAt: string; log: string }; commands: { update: string; uninstall: string } }> {
+  async selfInfo(): Promise<{ version: string; installed?: string; latest: string | null; canManage: boolean; job?: { action: string; startedAt: string; log: string }; commands: { update: string; uninstall: string } }> {
     const vps = this.ctx.mode === 'vps'
     let log = ''
     if (this.selfJob) log = await readFile(this.selfJob.log, 'utf8').catch(() => '')
     return {
-      version: pkgVersion(),
+      // 正在跑的版本（不是磁盘上的）：装了新版还没重启时两者不同，页面据此提示
+      version: RUNNING_VERSION,
+      ...(pkgVersion() !== RUNNING_VERSION ? { installed: pkgVersion() } : {}),
       latest: await latestVersion(),
       canManage: !vps || (await adminInstalled()),
       ...(this.selfJob ? { job: { action: this.selfJob.action, startedAt: this.selfJob.startedAt, log: log.replace(/\x1b\[[0-9;]*m/g, '').slice(-6000) } } : {}),
@@ -1465,6 +1523,33 @@ export class Daemon {
       }
       if (method === 'POST' && path === '/checkin/workbuddy') return ok({ login: await this.startWorkbuddyCheckinLogin() })
       if (method === 'POST' && path === '/checkin/officeace') return ok({ login: await this.startOfficeAceCheckinLogin() })
+      if (method === 'POST' && path === '/checkin/codearts') return ok({ login: await this.startCodeArtsLogin() })
+      // 手动填的签到凭据（多账号）与自定义签到服务（设计 §14.30）
+      if (method === 'GET' && path === '/checkin/manual') return ok(await manualKinds())
+      if (method === 'POST' && seg[0] === 'checkin' && seg[1] === 'manual' && seg[2] && !seg[3]) {
+        try {
+          await addManualAccount(seg[2], (b.fields ?? {}) as Record<string, unknown>, typeof b.name === 'string' ? b.name : undefined)
+        } catch (error) {
+          throw new DshModelError('invalid_key', String((error as Error).message ?? error))
+        }
+        return ok(await this.checkinNow(false))
+      }
+      if (method === 'DELETE' && seg[0] === 'checkin' && seg[1] === 'manual' && seg[2] && seg[3]) {
+        if (!(await removeManualAccount(seg[2], seg[3]))) throw new DshModelError('no_account', L('没有这个签到账号', 'No such check-in account'))
+        return ok(await this.checkinStatus())
+      }
+      if (method === 'GET' && path === '/checkin/custom') return ok(await listCustom())
+      if (method === 'POST' && path === '/checkin/custom') {
+        try {
+          return ok({ ...(await importCustom(String(b.text ?? ''))), ...(await listCustom()) })
+        } catch (error) {
+          throw new DshModelError('invalid_key', String((error as Error).message ?? error))
+        }
+      }
+      if (method === 'DELETE' && seg[0] === 'checkin' && seg[1] === 'custom' && seg[2]) {
+        await deleteCustom(seg[2])
+        return ok(await listCustom())
+      }
       if (method === 'POST' && path === '/checkin/export') return ok(await exportCheckin(this.ctx))
       if (method === 'POST' && path === '/checkin/import') {
         const n = await importCheckin(this.ctx, String(b.text ?? ''), String(b.code ?? ''))

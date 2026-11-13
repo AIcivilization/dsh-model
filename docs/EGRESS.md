@@ -73,6 +73,8 @@
 | 百度 DuMate | `console.bce.baidu.com` |
 | AStudio | `agent.xfyun.cn` |
 | OfficeAce（华为云） | `auth.huaweicloud.com`（你在浏览器里登录）、`agentarts.cn-southwest-2.myhuaweicloud.com`（取回登录）、`sts.cn-north-4.myhuaweicloud.com`（换临时密钥）、`officeace.cn-southwest-2.huaweicloud-agentarts.com`（领积分） |
+| 华为 CodeArts | `auth.huaweicloud.com`、`devcloud.cn-north-4.huaweicloud.com`（你在浏览器里登录，回调到本机 `127.0.0.1:8791`）、`snap-access.cn-north-4.myhuaweicloud.com`（换临时密钥、查积分、签到） |
+| 你自己加的签到服务 | 你导入的那份定义里写的地址（导入前页面会列出来让你确认） |
 
 ## 5. 安装与更新
 

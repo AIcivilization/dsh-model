@@ -555,4 +555,33 @@ describe('settings page', () => {
     expect(container.textContent).toContain('1 个 Qoder、0 个豆包')
     expect((container.querySelector('textarea[aria-label="导出的文本"]') as HTMLTextAreaElement).value).toBe('dshm-checkin:v1:abc')
   })
+
+  it('custom check-in service: copies the AI prompt, shows where credentials will go before import, then asks for its credentials', async () => {
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    const status = { auto: true, date: '2026-11-13', results: [], available: [{ id: 'workbuddy', label: 'WorkBuddy' }], qoder: { configured: false }, accounts: { workbuddy: [], qoder: [], doubao: [] }, missing: [] }
+    const posted: unknown[] = []
+    handler = normal((c) => {
+      if (c.path === '/checkin' && c.method === 'GET') return [200, status]
+      if (c.path === '/checkin/manual') return [200, [{ id: 'kuake', label: '夸克', how: '填 Cookie', custom: true, fields: [{ key: 'cookie', label: 'cookie' }], accounts: [] }]]
+      if (c.path === '/checkin/custom' && c.method === 'GET') return [200, { services: [], prompt: '我想给 dsh-model 加一个新的签到服务。' }]
+      if (c.path === '/checkin/custom' && c.method === 'POST') return posted.push(c.body), [200, { id: 'kuake', targets: ['pan.quark.cn'], services: [{ id: 'kuake', label: '夸克', targets: ['pan.quark.cn'] }], prompt: 'p' }]
+      return [404, {}]
+    })
+    await render()
+    await click('详情')
+    await click('+ 自定义签到服务')
+    await waitText('复制提示词')
+    const ta = container.querySelector('textarea[aria-label="JSON"]') as HTMLTextAreaElement
+    await act(async () => {
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+      set.call(ta, JSON.stringify({ id: 'kuake', name: '夸克', checkin: { method: 'POST', url: 'https://pan.quark.cn/api/sign', headers: { cookie: '{{cookie}}' } } }))
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await waitText('会把你填的凭据发给：pan.quark.cn')
+    await click('导入')
+    // 导入后直接打开「手动填签到凭据」，选好这个服务
+    await waitText('手动填签到凭据')
+    expect(posted).toHaveLength(1)
+    expect((container.querySelector('select[aria-label="服务"]') as HTMLSelectElement).value).toBe('kuake')
+  })
 })

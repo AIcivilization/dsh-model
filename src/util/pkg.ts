@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url'
 
 export const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
+/** 这个进程启动时装着的版本（之后磁盘上的包可能被换成新版，进程里跑的还是这个） */
+export const RUNNING_VERSION = pkgVersion()
+
+/** 磁盘上现在装着的版本 */
 export function pkgVersion(): string {
   try {
     return (JSON.parse(readFileSync(join(PKG_ROOT, 'package.json'), 'utf8')) as { version: string }).version

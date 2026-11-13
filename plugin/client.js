@@ -693,7 +693,9 @@ window.__ModuleLoader__.load({
       const [showAll, setShowAll] = useState(() => { try { return window.localStorage.getItem(FREE_SHOW_ALL) === '1' } catch { return false } })
       const [showPool, setShowPool] = useState(false)
       const [adding, setAdding] = useState(false)
-      const load = useCallback(() => api('GET', '/free').then((d) => { setData(d); setErr('') }, (e) => setErr(e.message)), [])
+      // 后台服务比页面旧（还没有 /free）：说人话，并且隔一会儿自己再试（后台会自己切到新版，设计 §14.29）
+      const load = useCallback(() => api('GET', '/free').then((d) => { setData(d); setErr('') }, (e) => setErr(e.code === 'not_found' ? L('后台服务还是旧版本，正在切换到新版（一两分钟），好了这里会自动出现', 'The background service is still the old version and is switching to the new one (a minute or two); this card appears by itself when it is ready') : e.message)), [])
+      useEffect(() => { if (!err || data) return; const t = setInterval(() => void load(), 30_000); return () => clearInterval(t) }, [err, data, load])
       useEffect(() => { void load() }, [load])
       // 来源列表变了（填了 key、开关）也刷新一次
       const sig = (sources || []).map((s) => `${s.id}:${s.loggedIn ? 1 : 0}${s.enabled ? 1 : 0}`).join(',')
@@ -753,7 +755,7 @@ window.__ModuleLoader__.load({
             h('span', { style: { color: C.sub } }, L(` · 签到 ${sum.checkinConnected}/${sum.checkinConnected + sum.checkinMissing} 家`, ` · check-in ${sum.checkinConnected}/${sum.checkinConnected + sum.checkinMissing}`))),
           sum.poolModels.auto ? h('div', { style: { ...S.line, marginTop: 4 } },
             h('span', { style: { ...S.meta, ...S.grow } }, L('模型名：', 'Model names: '), h('span', { style: S.mono }, 'free/auto · free/smart · free/fast')),
-            h(CopyButton, { get: 'free/auto', label: L('复制 free/auto', 'Copy free/auto') })) : h('div', { style: { ...S.meta, marginTop: 4 } }, L('免费池还是空的：在下面挑一份「还没领」的，领好填 key 就会进池。', 'The free pool is empty: claim one below and add its key.'))),
+            h(CopyButton, { get: 'free/auto', label: L('复制 free/auto', 'Copy free/auto') })) : h('div', { style: { fontSize: 12, color: C.warn, marginTop: 4, lineHeight: 1.6 } }, L('免费池还是空的，所以 dsh 的模型列表里还没有 free/auto。领一份官方免费额度、填上 key 就会出现。最省事的是智谱 GLM（Flash 系列免费）、硅基流动、魔搭 ModelScope，在下面「还没领」里点「去领」再「填 key」。WorkBuddy、Trae 这类积分只能在它们自己的软件里用，不进免费池。', 'The free pool is empty, so free/auto is not in the dsh model list yet. Claim an official free quota and add its key and it appears. The quickest are Zhipu GLM (Flash models are free), SiliconFlow and ModelScope: use "Claim" then "Add key" under "Not claimed" below. Credits from WorkBuddy, Trae and the like only work in their own apps, so they never join the pool.'))),
         err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
         data.discoveries.length ? h('div', { style: { ...S.card, marginBottom: 10 } }, data.discoveries.map((d, i) => h('div', { key: d.id, style: i ? S.row : S.rowFirst },
           h('div', { style: S.line },
@@ -1065,7 +1067,9 @@ window.__ModuleLoader__.load({
         h('div', { style: { ...S.card, padding: '12px 14px' } },
           h('div', { style: S.line },
             h('span', { style: { ...S.label, ...S.grow } }, `dsh-model ${info.version}`,
-              h('span', { style: { ...S.meta, marginLeft: 8 } }, info.latest ? (hasUpdate ? L(`有新版本 ${info.latest}`, `${info.latest} available`) : L('已是最新', 'Up to date')) : L('查不到最新版本', 'Latest version unknown'))),
+              // 磁盘上已经是新版、后台还在跑旧的：后台一两分钟内会自己重启（设计 §14.29）
+              info.installed ? h('span', { style: { ...S.meta, marginLeft: 8, color: C.warn } }, L(`已装 ${info.installed}，后台正在切换到新版（一两分钟）`, `${info.installed} is installed; the background service is switching to it (a minute or two)`))
+                : h('span', { style: { ...S.meta, marginLeft: 8 } }, info.latest ? (hasUpdate ? L(`有新版本 ${info.latest}`, `${info.latest} available`) : L('已是最新', 'Up to date')) : L('查不到最新版本', 'Latest version unknown'))),
             info.canManage && hasUpdate ? h('button', { type: 'button', style: S.btnPrimary, disabled: starting, onClick: () => void start('update') }, starting ? L('正在开始…', 'Starting…') : L(`更新到 ${info.latest}`, `Update to ${info.latest}`)) : null,
             info.canManage ? h('button', { type: 'button', style: { ...S.btn, color: C.err }, onClick: () => setConfirming(true) }, L('卸载', 'Uninstall')) : null),
           !info.canManage ? h('div', { style: { marginTop: 8 } },
@@ -1298,6 +1302,80 @@ window.__ModuleLoader__.load({
         msg ? h('div', { style: { ...S.meta, marginTop: 8 } }, msg) : null) : null)
     }
 
+    /** 手动填签到凭据（多账号）：灵犀、DuMate、AStudio、CodeArts，以及自定义签到服务（设计 §14.30） */
+    function ManualDialog({ kind: initial, onDone, onClose }) {
+      const [kinds, setKinds] = useState(null)
+      const [kind, setKind] = useState(initial || '')
+      const [vals, setVals] = useState({})
+      const [name, setName] = useState('')
+      const [busy, setBusy] = useState(false)
+      const [msg, setMsg] = useState('')
+      useEffect(() => { api('GET', '/checkin/manual').then((k) => { setKinds(k); if (!initial && k[0]) setKind(k[0].id) }, (e) => setMsg(e.code === 'not_found' ? L('后台服务是旧版，点「关于 → 更新」后可用', 'The background service is older; update it under About') : e.message)) }, [])
+      const k = kinds && kinds.find((x) => x.id === kind)
+      const save = async () => {
+        setBusy(true)
+        setMsg(L('正在保存并签一次…', 'Saving and checking in once…'))
+        try { onDone(await api('POST', `/checkin/manual/${encodeURIComponent(kind)}`, { fields: vals, ...(name.trim() ? { name: name.trim() } : {}) })) } catch (e) { setMsg(e.message); setBusy(false) }
+      }
+      return h(Modal, { title: L('手动填签到凭据', 'Paste check-in credentials'), onClose },
+        h('p', { style: S.note }, L('填了凭据就不依赖本机的 App，VPS 上也能签；同一家可以加几个账号。凭据只存在这台机器上（secrets.json，仅本人可读）。', 'With credentials pasted, the app does not need to be on this machine, so a VPS can check in too; you can add several accounts per service. Credentials stay on this machine (secrets.json, readable only by you).')),
+        !kinds ? h('div', { style: S.meta }, msg || L('读取中…', 'Loading…')) : h('div', null,
+          h('div', { style: { ...S.line, marginBottom: 8 } },
+            h('span', { style: S.meta }, L('服务', 'Service')),
+            h('select', { style: { ...S.input, ...S.grow }, value: kind, onChange: (e) => { setKind(e.target.value); setVals({}) }, 'aria-label': L('服务', 'Service') },
+              kinds.map((x) => h('option', { key: x.id, value: x.id }, `${x.label}${x.accounts.length ? L(`（已有 ${x.accounts.length} 个）`, ` (${x.accounts.length} added)`) : ''}`)))),
+          k ? h('div', null,
+            h('div', { style: { ...S.meta, lineHeight: 1.7, marginBottom: 8 } }, k.how),
+            k.fields.map((f) => h('div', { key: f.key, style: { ...S.line, marginBottom: 6 } },
+              h('span', { style: { ...S.meta, minWidth: 120 } }, f.label, f.optional ? L('（可选）', ' (optional)') : ''),
+              h('input', { type: 'password', style: { ...S.input, ...S.grow }, value: vals[f.key] || '', onChange: (e) => setVals({ ...vals, [f.key]: e.target.value }), 'aria-label': f.label }))),
+            h('div', { style: { ...S.line, marginBottom: 8 } },
+              h('input', { style: { ...S.input, ...S.grow }, maxLength: 24, placeholder: L('给这个账号起个名字（可选），如：小号', 'A name for this account (optional), e.g. Second'), value: name, onChange: (e) => setName(e.target.value), 'aria-label': L('账号名字', 'Account name') }),
+              h('button', { type: 'button', style: S.btnPrimary, disabled: busy || k.fields.some((f) => !f.optional && !(vals[f.key] || '').trim()), onClick: () => void save() }, L('保存', 'Save')))) : null,
+          msg ? h('div', { style: { ...S.meta, marginTop: 4 } }, msg) : null))
+    }
+
+    /** 自定义签到服务：把提示词发给 dsh 的 AI 查接口，粘回它给的 JSON（设计 §14.30） */
+    function CustomDialog({ onDone, onClose }) {
+      const [data, setData] = useState(null)
+      const [text, setText] = useState('')
+      const [busy, setBusy] = useState(false)
+      const [msg, setMsg] = useState('')
+      const load = () => api('GET', '/checkin/custom').then(setData, (e) => setMsg(e.code === 'not_found' ? L('后台服务是旧版，点「关于 → 更新」后可用', 'The background service is older; update it under About') : e.message))
+      useEffect(() => { void load() }, [])
+      // 导入前先在页面上看出它会把凭据发到哪些网站
+      let preview = null
+      try {
+        const j = JSON.parse(text.trim().replace(/^```(?:json)?\s*|```\s*$/g, ''))
+        const hosts = [j.checkin && j.checkin.url, j.status && j.status.url].filter(Boolean).map((u) => { try { return new URL(String(u).replace(/\{\{[^}]*\}\}/g, 'x')).host } catch { return '' } }).filter(Boolean)
+        preview = { name: j.name || j.id || '', hosts: [...new Set(hosts)] }
+      } catch { preview = null }
+      const save = async () => {
+        setBusy(true)
+        setMsg('')
+        try { const r = await api('POST', '/checkin/custom', { text }); setData(r); setText(''); onDone(r.id) } catch (e) { setMsg(e.message) } finally { setBusy(false) }
+      }
+      const remove = async (id, label) => {
+        if (!window.confirm(L(`删除「${label}」和它的签到凭据？`, `Remove "${label}" and its check-in credentials?`))) return
+        try { setData(await api('DELETE', `/checkin/custom/${encodeURIComponent(id)}`)) } catch (e) { setMsg(e.message) }
+      }
+      const step = (n, t) => h('div', { style: { ...S.meta, lineHeight: 1.7 } }, `${n}. `, t)
+      return h(Modal, { title: L('自定义签到服务', 'Custom check-in services'), onClose },
+        h('p', { style: S.note }, L('内置之外能签到的站点，描述一下它的接口就能加进来，不用改代码。', 'Add any site that has a daily check-in by describing its API; no code needed.')),
+        step(1, h('span', null, L('复制提示词，粘到 dsh 的对话里，告诉 AI 是哪个网站 / App，它会帮你查好接口、给一段 JSON ', 'Copy the prompt into a dsh chat and name the site or app; the AI looks up the API and gives you a JSON block '), data ? h(CopyButton, { get: data.prompt, label: L('复制提示词', 'Copy prompt'), style: { padding: '1px 8px', fontSize: 12 } }) : null)),
+        step(2, L('把那段 JSON 粘到下面，导入', 'Paste the JSON below and import it')),
+        h('textarea', { style: { ...S.input, width: '100%', minHeight: 120, fontFamily: 'monospace', fontSize: 12, marginTop: 6 }, placeholder: '{ "id": "…", "name": "…", "checkin": { … } }', value: text, onChange: (e) => setText(e.target.value), 'aria-label': 'JSON' }),
+        preview ? h('div', { style: { fontSize: 12, color: C.warn, margin: '6px 0' } }, L(`「${preview.name}」签到时会把你填的凭据发给：${preview.hosts.join('、') || '（没写地址）'}。确认是那家官方的网站再导入。`, `"${preview.name}" will send the credentials you paste to: ${preview.hosts.join(', ') || '(no address)'}. Make sure that is the service's own site before importing.`)) : null,
+        h('div', { style: { ...S.line, justifyContent: 'flex-end' } }, h('button', { type: 'button', style: S.btnPrimary, disabled: busy || !preview, onClick: () => void save() }, L('导入', 'Import'))),
+        step(3, L('导入后在「手动填签到凭据」里给它填 Cookie / token，就会每天自动签', 'Then paste its Cookie / token under "Paste check-in credentials" and it is checked in daily')),
+        msg ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, msg) : null,
+        data && data.services.length ? h('div', { style: { marginTop: 10, borderTop: `1px solid ${C.border}`, paddingTop: 8 } },
+          h('div', { style: { ...S.meta, marginBottom: 4 } }, L('已添加的', 'Added')),
+          data.services.map((x) => h('div', { key: x.id, style: { ...S.line, minHeight: 24, fontSize: 12 } },
+            h('span', { style: S.grow }, x.label, h('span', { style: { color: C.faint, marginLeft: 6 } }, x.targets.join('、'))),
+            h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, onClick: () => void remove(x.id, x.label) }, L('删除', 'Remove'))))) : null)
+    }
+
     /** 把签到账号复制到另一台机器：导出一段加密文本 + 提取码，到那台的页面里导入 */
     function TransferDialog({ mode, onDone, onClose }) {
       const [out, setOut] = useState(null)
@@ -1349,6 +1427,11 @@ window.__ModuleLoader__.load({
       const [qoder, setQoder] = useState(false)
       const [wbLogin, setWbLogin] = useState(null)
       const [oaLogin, setOaLogin] = useState(null)
+      const [caLogin, setCaLogin] = useState(null)
+      const [manual, setManual] = useState('')
+      const [customOpen, setCustomOpen] = useState(false)
+      const [manualList, setManualList] = useState([])
+      const loadManual = useCallback(() => api('GET', '/checkin/manual').then(setManualList, () => {}), [])
       const [doubao, setDoubao] = useState(false)
       const [transfer, setTransfer] = useState('')
       const [err, setErr] = useState('')
@@ -1356,6 +1439,14 @@ window.__ModuleLoader__.load({
       const addWorkbuddy = async () => {
         setErr('')
         try { setWbLogin((await api('POST', '/checkin/workbuddy')).login) } catch (e) { setErr(e.message) }
+      }
+      const addCodeArts = async () => {
+        setErr('')
+        try { setCaLogin((await api('POST', '/checkin/codearts')).login) } catch (e) { setErr(e.message) }
+      }
+      const removeManual = async (kind, id, label) => {
+        if (!window.confirm(L(`不再给「${label}」签到？`, `Stop checking in "${label}"?`))) return
+        try { setSt(await api('DELETE', `/checkin/manual/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`)); void loadManual() } catch (e) { setErr(e.message) }
       }
       const addOfficeAce = async () => {
         setErr('')
@@ -1366,6 +1457,7 @@ window.__ModuleLoader__.load({
         try { setSt(await api('DELETE', `/checkin/${kind}/${encodeURIComponent(id)}`)) } catch (e) { setErr(e.message) }
       }
       useEffect(() => { void refresh(); const t = setInterval(refresh, 5 * 60 * 1000); return () => clearInterval(t) }, [refresh])
+      useEffect(() => { if (open) void loadManual() }, [open, loadManual])
       if (!st) return null
       const byId = new Map(st.results.map((r) => [r.id, r]))
       const done = st.available.filter((a) => { const r = byId.get(a.id); return r && r.state !== 'failed' })
@@ -1384,7 +1476,11 @@ window.__ModuleLoader__.load({
           h('div', { style: { ...S.meta } }, L('每日签到：登录 WorkBuddy 国内版，或', 'Daily check-in: sign in to WorkBuddy (China), or '),
             h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setQoder(true) }, L('添加 Qoder', 'Add Qoder')),
             h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setDoubao(true) }, L('添加豆包', 'Add Doubao')),
-            h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setTransfer('import') }, L('从另一台机器导入', 'Import from another machine'))),
+            h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setTransfer('import') }, L('从另一台机器导入', 'Import from another machine')),
+            h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setManual('_') }, L('手动填签到凭据', 'Paste check-in credentials')),
+            h('button', { type: 'button', style: { ...S.btn, marginLeft: 6 }, onClick: () => setCustomOpen(true) }, L('自定义签到服务', 'Custom check-in service'))),
+          manual ? h(ManualDialog, { kind: manual === '_' ? '' : manual, onDone: (next) => { setManual(''); if (next) setSt(next); setOpen(true) }, onClose: () => setManual('') }) : null,
+          customOpen ? h(CustomDialog, { onDone: (id) => { setCustomOpen(false); setManual(id) }, onClose: () => setCustomOpen(false) }) : null,
           transfer ? h(TransferDialog, { mode: transfer, onDone: (r) => { setTransfer(''); setSt(r); setOpen(true) }, onClose: () => setTransfer('') }) : null,
           qoder ? h(QoderDialog, { onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null,
           doubao ? h(DoubaoDialog, { localRead: st.localRead, found: ((st.missing || []).find((m) => m.id === 'doubao') || {}).found, onDone: (next) => { setDoubao(false); if (next) setSt(next); else void refresh() }, onClose: () => setDoubao(false) }) : null)
@@ -1406,22 +1502,26 @@ window.__ModuleLoader__.load({
             h('span', null, L('这台还能签：', 'Also available here:')),
             (st.missing || []).map((m) => h('span', { key: m.id, style: { display: 'inline-flex', alignItems: 'center', gap: 4 } },
               m.found && m.found.length ? L(`${m.label}（本机 ${m.found.join('、')} 已登录）`, `${m.label} (signed in: ${m.found.join(', ')})`) : m.label,
-              m.action ? h('button', { type: 'button', style: { ...S.btn, padding: '1px 6px', fontSize: 11 }, onClick: () => { if (m.action === 'workbuddy') void addWorkbuddy(); else if (m.action === 'officeace') void addOfficeAce(); else if (m.action === 'qoder') setQoder(true); else setDoubao(true) } }, L('+ 添加', '+ Add')) : h('span', { style: { color: C.faint } }, `（${m.reason}）`)))) : null,
+              m.action ? h('button', { type: 'button', style: { ...S.btn, padding: '1px 6px', fontSize: 11 }, onClick: () => { if (m.action === 'workbuddy') void addWorkbuddy(); else if (m.action === 'officeace') void addOfficeAce(); else if (m.action === 'codearts') void addCodeArts(); else if (m.action === 'manual') setManual(m.id); else if (m.action === 'qoder') setQoder(true); else setDoubao(true) } }, L('+ 添加', '+ Add')) : h('span', { style: { color: C.faint } }, `（${m.reason}）`)))) : null,
           open ? h('div', { style: { marginTop: 8 } },
             st.results.map((r) => h('div', { key: r.id, style: { fontSize: 12, lineHeight: 1.8, color: r.state === 'failed' ? C.err : C.text } },
               `${r.label}：${CHECKIN_TEXT(r)}`, r.advice ? h('span', { style: { color: C.sub, marginLeft: 6 } }, r.advice) : null)),
             // 多账号：多加的 WorkBuddy 签到账号、每个 Qoder 令牌，都能删；再加一个
             h('div', { style: { marginTop: 8, borderTop: `1px solid ${C.border}`, paddingTop: 8 } },
               h('div', { style: { ...S.meta, marginBottom: 4 } }, L('签到账号（同一家可以加几个账号）', 'Check-in accounts (several per product are fine)')),
-              [...((st.accounts && st.accounts.workbuddy) || []).map((a) => ({ kind: 'workbuddy', id: a.uid, label: a.label })), ...((st.accounts && st.accounts.qoder) || []).map((q) => ({ kind: 'qoder', id: q.id, label: q.label })), ...((st.accounts && st.accounts.doubao) || []).map((d) => ({ kind: 'doubao', id: d.id, label: d.label })), ...((st.accounts && st.accounts.officeace) || []).map((o) => ({ kind: 'officeace', id: o.id, label: o.label }))].map((a) =>
+              [...((st.accounts && st.accounts.workbuddy) || []).map((a) => ({ kind: 'workbuddy', id: a.uid, label: a.label })), ...((st.accounts && st.accounts.qoder) || []).map((q) => ({ kind: 'qoder', id: q.id, label: q.label })), ...((st.accounts && st.accounts.doubao) || []).map((d) => ({ kind: 'doubao', id: d.id, label: d.label })), ...((st.accounts && st.accounts.officeace) || []).map((o) => ({ kind: 'officeace', id: o.id, label: o.label })), ...manualList.flatMap((k) => k.accounts.map((a) => ({ kind: 'manual', service: k.id, id: a.id, label: `${k.label}（${a.name || `#${a.id}`} · ${L('手动凭据', 'pasted')}）` })))].map((a) =>
                 h('div', { key: `${a.kind}:${a.id}`, style: { ...S.line, minHeight: 24, fontSize: 12 } },
                   h('span', { style: S.grow }, a.label),
-                  h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, onClick: () => void removeAccount(a.kind, a.id, a.label) }, L('删除', 'Remove')))),
+                  h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, onClick: () => void (a.kind === 'manual' ? removeManual(a.service, a.id, a.label) : removeAccount(a.kind, a.id, a.label)) }, L('删除', 'Remove')))),
               h('div', { style: { ...S.line, marginTop: 4, flexWrap: 'wrap' } },
                 h('button', { type: 'button', style: S.btn, onClick: () => void addWorkbuddy() }, L('+ 添加 WorkBuddy 账号', '+ Add a WorkBuddy account')),
                 h('button', { type: 'button', style: S.btn, onClick: () => setQoder(true) }, st.qoder.configured ? L('+ 再加一个 Qoder 账号', '+ Add another Qoder account') : L('+ 添加 Qoder', '+ Add Qoder')),
                 h('button', { type: 'button', style: S.btn, onClick: () => setDoubao(true) }, (st.accounts && st.accounts.doubao && st.accounts.doubao.length) ? L('+ 再加一个豆包账号', '+ Add another Doubao account') : L('+ 添加豆包', '+ Add Doubao')),
-                h('button', { type: 'button', style: S.btn, onClick: () => void addOfficeAce() }, (st.accounts && st.accounts.officeace && st.accounts.officeace.length) ? L('+ 再加一个 OfficeAce 账号', '+ Add another OfficeAce account') : L('+ 添加 OfficeAce（华为云）', '+ Add OfficeAce (Huawei Cloud)'))),
+                h('button', { type: 'button', style: S.btn, onClick: () => void addOfficeAce() }, (st.accounts && st.accounts.officeace && st.accounts.officeace.length) ? L('+ 再加一个 OfficeAce 账号', '+ Add another OfficeAce account') : L('+ 添加 OfficeAce（华为云）', '+ Add OfficeAce (Huawei Cloud)')),
+                h('button', { type: 'button', style: S.btn, onClick: () => void addCodeArts() }, L('+ 登录华为 CodeArts', '+ Sign in to Huawei CodeArts'))),
+              h('div', { style: { ...S.line, marginTop: 4, flexWrap: 'wrap' } },
+                h('button', { type: 'button', style: S.btn, onClick: () => setManual('_') }, L('+ 手动填签到凭据（灵犀、DuMate、AStudio、CodeArts…，VPS 也能签）', '+ Paste check-in credentials (Lingxi, DuMate, AStudio, CodeArts…; works on a VPS)')),
+                h('button', { type: 'button', style: S.btn, onClick: () => setCustomOpen(true) }, L('+ 自定义签到服务', '+ Custom check-in service'))),
               h('div', { style: { ...S.line, marginTop: 4, flexWrap: 'wrap' } },
                 h('button', { type: 'button', style: S.btn, onClick: () => setTransfer('export') }, L('复制签到账号到另一台机器', 'Copy check-in accounts to another machine')),
                 h('button', { type: 'button', style: S.btn, onClick: () => setTransfer('import') }, L('导入签到账号', 'Import check-in accounts')))),
@@ -1432,6 +1532,9 @@ window.__ModuleLoader__.load({
         qoder ? h(QoderDialog, { another: st.qoder.configured, onDone: () => { setQoder(false); void refresh() }, onClose: () => setQoder(false) }) : null,
         transfer ? h(TransferDialog, { mode: transfer, onDone: (r) => { setTransfer(''); setSt(r); setOpen(true) }, onClose: () => setTransfer('') }) : null,
         doubao ? h(DoubaoDialog, { another: Boolean(st.accounts && st.accounts.doubao && st.accounts.doubao.length), localRead: st.localRead, found: ((st.missing || []).find((m) => m.id === 'doubao') || {}).found, onDone: (next, note) => { setDoubao(false); setOpen(true); if (next) setSt(next); else void refresh(); if (note) setErr(note) }, onClose: () => setDoubao(false) }) : null,
+        caLogin ? h(LoginDialog, { source: { id: 'codearts-checkin', label: L('华为 CodeArts 签到（浏览器要在这台电脑上）', 'Huawei CodeArts check-in (the browser must be on this computer)'), login: 'link' }, session: caLogin, onDone: () => { setCaLogin(null); setOpen(true); setTimeout(() => void refresh(), 3000) }, onClose: () => { setCaLogin(null); void refresh() } }) : null,
+        manual ? h(ManualDialog, { kind: manual === '_' ? '' : manual, onDone: (next) => { setManual(''); setOpen(true); if (next) setSt(next); void loadManual() }, onClose: () => setManual('') }) : null,
+        customOpen ? h(CustomDialog, { onDone: (id) => { setCustomOpen(false); setManual(id); void refresh() }, onClose: () => { setCustomOpen(false); void refresh() } }) : null,
         oaLogin ? h(LoginDialog, { source: { id: 'officeace-checkin', label: L('OfficeAce（华为云）签到账号', 'OfficeAce (Huawei Cloud) check-in account'), login: 'link' }, session: oaLogin, onDone: () => { setOaLogin(null); setOpen(true); setTimeout(() => void refresh(), 3000) }, onClose: () => { setOaLogin(null); void refresh() } }) : null,
         wbLogin ? h(LoginDialog, { source: { id: 'workbuddy-checkin', label: L('WorkBuddy 签到账号', 'WorkBuddy check-in account'), login: 'link' }, session: wbLogin, onDone: () => { setWbLogin(null); setOpen(true); setTimeout(() => void refresh(), 3000) }, onClose: () => { setWbLogin(null); void refresh() } }) : null)
     }

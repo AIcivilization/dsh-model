@@ -28,7 +28,7 @@ English · [中文](README.md)
 | Where it works | One address for dsh, editors, scripts and other computers | Mostly inside dsh only |
 | Sources | **36**: free, subscription, local and pay as you go, plus your own | A dozen or so account channels |
 | Free quota | **Free pool** `free/auto`: official free quotas combined, soon-to-expire first, **anything that charges stays out by default** | — |
-| Check-in | Trae, Qoder, WorkBuddy, Doubao, OfficeAce, MiniMax Code, WPS Lingxi, DuMate, AStudio, **several accounts each**, can run on an always-on VPS | Some |
+| Check-in | Trae, Qoder, WorkBuddy, Doubao, OfficeAce, MiniMax Code, WPS Lingxi, DuMate, AStudio, Huawei CodeArts, plus **your own custom services**; **several accounts each**, can run on an always-on VPS | Some |
 | Install | Installing from the plugin marketplace **sets itself up**; no GitHub needed in China | Restart dsh after installing |
 | Transparency | No server of our own, no telemetry; every address it talks to is in the [egress list](docs/EGRESS.md) | — |
 
@@ -47,12 +47,15 @@ English · [中文](README.md)
 | **WPS Lingxi** | Detected automatically if installed and signed in (Node ≥ 22.5) | Points (100 a day, 200 from day 7) |
 | **Baidu DuMate** | Detected automatically if installed and signed in | Check-in credits |
 | **AStudio** | Detected automatically if installed and signed in | Daily sign-in credits |
+| **Huawei CodeArts** | Click "+ Sign in to Huawei CodeArts" and sign in in the browser (the browser must be on this computer); paste AK/SK on a VPS | Check-in points |
+| **Your own** | "+ Custom check-in service": copy the prompt so the dsh AI looks up the API, paste back its JSON, then paste the Cookie / token | Depends on the service |
 
 - **Automatic by default**: done at a random 5–55 minutes after midnight Beijing time; failures retry an hour later; if the computer was off, it catches up within a minute of starting.
 - **You can see it**: one line at the top of the settings page, "Checked in today: …", with a one-click "Check in all" for anything missed, plus a one-time notice in the corner of dsh.
 - **What else this machine can do**: the card lists the supported products not set up here yet, each with "+ Add".
 - **Move it to an always-on VPS**: "Copy check-in accounts to another machine" gives an encrypted text and a code to import on the VPS page (Qoder and Doubao; sign in to WorkBuddy and OfficeAce on the VPS itself, and Trae stays on the computer that has Trae).
 - **Several accounts**: each product can have more than one. In the check-in card's Details: "+ Add a WorkBuddy account" (approve through a link) and "+ Add another Qoder account"; several Trae installs are checked in once per account automatically.
+- **Paste credentials, check in from a VPS**: Lingxi, DuMate, AStudio, CodeArts and your custom services take a pasted Cookie / token under "+ Paste check-in credentials" (several accounts each), so the app does not have to be on that machine.
 - **Check-in only, credits untouched**: they stay on your account for use in each product's own app. Command line: `dsh-model checkin`.
 
 ## 🔁 2. Relay: one address, one key, every model
