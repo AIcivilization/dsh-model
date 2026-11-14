@@ -470,7 +470,13 @@ describe('settings page', () => {
     expect(container.textContent).toContain('▸ 免费额度1 条新发现')
     const header = [...container.querySelectorAll('button')].find((x) => x.textContent?.startsWith('▸ 免费额度'))!
     await act(async () => header.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    // 额度列表默认收起：点「各家免费额度」展开，并记住
+    expect(container.textContent).toContain('共 3 份 · 1 份还没领')
+    expect(container.textContent).not.toContain('百炼新人额度')
+    const listBtn = [...container.querySelectorAll('button')].find((x) => x.textContent?.startsWith('▸ 各家免费额度'))!
+    await act(async () => listBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await waitText('百炼新人额度')
+    expect(window.localStorage.getItem('dsh-model.freeListOpen')).toBe('1')
     expect(window.localStorage.getItem('dsh-model.freeOpen')).toBe('1')
     expect(container.textContent).toContain('还有 1 份可领（一次性和每月的约 ¥60）')
     expect(container.textContent).toContain('会扣钱，没放进池')

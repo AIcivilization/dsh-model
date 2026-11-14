@@ -279,7 +279,8 @@ export class FreePool {
       return { ...base, status: 'connected' }
     })
     const rank = { connected: 0, cooling: 1, optin: 2, capped: 3, missing: 4 }
-    views.sort((a, b) => rank[a.status] - rank[b.status] || (b.cny ?? 0) - (a.cny ?? 0))
+    // 同一状态里：不扣钱的在前（最该先领的），再按折合金额
+    views.sort((a, b) => rank[a.status] - rank[b.status] || Number(a.charges) - Number(b.charges) || (b.cny ?? 0) - (a.cny ?? 0))
     const api = views.filter((v) => v.kind === 'api')
     const ck = views.filter((v) => v.kind === 'checkin')
     const pool = TIERS.map((tier) => ({ tier, models: poolOrder(cands, tier, state).map((m) => ({ alias: m.alias, source: m.source, cycle: m.cycle, charges: m.charges })) }))

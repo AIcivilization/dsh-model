@@ -683,6 +683,7 @@ window.__ModuleLoader__.load({
     }
     const FREE_SHOW_ALL = 'dsh-model.freeShowAll'
     const FREE_OPEN = 'dsh-model.freeOpen'
+    const FREE_LIST_OPEN = 'dsh-model.freeListOpen'
     /** 「免费池」醒目标签：主题色底、白字，一眼能看到，点了展开看顺序 */
     const PoolPill = ({ onClick, title }) => h(onClick ? 'button' : 'span', {
       ...(onClick ? { type: 'button', onClick, title } : {}),
@@ -702,6 +703,9 @@ window.__ModuleLoader__.load({
       // 卡片可折叠：记住用户的选择；没选过时，免费池还空着就展开（引导去领），有了就收起
       const [open, setOpenRaw] = useState(() => { try { const v = window.localStorage.getItem(FREE_OPEN); return v === '1' ? true : v === '0' ? false : null } catch { return null } })
       const setOpen = (v) => { setOpenRaw(v); try { window.localStorage.setItem(FREE_OPEN, v ? '1' : '0') } catch { /* 无痕 */ } }
+      // 额度列表很长：默认收起，记住用户的选择
+      const [listOpen, setListOpenRaw] = useState(() => { try { return window.localStorage.getItem(FREE_LIST_OPEN) === '1' } catch { return false } })
+      const setListOpen = (v) => { setListOpenRaw(v); try { window.localStorage.setItem(FREE_LIST_OPEN, v ? '1' : '0') } catch { /* 无痕 */ } }
       // 后台服务比页面旧（还没有 /free）：说人话，并且隔一会儿自己再试（后台会自己切到新版，设计 §14.29）
       const load = useCallback(() => api('GET', '/free').then((d) => { setData(d); setErr('') }, (e) => setErr(e.code === 'not_found' ? L('后台服务还是旧版本，还不认识「免费额度」：看页面顶部的提示。它更新好后这里会自动出现', 'The background service is an older version that does not know "Free quota" yet: see the notice at the top of the page. This card appears by itself once it is updated') : e.message)), [])
       useEffect(() => { if (!err || data) return; const t = setInterval(() => void load(), 30_000); return () => clearInterval(t) }, [err, data, load])
@@ -773,7 +777,7 @@ window.__ModuleLoader__.load({
             h('span', { style: { color: C.sub } }, L(` · 签到 ${sum.checkinConnected}/${sum.checkinConnected + sum.checkinMissing} 家`, ` · check-in ${sum.checkinConnected}/${sum.checkinConnected + sum.checkinMissing}`))),
           sum.poolModels.auto ? h('div', { style: { ...S.line, marginTop: 4 } },
             h('span', { style: { ...S.meta, ...S.grow } }, L('在 dsh 里：模型列表 → ', 'In dsh: model list → '), h('b', { style: { color: C.accent } }, L('「🆓 免费池」分组', 'the "🆓 Free pool" group')), L('；其他软件的模型名：', '; model names elsewhere: '), h('span', { style: S.mono }, 'free/auto · free/smart · free/fast')),
-            h(CopyButton, { get: 'free/auto', label: L('复制 free/auto', 'Copy free/auto') })) : h('div', { style: { fontSize: 12, color: C.warn, marginTop: 4, lineHeight: 1.6 } }, L('免费池还是空的，所以 dsh 的模型列表里还没有 free/auto。领一份官方免费额度、填上 key 就会出现。最省事的是智谱 GLM（Flash 系列免费）、硅基流动、魔搭 ModelScope，在下面「还没领」里点「去领」再「填 key」。WorkBuddy、Trae 这类积分只能在它们自己的软件里用，不进免费池。', 'The free pool is empty, so free/auto is not in the dsh model list yet. Claim an official free quota and add its key and it appears. The quickest are Zhipu GLM (Flash models are free), SiliconFlow and ModelScope: use "Claim" then "Add key" under "Not claimed" below. Credits from WorkBuddy, Trae and the like only work in their own apps, so they never join the pool.'))),
+            h(CopyButton, { get: 'free/auto', label: L('复制 free/auto', 'Copy free/auto') })) : h('div', { style: { fontSize: 12, color: C.warn, marginTop: 4, lineHeight: 1.6 } }, L('免费池还是空的，所以 dsh 的模型列表里还没有 free/auto。领一份官方免费额度、填上 key 就会出现。最省事的是智谱 GLM（Flash 系列免费）、硅基流动、魔搭 ModelScope，点开下面的「各家免费额度」，在「还没领」的里点「去领」再「填 key」。WorkBuddy、Trae 这类积分只能在它们自己的软件里用，不进免费池。', 'The free pool is empty, so free/auto is not in the dsh model list yet. Claim an official free quota and add its key and it appears. The quickest are Zhipu GLM (Flash models are free), SiliconFlow and ModelScope: open "Free quotas by provider" below and use "Claim" then "Add key" on one not claimed yet. Credits from WorkBuddy, Trae and the like only work in their own apps, so they never join the pool.'))),
         err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
         expanded ? h('div', null,
         data.discoveries.length ? h('div', { style: { ...S.card, marginBottom: 10 } }, data.discoveries.map((d, i) => h('div', { key: d.id, style: i ? S.row : S.rowFirst },
@@ -785,7 +789,12 @@ window.__ModuleLoader__.load({
               void act(d.id, 'POST', '/free/discovery', { id: d.id, accept: true })
             } }, d.kind === 'offer' ? L('去看看', 'Open') : L('加进免费池', 'Add to pool')),
             h('button', { type: 'button', style: S.btn, disabled: busy === d.id, onClick: () => void act(d.id, 'POST', '/free/discovery', { id: d.id, accept: false }) }, L('忽略', 'Dismiss')))))) : null,
-        h('div', { style: S.card }, list.map((e, i) => h('div', { key: e.id, style: i ? S.row : S.rowFirst },
+        h('button', { type: 'button', 'aria-expanded': listOpen, onClick: () => setListOpen(!listOpen), style: { ...S.card, display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', cursor: 'pointer', fontSize: 13, color: C.text, marginBottom: listOpen ? 8 : 0 } },
+          `${listOpen ? '▾' : '▸'} `,
+          h('b', null, L('各家免费额度', 'Free quotas by provider')),
+          h('span', { style: { color: C.sub, marginLeft: 8 } }, L(`共 ${data.entries.filter((e) => e.kind === 'api').length} 份 · ${sum.missing} 份还没领`, `${data.entries.filter((e) => e.kind === 'api').length} in all · ${sum.missing} not claimed`)),
+          listOpen ? null : h('span', { style: { color: C.accent, marginLeft: 8 } }, L('点开领取', 'open to claim'))),
+        listOpen ? h('div', { style: S.card }, list.map((e, i) => h('div', { key: e.id, style: i ? S.row : S.rowFirst },
           h('div', { style: S.line },
             h('div', { style: S.grow },
               h('div', { style: { fontSize: 13, color: C.text } }, e.name, e.cny ? h('span', { style: { ...S.meta, marginLeft: 6 } }, `≈ ¥${e.cny}`) : null),
@@ -794,9 +803,9 @@ window.__ModuleLoader__.load({
                 e.used != null && e.capTokens ? h('span', { style: { marginLeft: 6 } }, h(Bar, { pct: (e.used / e.capTokens) * 100 }), ` ${fmtTokens(e.used)} / ${fmtTokens(e.capTokens)}`) : null,
                 e.note ? h('div', null, e.note) : null)),
             statusTag(e),
-            actions(e))))),
+            actions(e))))) : null,
         h('div', { style: { ...S.line, marginTop: 8 } },
-          h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: 0, color: C.sub }, onClick: () => { const v = !showAll; setShowAll(v); try { window.localStorage.setItem(FREE_SHOW_ALL, v ? '1' : '0') } catch { /* 无痕 */ } } }, showAll ? L('▾ 收起已在签的', '▾ Hide check-ins already running') : L('▸ 也显示已在签的', '▸ Also show check-ins already running')),
+          listOpen ? h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: 0, color: C.sub }, onClick: () => { const v = !showAll; setShowAll(v); try { window.localStorage.setItem(FREE_SHOW_ALL, v ? '1' : '0') } catch { /* 无痕 */ } } }, showAll ? L('▾ 收起已在签的', '▾ Hide check-ins already running') : L('▸ 也显示已在签的', '▸ Also show check-ins already running')) : null,
           h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: 0, color: C.sub }, onClick: () => setShowPool(!showPool) }, showPool ? L('▾ 收起免费池顺序', '▾ Hide pool order') : L('▸ 看免费池顺序', '▸ Show pool order')),
           h('span', { style: { ...S.meta, ...S.grow, textAlign: 'right' } }, L(`目录 ${data.catalogUpdatedAt}`, `Catalog ${data.catalogUpdatedAt}`))),
         showPool ? h('div', { style: { ...S.card, marginTop: 8, padding: '8px 14px' } },
