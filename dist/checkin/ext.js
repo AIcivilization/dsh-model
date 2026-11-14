@@ -14,17 +14,20 @@ import { createCustomProvider } from './ext/providers/custom.js';
 import { createDumateProvider } from './ext/providers/dumate.js';
 import { createLingxiProvider } from './ext/providers/lingxi.js';
 import { createMinimaxProvider } from './ext/providers/minimax.js';
+import { createXiaohuanxiongProvider } from './ext/providers/xiaohuanxiong.js';
 export const EXT_KINDS = [
     { id: 'minimax', label: () => 'MiniMax Code', app: () => 'MiniMax Code' },
     { id: 'lingxi', label: () => L('WPS 灵犀', 'WPS Lingxi'), app: () => L('WPS 灵犀', 'WPS Lingxi') },
     { id: 'dumate', label: () => L('百度 DuMate', 'Baidu DuMate'), app: () => 'DuMate' },
     { id: 'astudio', label: () => 'AStudio', app: () => 'AStudio' },
     { id: 'codearts', label: () => L('华为 CodeArts', 'Huawei CodeArts'), app: () => 'CodeArts' },
+    { id: 'xiaohuanxiong', label: () => L('商汤小浣熊', 'SenseTime Raccoon'), app: () => L('商汤小浣熊', 'SenseTime Raccoon') },
 ];
 export const MANUAL_FIELDS = {
     lingxi: { label: () => L('WPS 灵犀', 'WPS Lingxi'), how: () => L('在浏览器打开 lingxi.wps.cn 并登录，开发者工具 → Application / 存储 → Cookies，复制 wps_sid 的值', 'Sign in at lingxi.wps.cn, then copy the wps_sid cookie value from the browser developer tools (Application → Cookies)'), fields: [{ key: 'wps_sid', label: 'wps_sid' }] },
     dumate: { label: () => L('百度 DuMate', 'Baidu DuMate'), how: () => L('在浏览器登录百度智能云（console.bce.baidu.com），开发者工具 → 网络，任意请求的 Cookie 整串复制（要含 bce-user-info）', 'Sign in at console.bce.baidu.com and copy the whole Cookie header of any request (it must include bce-user-info)'), fields: [{ key: 'cookie', label: 'Cookie' }] },
     astudio: { label: () => 'AStudio', how: () => L('在装了 AStudio 的电脑上打开 ~/.acode/acode/userdata/astron-session.json，复制 accountId、token（和 ssoSessionId，有就填）', 'On a computer with AStudio, open ~/.acode/acode/userdata/astron-session.json and copy accountId and token (and ssoSessionId if present)'), fields: [{ key: 'accountId', label: 'accountId' }, { key: 'token', label: 'token' }, { key: 'ssoSessionId', label: 'ssoSessionId', optional: true }] },
+    xiaohuanxiong: { label: () => L('商汤小浣熊', 'SenseTime Raccoon'), how: () => L('在浏览器打开 xiaohuanxiong.com 并登录，开发者工具 → Application / 存储 → Cookies → xiaohuanxiong.com，复制 raccoon_refresh_token 的值。之后 dsh-model 每次签到会换新并自己保存，你不用再管；在别处退出登录会让它失效，到时重新复制一次', 'Sign in at xiaohuanxiong.com, then copy the raccoon_refresh_token cookie value from the browser developer tools (Application → Cookies → xiaohuanxiong.com). dsh-model renews and saves it on every check-in; signing out elsewhere invalidates it, so copy it again then'), fields: [{ key: 'refresh_token', label: 'raccoon_refresh_token' }] },
     codearts: { label: () => L('华为 CodeArts', 'Huawei CodeArts'), how: () => L('华为云的临时访问密钥（AK/SK，可带 security token）。在本机用「登录」更省事；VPS 上可以填别处登录后拿到的这几项', 'Huawei Cloud temporary access keys (AK/SK, optionally a security token). Signing in is easier on this computer; on a VPS paste the keys from a sign-in elsewhere'), fields: [{ key: 'access_key_id', label: 'access_key_id' }, { key: 'secret_access_key', label: 'secret_access_key' }, { key: 'security_token', label: 'security_token', optional: true }] },
 };
 let codearts;
@@ -36,7 +39,7 @@ export function codeartsProvider(log = () => { }) {
 async function providers(log) {
     // JS 里推断出的签名是 log: () => void，这里按实际用法（带一条消息）传
     const opts = { log };
-    const list = [createMinimaxProvider(opts), createLingxiProvider(opts), createDumateProvider(opts), createAstudioProvider(opts), codeartsProvider(log)];
+    const list = [createMinimaxProvider(opts), createLingxiProvider(opts), createDumateProvider(opts), createAstudioProvider(opts), codeartsProvider(log), createXiaohuanxiongProvider(opts)];
     for (const def of await customServices())
         list.push(createCustomProvider(def, opts));
     return list;
@@ -70,6 +73,8 @@ export async function extCheckers(log = () => { }) {
 /** 这台没登录的：签到卡片里说明怎么加 */
 export function extMissing(have) {
     return EXT_KINDS.filter((k) => !have.has(k.id)).map((k) => {
+        if (k.id === 'xiaohuanxiong')
+            return { id: k.id, label: k.label(), action: 'manual', reason: L('填一次浏览器里的登录（raccoon_refresh_token），之后每天自动登录续期', 'paste the browser sign-in (raccoon_refresh_token) once; it signs in every day after that') };
         if (k.id === 'codearts')
             return { id: k.id, label: k.label(), action: 'codearts', reason: L('浏览器登录华为云，或填 AK/SK', 'sign in to Huawei Cloud in the browser, or paste AK/SK') };
         return {

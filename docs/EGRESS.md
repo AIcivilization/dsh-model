@@ -4,7 +4,7 @@
 
 > 结论：**dsh-model 没有自己的服务器，也没有遥测**。它只在你用到某个功能时，直接连那一家的官方地址；你的 key、登录和对话不会发给我们或任何第三方。
 >
-> 本清单按 0.30.0 的代码整理。可以自己复核：
+> 本清单按 0.31.3 的代码整理。可以自己复核：
 > `grep -rhoE "https?://[a-zA-Z0-9.-]+" src plugin/index.js | sort -u`
 
 ## 1. 本机
@@ -45,6 +45,7 @@
 | 蚂蚁百灵 | `api.ant-ling.com` |
 | 腾讯云 TokenHub | `tokenhub.tencentmaas.com` |
 | 书生 InternLM | `chat.intern-ai.org.cn` |
+| 商汤日日新 SenseNova | `token.sensenova.cn` |
 | WorkBuddy / WorkBuddy AI | `copilot.tencent.com`、`www.codebuddy.cn` 等 WorkBuddy 自己的地址 |
 | OpenCode Zen | `opencode.ai` |
 | 自定义 | 你填的地址 |
@@ -72,6 +73,7 @@
 | WPS 灵犀 | `lingxi.wps.cn` |
 | 百度 DuMate | `console.bce.baidu.com` |
 | AStudio | `agent.xfyun.cn` |
+| 商汤小浣熊 | `xiaohuanxiong.com`（用你填的 refresh token 续期、取用户信息和积分明细） |
 | OfficeAce（华为云） | `auth.huaweicloud.com`（你在浏览器里登录）、`agentarts.cn-southwest-2.myhuaweicloud.com`（取回登录）、`sts.cn-north-4.myhuaweicloud.com`（换临时密钥）、`officeace.cn-southwest-2.huaweicloud-agentarts.com`（领积分） |
 | 华为 CodeArts | `auth.huaweicloud.com`、`devcloud.cn-north-4.huaweicloud.com`（你在浏览器里登录，回调到本机 `127.0.0.1:8791`）、`snap-access.cn-north-4.myhuaweicloud.com`（换临时密钥、查积分、签到） |
 | 你自己加的签到服务 | 你导入的那份定义里写的地址（导入前页面会列出来让你确认） |

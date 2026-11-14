@@ -831,3 +831,28 @@ dsh-checkin-all（同作者的独立签到插件，MIT）里已经做好、我�
   - 升级中（发起后 10 分钟内）：「后台服务是 X，比插件（Y）旧，正在自动更新…新功能会自己出现」；
   - 没成功（超过 10 分钟仍旧，或 VPS 上没有 root 通道）：说清楚，并给可复制的命令（VPS：`sudo npm install -g dsh-model@latest && sudo dsh-model setup`）。
   - 「免费额度」卡片遇到旧后台时改成指向顶部的提示，不再说「一两分钟」。
+
+### 14.32 商汤：小浣熊签到 + 日日新 SenseNova 来源（0.31.3）
+
+用户要求「把小浣熊加到来源列表里，签到也加上」（2026-11-14）。查下来是两样东西：
+
+- **商汤小浣熊**（xiaohuanxiong.com）是办公产品，没有对外 API，积分只能在小浣熊里用。和 Trae、Qoder 一样**只签到**，不接它的对话接口（那是私有接口，§1.2 不做）。
+- **来源**用同一家的官方模型 API：**商汤日日新 SenseNova**。
+
+**签到**
+
+- 规则（小浣熊网页里的原文）：每日积分每天 0 点发放，默认当天 24:00 失效；**当天登录过，有效期延长到 7 天**。免费版每天 300 积分。所以「签到」= 每天以用户的账号登录一次。
+- 接口（网页版自己用的，前缀 `https://xiaohuanxiong.com/api/web`，`Authorization: Bearer <access token>`）：
+  1. `POST /auth/v1/refresh`，body `{ refresh_token }`，返回 `data.access_token`、`data.refresh_token`。refresh token 会换新，**换完马上写回**（旧的作废）；
+  2. `GET /points/v2/bills?paging.limit=20&type=all`，看今天那条 `biz_type=daily_grant` 的 `expire_at`；
+  3. `GET /auth/v1/user_info`（网页登录后启动时取的，算当天登录）；
+  4. 再看一次明细，`GET /points/v1/balance` 读余额。
+- 结果：之前已延期 → 今天已签；这次延期了 → 签到成功（积分记今天那 300）；今天的每日积分还没出现在明细里 → 记为今天已签（付费版按月发）；登录了但有效期还没变 → 「还没到」，一小时后再确认（网页上写了明细可能有延迟）。refresh 回 401 / 403 → 登录失效，提示重新复制。
+- 凭据：走 §14.30 的手动凭据（多账号），字段只有 `raccoon_refresh_token`（浏览器 Cookie 里）。代码在 `src/checkin/ext/providers/xiaohuanxiong.js`，和其他几家一个写法。
+- 没做「读本机小浣熊 App 的登录」：读别的 App 的本地凭据要单独授权，这一版没拿到，先只做手动填。
+
+**来源**
+
+- `sensenova`，地址 `https://token.sensenova.cn/v1`（官方文档 platform.sensenova.cn/docs 写明的 OpenAI 兼容地址，不带 key 回 401），key 在控制台 → API Keys 创建（`sk-` 开头），国内直连。
+- 常用模型兜底：`sensenova-6.8-flash-lite`、`sensenova-6.8-flash`、`deepseek-flash`、`glm-5.3`、`kimi-k3`。
+- 额度：公测期积分池（通用池滚动 5 小时 12 万、每周 120 万；Flash-Lite 另有专属池）。文档没写用完会不会转付费，所以目录里记为 `charges: true`，**默认不进免费池**，用户可以设上限放进来。

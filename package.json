@@ -1,6 +1,6 @@
 {
   "name": "dsh-model",
-  "version": "0.31.2",
+  "version": "0.31.3",
   "description": "A free pool that combines official free API quotas behind one key (soon-to-expire first, never charges you), daily check-in credits claimed for you (Trae, Qoder, WorkBuddy, MiniMax Code, WPS Lingxi…), one OpenAI-compatible address that relays every model, and 36 free or subscription sources. For DeepSeek Harness (dsh) and any OpenAI-compatible tool. 免费池：一把 key 用上各家官方免费额度 · 每天自动签到领积分 · 一个地址中转所有模型。",
   "keywords": [
     "siliconflow",

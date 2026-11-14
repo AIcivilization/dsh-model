@@ -2,7 +2,7 @@
 
 # dsh-model
 
-**📅 Daily check-in credits claimed for you (10 products, plus your own) · 🆓 a free pool: one key for every provider's official free quota · 🔁 one address that relays every model · 🧩 36 sources**
+**📅 Daily check-in credits claimed for you (11 products, plus your own) · 🆓 a free pool: one key for every provider's official free quota · 🔁 one address that relays every model · 🧩 37 sources**
 
 Install once and all of this is taken care of. dsh gets a management page; without dsh, the command line does everything.
 
@@ -28,7 +28,7 @@ English · [中文](README.md)
 | Where it works | One address for dsh, editors, scripts and other computers | Mostly inside dsh only |
 | Sources | **36**: free, subscription, local and pay as you go, plus your own | A dozen or so account channels |
 | Free quota | **Free pool** `free/auto`: official free quotas combined, soon-to-expire first, **anything that charges stays out by default** | — |
-| Check-in | Trae, Qoder, WorkBuddy, Doubao, OfficeAce, MiniMax Code, WPS Lingxi, DuMate, AStudio, Huawei CodeArts, plus **your own custom services**; **several accounts each**, can run on an always-on VPS | Some |
+| Check-in | Trae, Qoder, WorkBuddy, Doubao, OfficeAce, MiniMax Code, WPS Lingxi, DuMate, AStudio, Huawei CodeArts, SenseTime Raccoon, plus **your own custom services**; **several accounts each**, can run on an always-on VPS | Some |
 | Install | Installing from the plugin marketplace **sets itself up**; no GitHub needed in China | Restart dsh after installing |
 | Transparency | No server of our own, no telemetry; every address it talks to is in the [egress list](docs/EGRESS.md) | — |
 
@@ -48,6 +48,7 @@ English · [中文](README.md)
 | **Baidu DuMate** | Detected automatically if installed and signed in | Check-in credits |
 | **AStudio** | Detected automatically if installed and signed in | Daily sign-in credits |
 | **Huawei CodeArts** | Click "+ Sign in to Huawei CodeArts" and sign in in the browser (the browser must be on this computer); paste AK/SK on a VPS | Check-in points |
+| **SenseTime Raccoon** | Paste the browser sign-in once (the `raccoon_refresh_token` cookie); it renews itself after that | 300 credits a day; signing in that day keeps them for 7 days instead of 1 |
 | **Your own** | "+ Custom check-in service": copy the prompt so the dsh AI looks up the API, paste back its JSON, then paste the Cookie / token | Depends on the service |
 
 - **Automatic by default**: done at a random 5–55 minutes after midnight Beijing time; failures retry an hour later; if the computer was off, it catches up within a minute of starting.
@@ -55,7 +56,7 @@ English · [中文](README.md)
 - **What else this machine can do**: the card lists the supported products not set up here yet, each with "+ Add".
 - **Move it to an always-on VPS**: "Copy check-in accounts to another machine" gives an encrypted text and a code to import on the VPS page (Qoder and Doubao; sign in to WorkBuddy and OfficeAce on the VPS itself, and Trae stays on the computer that has Trae).
 - **Several accounts**: each product can have more than one. In the check-in card's Details: "+ Add a WorkBuddy account" (approve through a link) and "+ Add another Qoder account"; several Trae installs are checked in once per account automatically.
-- **Paste credentials, check in from a VPS**: Lingxi, DuMate, AStudio, CodeArts and your custom services take a pasted Cookie / token under "+ Paste check-in credentials" (several accounts each), so the app does not have to be on that machine.
+- **Paste credentials, check in from a VPS**: Lingxi, DuMate, AStudio, CodeArts, Raccoon and your custom services take a pasted Cookie / token under "+ Paste check-in credentials" (several accounts each), so the app does not have to be on that machine.
 - **Check-in only, credits untouched**: they stay on your account for use in each product's own app. Command line: `dsh-model checkin`.
 
 ## 🔁 2. Relay: one address, one key, every model
@@ -96,7 +97,7 @@ Check-in credits that only work inside a product (Trae, Qoder, MiniMax Code…) 
 | Free · limited | **ModelScope** (about 2,000 calls a day), **Zhipu GLM** (the Flash models), **iFlytek Spark** (Spark Lite), Tencent Hunyuan (hunyuan-lite), Baidu Qianfan (ERNIE Speed / Lite), Mistral, NVIDIA, Groq, OpenRouter (`:free` models) |
 | Local | Ollama, LM Studio: appear once started, no sign-in |
 | Subscription | Codex (ChatGPT Plus / Pro), Kimi Code, Grok, Muse, Devin: sign in from the management page |
-| Free · daily | **Cloudflare Workers AI** (10,000 Neurons a day, stops when used up), **InternLM** (monthly credits during the beta) |
+| Free · daily | **Cloudflare Workers AI** (10,000 Neurons a day, stops when used up), **InternLM** (monthly credits during the beta), **SenseNova** (public beta credit pools, rolling 5-hour / weekly caps) |
 | New-user / monthly credits (charge once used up) | SCNet (100M tokens), Ant Ling (¥10 a month), Tencent Cloud TokenHub (1M tokens), Alibaba Cloud Bailian, Volcengine Ark |
 | Pay as you go | DeepSeek official, Alibaba Cloud Bailian (new users get about 1M free tokens per model), Moonshot, StepFun, Volcengine Ark, MiniMax, Huawei Cloud ModelArts, OpenCode Zen, any OpenAI-compatible service (add several) |
 
@@ -125,7 +126,7 @@ On a dsh-vps server, use `sudo dsh-model setup`. On Windows, run it in a normal 
 
 | Section | What it holds |
 |---|---|
-| **Daily check-in** | 10 products checked in automatically every day (or with one click); the card shows what you got today |
+| **Daily check-in** | 11 products checked in automatically every day (or with one click); the card shows what you got today |
 | **Free quota** | Which models are in the `free/auto` pool and the state of each quota (in use / cooling until / charges, not in the pool / not claimed), with "Claim", "Add key", "Look for new" and "+ Add a source" |
 | **Endpoint** | Local and public addresses, each with a Copy button |
 | **Sources** | One switch per provider: on connects (and signs in if needed), off pauses and keeps the sign-in. Each row is tagged Free / Free · limited / Paid and shows plan usage with reset countdowns, or remaining credits and the next batch to expire; a used-up plan shows when it comes back |
@@ -168,6 +169,7 @@ If a source is signed in but has no usable plan (say, a Kimi account without Kim
 | Volcengine Ark (Doubao models), MiniMax, Huawei Cloud ModelArts | Paid | Official APIs, just add a key; Ark and Huawei Cloud have free quotas for new users |
 | Cloudflare Workers AI | Free · limited | 10,000 Neurons a day on the free plan, stops (no charge) when used up; the URL includes your account ID |
 | InternLM | Free · limited | Monthly credits during the beta |
+| SenseTime SenseNova | Free · limited | Public beta credit pools (rolling 5-hour and weekly caps); see your account page. It does not say whether it charges once used up, so it stays out of the free pool by default. SenseTime Raccoon itself has no public API and its credits only work inside Raccoon, so dsh-model only checks in for you |
 | SCNet, Ant Ling, Tencent Cloud TokenHub | Paid | New-user / monthly credits, then your balance, so they stay out of the free pool by default |
 | DeepSeek official, any OpenAI-compatible service | Paid | Paste an API key (and a URL for other services; add several, tick "free quota" to put one in the pool) |
 | Codex | Paid | ChatGPT Plus / Pro |
@@ -188,7 +190,7 @@ dsh-model only connects; it provides no quota of its own.
 | `sources` | Sources: switch, cost, sign-in state, usage |
 | `source enable\|disable\|logout <source>` | Turn on (signing in if needed) / off / sign out |
 | `key list\|add\|revoke\|rotate <name>` | Access keys, one per device |
-| `checkin` | Check in now (10 products and your custom services; automatic daily by default) |
+| `checkin` | Check in now (11 products and your custom services; automatic daily by default) |
 | `free [discover\|optin <source> <cap>\|optout <source>\|add <name> <url> <key> [--free <cycle>]]` | Free quota: overview, look for new ones, put a charging quota in the pool, add your own source |
 | `combo list\|add <name> <model…>\|remove <id>` | Combos: try several models in order |
 | `failures` | Failed requests in the last 24 hours, with advice |

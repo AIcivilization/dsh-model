@@ -48,7 +48,7 @@ const ID_RE = /^[a-zA-Z][a-zA-Z0-9_-]{1,31}$/
 export const BUILTIN_IDS = new Set([
   'minimax', 'lingxi', 'dumate', 'astudio', 'qoder', 'trae', 'doubao', 'codearts', 'buddy',
   // dsh-model 自己的签到项
-  'workbuddy', 'officeace',
+  'workbuddy', 'officeace', 'xiaohuanxiong',
 ])
 
 export class CustomServiceError extends Error {

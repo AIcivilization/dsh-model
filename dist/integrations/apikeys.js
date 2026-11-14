@@ -34,6 +34,8 @@ export const KEY_PROVIDERS = [
     { id: 'ling', label: '蚂蚁百灵 Ling', base: 'https://api.ant-ling.com/v1', keyUrl: 'https://ling.tbox.cn/open', direct: true },
     { id: 'tokenhub', label: '腾讯云 TokenHub', base: 'https://tokenhub.tencentmaas.com/v1', keyUrl: 'https://console.cloud.tencent.com/tokenhub', direct: true },
     { id: 'intern', label: '书生 InternLM', base: 'https://chat.intern-ai.org.cn/api/v1', keyUrl: 'https://internlm.intern-ai.org.cn/api/tokens', direct: true },
+    // 商汤日日新 SenseNova（2026-11-14 加，设计 §14.32）：官方文档 platform.sensenova.cn/docs 的 OpenAI 兼容地址；不带 key 回 401
+    { id: 'sensenova', label: '商汤日日新 SenseNova', base: 'https://token.sensenova.cn/v1', keyUrl: 'https://platform.sensenova.cn/console/keys', fallbackModels: ['sensenova-6.8-flash-lite', 'sensenova-6.8-flash', 'deepseek-flash', 'glm-5.3', 'kimi-k3'], direct: true },
     // Cloudflare：地址里带账户 ID，GET /models 不支持（实测 405），用常用模型验证 key
     { id: 'cloudflare', label: 'Cloudflare Workers AI', base: '', keyUrl: 'https://dash.cloudflare.com/profile/api-tokens', needsBase: true, baseHint: 'https://api.cloudflare.com/client/v4/accounts/<账户 ID>/ai/v1', fallbackModels: ['@cf/openai/gpt-oss-120b', '@cf/openai/gpt-oss-20b', '@cf/meta/llama-4-scout-17b-16e-instruct'], freeRe: /./ },
     { id: 'custom', label: '其他 OpenAI 兼容服务', base: '', keyUrl: '', needsBase: true },
