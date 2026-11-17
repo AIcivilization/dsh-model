@@ -219,10 +219,11 @@ describe('balance guard (§14.34)', () => {
   it('reads paid balances and ignores what it cannot read', async () => {
     const { fetchPaidBalance, balanceDropped } = await import('../../src/free/balance.js')
     const reply = (body: unknown, status = 200) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
-    expect(await fetchPaidBalance('siliconflow', 'k', reply({ code: 20000, data: { balance: '14.00', chargeBalance: '50.00', totalBalance: '64.00' } }))).toBe(50)
+    // 硅基流动的余额接口官方已停用（410），不再查
+    expect(await fetchPaidBalance('siliconflow', 'k', reply({ code: 20000, data: { chargeBalance: '50.00' } }))).toBeNull()
     expect(await fetchPaidBalance('deepseek', 'k', reply({ is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '16.00', granted_balance: '6.00', topped_up_balance: '10.00' }] }))).toBe(10)
     expect(await fetchPaidBalance('deepseek', 'k', reply({}, 401))).toBeNull()
-    expect(await fetchPaidBalance('siliconflow', 'k', reply({ data: {} }))).toBeNull()
+    expect(await fetchPaidBalance('deepseek', 'k', reply({ balance_infos: [] }))).toBeNull()
     expect(await fetchPaidBalance('groq', 'k', reply({}))).toBeNull()
     expect(balanceDropped(50, 49.5)).toBe(true)
     expect(balanceDropped(50, 49.995)).toBe(false)
@@ -235,24 +236,24 @@ describe('balance guard (§14.34)', () => {
     try {
       const pool = new FreePool({ paths: { home }, owner: undefined } as never)
       const inp = {
-        config: {},
-        upstreams: [{ name: 'siliconflow', label: '硅基流动', baseUrl: '', apiKey: 'k', models: [{ name: 'Qwen/Qwen3-8B', alias: 'siliconflow/Qwen/Qwen3-8B' }] }],
-        secrets: { apikeys: { siliconflow: { key: 'k' } } },
+        config: { optIn: { deepseek: { capTokens: 1e6 } } },
+        upstreams: [{ name: 'deepseek', label: 'DeepSeek', baseUrl: '', apiKey: 'k', models: [{ name: 'deepseek-chat', alias: 'deepseek/deepseek-chat' }] }],
+        secrets: { apikeys: { deepseek: { key: 'k' } } },
         disabled: new Set<string>(),
       }
       let charge = '50.00'
-      const fake = (async () => new Response(JSON.stringify({ data: { chargeBalance: charge } }))) as unknown as typeof fetch
+      const fake = (async () => new Response(JSON.stringify({ balance_infos: [{ currency: 'CNY', topped_up_balance: charge, granted_balance: '6.00' }] }))) as unknown as typeof fetch
       expect(await pool.checkBalances(inp, fake)).toBe(0) // 第一次只记底
-      expect((await pool.candidates(inp)).some((m) => m.source === 'siliconflow')).toBe(true)
+      expect((await pool.candidates(inp)).some((m) => m.source === 'deepseek')).toBe(true)
       charge = '49.20'
       expect(await pool.checkBalances(inp, fake)).toBe(1)
-      expect((await pool.candidates(inp)).some((m) => m.source === 'siliconflow')).toBe(false)
-      expect((await pool.loadState()).spent?.siliconflow).toMatchObject({ from: 50, to: 49.2 })
+      expect((await pool.candidates(inp)).some((m) => m.source === 'deepseek')).toBe(false)
+      expect((await pool.loadState()).spent?.deepseek).toMatchObject({ from: 50, to: 49.2 })
       // 充值（变多）不算
       charge = '100.00'
       expect(await pool.checkBalances(inp, fake)).toBe(0)
-      await pool.ackSpent('siliconflow')
-      expect((await pool.candidates(inp)).some((m) => m.source === 'siliconflow')).toBe(true)
+      await pool.ackSpent('deepseek')
+      expect((await pool.candidates(inp)).some((m) => m.source === 'deepseek')).toBe(true)
     } finally {
       await rm(home, { recursive: true, force: true })
     }

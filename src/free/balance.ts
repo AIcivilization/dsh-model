@@ -6,11 +6,8 @@
 
 /** 能查充值余额的来源 → 怎么查 */
 export const BALANCE_SOURCES: Record<string, { url: string; read: (body: unknown) => number | null }> = {
-  // { code: 20000, data: { balance: 赠送, chargeBalance: 充值, totalBalance } }
-  siliconflow: {
-    url: 'https://api.siliconflow.cn/v1/user/info',
-    read: (b) => num((b as { data?: { chargeBalance?: unknown } })?.data?.chargeBalance),
-  },
+  // 硅基流动：原来的 /v1/user/info（chargeBalance）官方已停用，2026-11 实测返回 410，没有替代接口，
+  // 所以查不了。它进免费池的只有官网价格为 0 的模型（free-catalog.json），不靠余额兜底。
   // { balance_infos: [{ currency, total_balance, granted_balance, topped_up_balance }] }
   deepseek: {
     url: 'https://api.deepseek.com/user/balance',

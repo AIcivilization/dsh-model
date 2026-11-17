@@ -114,7 +114,8 @@ export async function loadCompatUpstreams(ctx) {
                 // 只有能证明不花钱的才写「免费」（目录写明的证明方式，或平台自己标了 0 价），按名字猜的写「计费」
                 // 用户在「发现」里核对后加进免费池的，也按免费（是用户自己确认的）
                 const free = Boolean(s.free) || freeProof(id, m, entries, cfg?.freePool ?? {}) !== null || (cfg?.freePool?.include ?? []).includes(`${id}/${m.id}`);
-                return { name: m.id, alias: `${id}/${m.id}`, displayName: `${label} · ${m.id}`, dshName: `${m.id} · ${costTag(free ? 'free' : 'paid')}`, ...(free ? { rate: 0 } : {}), cost: free ? 'free' : 'paid', ...(m.priced ? { priced: true } : {}), group: id, groupLabel: label };
+                const gift = !free && Boolean(p.giftFirst);
+                return { name: m.id, alias: `${id}/${m.id}`, displayName: `${label} · ${m.id}`, dshName: `${m.id} · ${costTag(free ? 'free' : 'paid')}${gift ? ` · ${L('先扣赠送额度', 'gift credit first')}` : ''}`, ...(gift ? { giftFirst: true } : {}), ...(free ? { rate: 0 } : {}), cost: free ? 'free' : 'paid', ...(m.priced ? { priced: true } : {}), group: id, groupLabel: label };
             }),
         });
     }

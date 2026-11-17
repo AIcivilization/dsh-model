@@ -797,6 +797,9 @@ window.__ModuleLoader__.load({
             h('span', { style: { ...S.meta, ...S.grow } }, L('在 dsh 里：模型列表 → ', 'In dsh: model list → '), h('b', { style: { color: C.accent } }, L('「🆓 免费池」分组', 'the "🆓 Free pool" group')), L('；其他软件的模型名：', '; model names elsewhere: '), h('span', { style: S.mono }, 'free/auto · free/smart · free/fast')),
             h(CopyButton, { get: 'free/auto', label: L('复制 free/auto', 'Copy free/auto') })) : h('div', { style: { fontSize: 12, color: C.warn, marginTop: 4, lineHeight: 1.6 } }, L('免费池还是空的，所以 dsh 的模型列表里还没有 free/auto。领一份官方免费额度、填上 key 就会出现。最省事的是智谱 GLM（Flash 系列免费）、硅基流动、魔搭 ModelScope，点开下面的「各家免费额度」，在「还没领」的里点「去领」再「填 key」。WorkBuddy、Trae 这类积分只能在它们自己的软件里用，不进免费池。', 'The free pool is empty, so free/auto is not in the dsh model list yet. Claim an official free quota and add its key and it appears. The quickest are Zhipu GLM (Flash models are free), SiliconFlow and ModelScope: open "Free quotas by provider" below and use "Claim" then "Add key" on one not claimed yet. Credits from WorkBuddy, Trae and the like only work in their own apps, so they never join the pool.'))),
         spend ? h(SpendLine, { spend }) : null,
+        spend ? h('label', { style: { ...S.line, gap: 6, fontSize: 12, margin: '-4px 0 10px', cursor: 'pointer' } },
+          h('input', { type: 'checkbox', checked: Boolean(spend.freeOnly), onChange: (e) => { api('POST', '/dsh/free-only', { on: e.target.checked }).then(setSpend, (er) => setErr(er.message)) } }),
+          L('dsh 的模型列表里只放免费模型（免费池、免费模型、本机模型；计费、订阅、扣积分的先不放）', 'Only free models in the dsh model list (free pool, free and local models; paid, subscription and credit models are left out)')) : null,
         err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
         expanded && routes.length ? h(RouteList, { routes: routes.slice(0, 8), title: L('最近的免费池请求（谁回答的）', 'Recent free pool requests (who answered)') }) : null,
         expanded ? h('div', null,
@@ -913,10 +916,17 @@ window.__ModuleLoader__.load({
           h('div', { style: { fontSize: 13, fontWeight: 600, marginBottom: 4 } }, m.name || prettyModel(m.id)),
           h('div', { style: { fontSize: 12, color, marginBottom: 6 } }, pool
             ? L('免费池：只用能证明不花钱的模型，按顺序试，一家用完换下一家。', 'Free pool: only models proven free, tried in order; when one runs out the next takes over.')
-            : { free: L('免费：不会扣钱。', 'Free: no charge.'), local: L('本机模型，不花钱。', 'Local model, no charge.'), credits: L('扣这个账号的积分（按倍率），不花真钱。', 'Uses account credits (by rate), no real money.'), subscription: L('用订阅套餐的额度，不另外花钱。', 'Uses your subscription quota.'), paid: L('计费：每次请求都会花钱（按量付费）。', 'Paid: every request costs money (pay as you go).'), mixed: L('含计费：里面有收费的来源，请求可能落到那里。', 'Includes paid sources; a request may land there.') }[m.cost] || ''),
+            : m.cost === 'paid' && m.giftFirst
+              ? L('计费，但先扣赠送额度：这家官方规则是费用先从赠送额度（实名送的、活动送的）里扣，用完才扣你充值的钱。实际扣了多少，以官网的费用账单为准。', 'Paid, gift credit first: this provider charges its gift credit (sign-up or promotion credit) first and only then your top-up. See its billing page for the exact amount.')
+              : { free: L('免费：不会扣钱。', 'Free: no charge.'), local: L('本机模型，不花钱。', 'Local model, no charge.'), credits: L('扣这个账号的积分（按倍率），不花真钱。', 'Uses account credits (by rate), no real money.'), subscription: L('用订阅套餐的额度，不另外花钱。', 'Uses your subscription quota.'), paid: L('计费：每次请求都会花钱（按量付费）。', 'Paid: every request costs money (pay as you go).'), mixed: L('含计费：里面有收费的来源，请求可能落到那里。', 'Includes paid sources; a request may land there.') }[m.cost] || ''),
+          !pool && m.requests ? h('div', { style: { ...S.meta, marginBottom: 6 } }, L(`这个模型最近 24 小时：${m.requests} 次 · 输入 ${fmtTokens(m.inputTokens || 0)}（其中缓存 ${fmtTokens(m.cachedTokens || 0)}）· 输出 ${fmtTokens(m.outputTokens || 0)} token。dsh 每走一步都会把整段对话再发一遍，所以输入 token 涨得快；缓存命中的部分各家通常收得便宜。`, `This model in 24 hours: ${m.requests} requests · input ${fmtTokens(m.inputTokens || 0)} (cached ${fmtTokens(m.cachedTokens || 0)}) · output ${fmtTokens(m.outputTokens || 0)} tokens. dsh resends the whole conversation at every step, so input tokens grow fast; cached input is usually billed cheaper.`)) : null,
           h(SpendLine, { spend: info }),
           routes.filter((r) => !pool || r.route === model).length ? h(RouteList, { routes: routes.filter((r) => !pool || r.route === model).slice(0, 5), title: L('最近的免费池 / 组合请求', 'Recent free pool / combo requests') }) : null,
-          h('div', { style: { ...S.line, justifyContent: 'flex-end' } }, h('button', { type: 'button', style: S.btn, onClick: () => setOpen(false) }, L('关闭', 'Close')))) : null)
+          h('div', { style: { ...S.line, marginTop: 6 } },
+            h('label', { style: { ...S.grow, ...S.line, gap: 6, fontSize: 12, cursor: 'pointer' } },
+              h('input', { type: 'checkbox', checked: Boolean(info.freeOnly), onChange: (e) => { const on = e.target.checked; api('POST', '/dsh/free-only', { on, model }).then(setInfo, () => {}) } }),
+              L('dsh 的模型列表里只放免费模型', 'Only free models in the dsh model list')),
+            h('button', { type: 'button', style: S.btn, onClick: () => setOpen(false) }, L('关闭', 'Close')))) : null)
     }
 
     /** 手动添加一个 OpenAI 兼容来源（可以勾成免费额度，进免费池） */

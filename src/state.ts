@@ -23,6 +23,8 @@ export interface Config {
   proxy?: string | null
   /** 每个来源在 dsh 里显示哪些模型（管理页勾选）；没有的来源用默认挑选，见 dsh/pick.ts */
   dshModels?: Record<string, string[]>
+  /** dsh 的模型列表里只放免费的（免费池、免费模型、本机模型），计费、订阅、扣积分的都不放（设计 §14.36） */
+  dshFreeOnly?: boolean
   /** 关掉的来源（workbuddy / workbuddy-ai / opencode；引擎来源的开关存在凭据的 disabled 上） */
   disabledSources?: string[]
   /** WorkBuddy 只签到（2026-10 起它拦 dsh 的对话）：新装时把它的模型关掉，记一次就不再动，之后用户自己打开的不改回去 */

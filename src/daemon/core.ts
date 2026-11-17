@@ -1337,11 +1337,22 @@ export class Daemon {
    * 计费的逐个模型列出来。free/、combo/ 是外壳（里面真正调用的模型会单独记一笔），不重复算。
    * model 给了就顺便回答这个模型的花费类别和用量（输入框读数用）。
    */
+  /** dsh 的模型列表里只放免费的（§14.36） */
+  async setFreeOnly(on: boolean): Promise<void> {
+    await withLock(this.ctx, async () => {
+      const all = await loadAll(this.ctx)
+      all.config.dshFreeOnly = on || undefined
+      await saveAll(this.ctx, all)
+    })
+    await this.resync()
+  }
+
   async spend(model?: string): Promise<{
     window: '24h'
+    freeOnly: boolean
     classes: Record<Cost | 'subscription', { requests: number; tokens: number }>
     paid: { model: string; requests: number; tokens: number }[]
-    model?: { id: string; cost: Cost | 'subscription'; name?: string; requests: number; tokens: number; last?: { answered?: string; at: string; tried: number } }
+    model?: { id: string; cost: Cost | 'subscription'; name?: string; giftFirst?: boolean; requests: number; tokens: number; inputTokens: number; cachedTokens: number; outputTokens: number; last?: { answered?: string; at: string; tried: number } }
   }> {
     const index = compatModelIndex(await loadCompatUpstreams(this.ctx))
     const costOf = (alias: string): Cost | 'subscription' => index.get(alias)?.cost ?? 'subscription'
@@ -1367,12 +1378,16 @@ export class Daemon {
         id: model,
         cost: costOf(model),
         ...(m?.dshName ? { name: m.dshName } : {}),
+        ...(m?.giftFirst ? { giftFirst: true } : {}),
         requests: st?.requests ?? 0,
         tokens: st ? st.inputTokens + st.outputTokens : 0,
+        inputTokens: st?.inputTokens ?? 0,
+        cachedTokens: st?.cachedTokens ?? 0,
+        outputTokens: st?.outputTokens ?? 0,
         ...(last ? { last: { ...(last.answered ? { answered: last.answered } : {}), at: last.at, tried: last.tried.length } } : {}),
       }
     }
-    return { window: '24h', classes, paid, ...(one ? { model: one } : {}) }
+    return { window: '24h', freeOnly: (await loadAll(this.ctx)).config.dshFreeOnly === true, classes, paid, ...(one ? { model: one } : {}) }
   }
 
   // —— 免费额度（设计 §14.25–14.27） ——
@@ -1584,6 +1599,7 @@ export class Daemon {
         return ok(await this.sources())
       }
       if (method === 'GET' && path === '/free') return ok(await this.freeOverview())
+      if (method === 'POST' && path === '/dsh/free-only') return ok(await this.setFreeOnly(b.on === true).then(() => this.spend(typeof b.model === 'string' ? b.model : undefined)))
       if (method === 'GET' && path === '/spend') return ok(await this.spend(query.get('model') ?? undefined))
       if (method === 'GET' && path === '/routes') return ok(this.recentRoutes(Number(query.get('limit')) || 50))
       if (method === 'POST' && path === '/free/discover') return ok({ found: await this.discoverFree(true), ...(await this.freeOverview()) })

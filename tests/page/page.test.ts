@@ -578,6 +578,34 @@ describe('settings page', () => {
     await waitText('计费 · 24 小时 2 次')
   })
 
+  it('gift-credit-first paid models explain themselves; the panel switches the dsh list to free models only', async () => {
+    const posted: unknown[] = []
+    let freeOnly = false
+    const info = () => ({
+      window: '24h', freeOnly,
+      classes: { free: { requests: 2, tokens: 30000 }, credits: { requests: 0, tokens: 0 }, paid: { requests: 17, tokens: 580000 }, local: { requests: 0, tokens: 0 }, mixed: { requests: 0, tokens: 0 }, subscription: { requests: 0, tokens: 0 } },
+      paid: [{ model: 'siliconflow/deepseek-ai/DeepSeek-V4.1-Flash', requests: 17, tokens: 580000 }],
+      model: { id: 'siliconflow/deepseek-ai/DeepSeek-V4.1-Flash', cost: 'paid', giftFirst: true, name: 'deepseek-ai/DeepSeek-V4.1-Flash · 计费 · 先扣赠送额度', requests: 17, tokens: 580000, inputTokens: 575715, cachedTokens: 542208, outputTokens: 4162 },
+    })
+    handler = normal((c) => {
+      if (c.path.startsWith('/spend')) return [200, info()]
+      if (c.path === '/routes') return [200, []]
+      if (c.path === '/dsh/free-only') { posted.push(c.body); freeOnly = (c.body as { on: boolean }).on; return [200, info()] }
+      return [404, {}]
+    })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    await act(async () => { root = createRoot(container); root.render(createElement(ComposerSpend, { useProjection: () => ({ lastUsed: { provider: 'dsh-model-siliconflow', model: 'siliconflow/deepseek-ai/DeepSeek-V4.1-Flash' } }) })) })
+    await waitText('计费 · 24 小时 17 次')
+    await click('计费 · 24 小时 17 次')
+    await waitText('先扣赠送额度')
+    expect(container.textContent).toContain('其中缓存 54 万')
+    const box = [...container.querySelectorAll('input[type=checkbox]')][0] as HTMLInputElement
+    await act(async () => box.click())
+    await act(async () => new Promise((r) => setTimeout(r, 20)))
+    expect(posted).toEqual([{ on: true, model: 'siliconflow/deepseek-ai/DeepSeek-V4.1-Flash' }])
+  })
+
   it('usage: expiring credits are called out; a used-up plan gets a badge with the time back', async () => {
     window.localStorage.setItem('dsh-model.guideDone', '1')
     const soon = new Date(Date.now() + (5 * 60 + 2) * 60000).toISOString()

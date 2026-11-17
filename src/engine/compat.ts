@@ -36,6 +36,8 @@ export interface CompatModel {
   cost?: Cost
   /** 平台接口自己标了价格为 0（免费池认它） */
   priced?: boolean
+  /** 计费，但这家先扣赠送额度（§14.36）：名字写「计费 · 先扣赠送额度」 */
+  giftFirst?: boolean
   /** dsh 里的分组（一个分组对应一个 provider）：workbuddy / workbuddy-ai / opencode */
   group?: string
   groupLabel?: string
@@ -159,7 +161,8 @@ export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
         // 只有能证明不花钱的才写「免费」（目录写明的证明方式，或平台自己标了 0 价），按名字猜的写「计费」
         // 用户在「发现」里核对后加进免费池的，也按免费（是用户自己确认的）
         const free = Boolean(s.free) || freeProof(id, m, entries, cfg?.freePool ?? {}) !== null || (cfg?.freePool?.include ?? []).includes(`${id}/${m.id}`)
-        return { name: m.id, alias: `${id}/${m.id}`, displayName: `${label} · ${m.id}`, dshName: `${m.id} · ${costTag(free ? 'free' : 'paid')}`, ...(free ? { rate: 0 } : {}), cost: free ? ('free' as const) : ('paid' as const), ...(m.priced ? { priced: true } : {}), group: id, groupLabel: label }
+        const gift = !free && Boolean(p.giftFirst)
+        return { name: m.id, alias: `${id}/${m.id}`, displayName: `${label} · ${m.id}`, dshName: `${m.id} · ${costTag(free ? 'free' : 'paid')}${gift ? ` · ${L('先扣赠送额度', 'gift credit first')}` : ''}`, ...(gift ? { giftFirst: true } : {}), ...(free ? { rate: 0 } : {}), cost: free ? ('free' as const) : ('paid' as const), ...(m.priced ? { priced: true } : {}), group: id, groupLabel: label }
       }),
     })
   }

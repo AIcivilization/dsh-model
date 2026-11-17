@@ -31,6 +31,8 @@ export interface KeyProvider {
   direct?: boolean
   /** 地址要用户填（custom；Cloudflare 的地址里带账户 ID） */
   needsBase?: boolean
+  /** 官方写明计费时先扣赠送额度（实名送的、活动送的），用完才扣充值的钱（§14.36） */
+  giftFirst?: boolean
   /** 填地址时的提示 */
   baseHint?: string
 }
@@ -39,7 +41,8 @@ export const KEY_PROVIDERS: KeyProvider[] = [
   { id: 'gemini', label: 'Gemini（Google AI Studio）', base: 'https://generativelanguage.googleapis.com/v1beta/openai', keyUrl: 'https://aistudio.google.com/apikey' },
   { id: 'groq', label: 'Groq', base: 'https://api.groq.com/openai/v1', keyUrl: 'https://console.groq.com/keys' },
   { id: 'openrouter', label: 'OpenRouter', base: 'https://openrouter.ai/api/v1', keyUrl: 'https://openrouter.ai/keys' },
-  { id: 'siliconflow', label: '硅基流动 SiliconFlow', base: 'https://api.siliconflow.cn/v1', keyUrl: 'https://cloud.siliconflow.cn/account/ak', listQuery: 'type=text&sub_type=chat' },
+  // 官方计费规则：「对应的费用将优先从赠送额度中进行扣减」（docs.siliconflow.com/cn/faqs/billing-rules，2026-11-17 核实）
+  { id: 'siliconflow', label: '硅基流动 SiliconFlow', base: 'https://api.siliconflow.cn/v1', keyUrl: 'https://cloud.siliconflow.cn/account/ak', listQuery: 'type=text&sub_type=chat', giftFirst: true },
   // 国内大厂的官方 API（2026-10-29 加）：智谱、讯飞星火有长期免费的模型
   { id: 'zhipu', label: '智谱 GLM', base: 'https://open.bigmodel.cn/api/paas/v4', keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys', fallbackModels: ['glm-4.7-flash', 'glm-4.6', 'glm-4.5-air'], freeRe: /flash/i, direct: true },
   { id: 'spark', label: '讯飞星火', base: 'https://spark-api-open.xf-yun.com/v1', keyUrl: 'https://console.xfyun.cn/services/cbm', fallbackModels: ['lite', 'generalv3', 'pro-128k', 'generalv3.5', 'max-32k', '4.0Ultra'], freeRe: /^lite$/i, direct: true },
