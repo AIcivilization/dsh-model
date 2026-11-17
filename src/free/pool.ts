@@ -22,7 +22,8 @@ export const CAP_RATIO = 0.9
 export interface PoolSource {
   id: string
   label: string
-  models: { id: string; free?: boolean }[]
+  /** free：可能免费（价格为 0 或按名字猜的，只用于「发现」）；priced：平台接口自己标了价格为 0（可信） */
+  models: { id: string; free?: boolean; priced?: boolean }[]
   local?: boolean
   /** 用户手动加的来源勾了「免费额度」 */
   custom?: { cycle: Cycle; until?: string }
@@ -33,6 +34,10 @@ export interface PoolConfig {
   exclude?: string[]
   /** charges 来源：用户确认后才进池，必须带上限 */
   optIn?: Record<string, { capTokens: number }>
+  /** 用户确认过目录里 confirm 那句话的来源（比如「这把 key 没开结算」），确认后才算免费 */
+  confirmed?: string[]
+  /** 用户说「这家一直不要放进免费池」的来源 */
+  excludeSources?: string[]
 }
 
 export interface Discovery {
@@ -56,6 +61,10 @@ export interface PoolState {
   discoveries?: Discovery[]
   dismissed?: string[]
   catalogCheckedAt?: string
+  /** 余额兜底（§14.34）：能查充值余额的来源，上次看到的充值余额 */
+  paid?: Record<string, { balance: number; at: string }>
+  /** 充值余额变少了：这家先移出免费池，等用户确认（from → to） */
+  spent?: Record<string, { from: number; to: number; at: string }>
 }
 
 export interface Member {
@@ -113,12 +122,40 @@ function cycleRank(m: Pick<Member, 'cycle' | 'until'>): number {
   }
 }
 
+/**
+ * 这个模型能不能证明不花钱（设计 §14.34）。返回证明它的那份额度；证明不了返回 null。
+ * 只认目录里写明的证明方式（account / priced / list / pattern），按名字猜的一律不算。
+ */
+export function freeProof(sourceId: string, model: { id: string; priced?: boolean }, entries: CatalogEntry[], cfg: Pick<PoolConfig, 'confirmed'>): CatalogEntry | null {
+  const mine = entries.filter((e) => e.kind === 'api' && e.source === sourceId && !e.charges)
+  for (const e of mine) {
+    if (e.models !== undefined && !new RegExp(e.models, 'i').test(model.id)) continue
+    if (e.confirm && !(cfg.confirmed ?? []).includes(sourceId)) continue
+    const how = e.pool ?? 'list'
+    if (how === 'account' || how === 'pattern') return e
+    if (how === 'priced' && model.priced) return e
+    if (how === 'list' && (e.freeModels ?? []).some((x) => x.toLowerCase() === model.id.toLowerCase())) return e
+  }
+  // 目录里没这家：只认平台自己标了价格为 0 的
+  if (!entries.some((e) => e.kind === 'api' && e.source === sourceId) && model.priced) {
+    return { id: `${sourceId}:priced`, kind: 'api', source: sourceId, cycle: 'forever', name: sourceId, amount: '', charges: false, url: 'https://invalid.local/', verifiedAt: '' }
+  }
+  return null
+}
+
+/** 这家有没有要用户先确认、还没确认的免费额度（给页面显示「确认后进池」） */
+export function needsConfirm(sourceId: string, entries: CatalogEntry[], cfg: Pick<PoolConfig, 'confirmed'>): CatalogEntry | null {
+  return entries.find((e) => e.kind === 'api' && e.source === sourceId && !e.charges && e.confirm && !(cfg.confirmed ?? []).includes(sourceId)) ?? null
+}
+
 /** 全部有资格进池的模型（不看冷却），已排好序 */
-export function poolCandidates(sources: PoolSource[], entries: CatalogEntry[], cfg: PoolConfig, state: Pick<PoolState, 'used'>): Member[] {
+export function poolCandidates(sources: PoolSource[], entries: CatalogEntry[], cfg: PoolConfig, state: Pick<PoolState, 'used'> & Partial<Pick<PoolState, 'spent'>>): Member[] {
   const exclude = new Set(cfg.exclude ?? [])
   const include = new Set(cfg.include ?? [])
   const out: Member[] = []
   for (const src of sources) {
+    // 充值余额变少了的来源：等用户确认前一个都不进（余额兜底）
+    if (state.spent?.[src.id] || (cfg.excludeSources ?? []).includes(src.id)) continue
     const mine = entries.filter((e) => e.kind === 'api' && e.source === src.id)
     const opt = cfg.optIn?.[src.id]
     const capped = opt ? (state.used[src.id] ?? 0) >= opt.capTokens * CAP_RATIO : true
@@ -135,17 +172,12 @@ export function poolCandidates(sources: PoolSource[], entries: CatalogEntry[], c
         out.push({ ...base, cycle: src.custom.cycle, ...(src.custom.until ? { until: src.custom.until } : {}), charges: false })
         continue
       }
-      // 不花钱的额度优先；没有再看用户打开了的会扣钱的额度
-      const freeHit = mine.find((e) => !e.charges && entryMatches(e, m.id, Boolean(m.free)))
-      const paidHit = !freeHit && opt && !capped ? mine.find((e) => e.charges && entryMatches(e, m.id, Boolean(m.free))) : undefined
+      // 能证明不花钱的优先；没有再看用户打开了、设了上限的会扣钱的额度
+      const freeHit = freeProof(src.id, m, entries, cfg)
+      const paidHit = !freeHit && opt && !capped ? mine.find((e) => e.charges && entryMatches(e, m.id, true)) : undefined
       const hit = freeHit ?? paidHit
       if (hit) {
-        out.push({ ...base, cycle: hit.cycle, ...(hit.until ? { until: hit.until } : {}), charges: hit.charges, entryId: hit.id })
-        continue
-      }
-      // 目录里没这家：只认模型目录标了免费的，当长期免费
-      if (!mine.length && m.free) {
-        out.push({ ...base, cycle: 'forever', charges: false })
+        out.push({ ...base, cycle: hit.cycle, ...(hit.until ? { until: hit.until } : {}), charges: hit.charges, ...(hit.id.endsWith(':priced') ? {} : { entryId: hit.id }) })
         continue
       }
       // 用户点名加进来的（自己选的，不管收不收费）

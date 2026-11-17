@@ -6,14 +6,30 @@ import { join } from 'node:path';
 import { bridgeConfigPath, loadCatalogs } from '../bridge/runtime.js';
 import { loadSecrets } from '../secrets.js';
 import { readJson } from '../util/fs.js';
+import { L } from '../i18n.js';
 import { LOCAL_SERVERS, loadLocalCatalog } from '../integrations/local.js';
 import { keyProvider, loadKeyCatalog } from '../integrations/apikeys.js';
 import { COMBO_PREFIX } from '../combo.js';
 import { activeEntries, loadCatalog } from '../free/catalog.js';
-import { loadPoolState, poolCandidates } from '../free/pool.js';
+import { freeProof, loadPoolState, poolCandidates } from '../free/pool.js';
 import { freeUpstream, poolSourcesFrom } from '../free/service.js';
 export const OPENCODE_BASE = 'https://opencode.ai/zen/v1';
 export const OPENCODE_PREFIX = 'opencode';
+/** 名字后面的花费标签 */
+export function costTag(cost, rate) {
+    switch (cost) {
+        case 'free':
+            return L('免费', 'Free');
+        case 'credits':
+            return rate !== undefined ? L(`扣积分 x${rate}`, `credits x${rate}`) : L('扣积分', 'credits');
+        case 'paid':
+            return L('计费', 'Paid');
+        case 'local':
+            return L('本机免费', 'Local, free');
+        case 'mixed':
+            return L('含计费', 'Includes paid');
+    }
+}
 export function opencodeModelsPath(ctx) {
     return join(ctx.paths.home, 'opencode-models.json');
 }
@@ -28,7 +44,7 @@ export async function loadCompatUpstreams(ctx) {
             name: m.id,
             alias: `${OPENCODE_PREFIX}/${m.id}`,
             displayName: `OpenCode · ${m.id}`,
-            dshName: /-free$|^big-pickle$/.test(m.id) ? `${m.id} · Free` : m.id,
+            ...(/-free$|^big-pickle$/.test(m.id) ? { dshName: `${m.id} · ${costTag('free')}`, cost: 'free', rate: 0 } : { dshName: `${m.id} · ${costTag('paid')}`, cost: 'paid' }),
             group: 'opencode',
             groupLabel: 'OpenCode Zen',
         }));
@@ -56,13 +72,16 @@ export async function loadCompatUpstreams(ctx) {
                         const name = (count.get(base) ?? 0) > 1 ? `${base} (${m.id})` : base;
                         const billing = m.billing;
                         const rate = billing?.credits?.replace(/\s*credits?$/i, '').trim();
-                        const tags = [rate, ...(billing?.badges ?? [])].filter((x) => Boolean(x));
+                        const r = rate && /^x?\d+(\.\d+)?$/i.test(rate) ? Number(rate.replace(/^x/i, '')) : undefined;
+                        // WorkBuddy 扣的是账号积分：倍率 0 写「免费」，其余写「扣积分 x0.79」
+                        const tags = [r === 0 ? costTag('free') : r !== undefined ? costTag('credits', r) : rate, ...(billing?.badges ?? [])].filter((x) => Boolean(x));
                         return {
                             name: m.id,
                             alias: `${c.prefix}/${m.id}`,
                             displayName: `${c.label} · ${base}`,
                             dshName: [name, ...tags].join(' · '),
-                            ...(rate && /^x?\d+(\.\d+)?$/i.test(rate) ? { rate: Number(rate.replace(/^x/i, '')) } : {}),
+                            ...(r !== undefined ? { rate: r } : {}),
+                            cost: r === 0 ? 'free' : 'credits',
                             group: c.prefix,
                             groupLabel: c.label,
                             contextWindow: m.contextWindow,
@@ -76,6 +95,7 @@ export async function loadCompatUpstreams(ctx) {
     }
     // 自带 API key 的来源：有 key、有模型、没被关掉就接进来（海外的走出站代理，国内平台直连）
     const keyCat = await loadKeyCatalog(ctx.paths.home);
+    const entries = activeEntries(await loadCatalog(ctx.paths.home));
     for (const [id, s] of Object.entries(secrets.apikeys ?? {})) {
         const p = keyProvider(id);
         const models = keyCat[id]?.models ?? [];
@@ -89,7 +109,13 @@ export async function loadCompatUpstreams(ctx) {
             apiKey: s.key,
             // 国内平台直连，不绕出站代理
             ...(p.direct ? { direct: true } : {}),
-            models: models.map((m) => ({ name: m.id, alias: `${id}/${m.id}`, displayName: `${label} · ${m.id}`, dshName: m.free ? `${m.id} · Free` : m.id, ...(m.free ? { rate: 0 } : {}), group: id, groupLabel: label })),
+            // 计费的一定写「计费」：不标就等于让用户以为不花钱（设计 §14.34）。手动加的、勾了「免费额度」的按免费
+            models: models.map((m) => {
+                // 只有能证明不花钱的才写「免费」（目录写明的证明方式，或平台自己标了 0 价），按名字猜的写「计费」
+                // 用户在「发现」里核对后加进免费池的，也按免费（是用户自己确认的）
+                const free = Boolean(s.free) || freeProof(id, m, entries, cfg?.freePool ?? {}) !== null || (cfg?.freePool?.include ?? []).includes(`${id}/${m.id}`);
+                return { name: m.id, alias: `${id}/${m.id}`, displayName: `${label} · ${m.id}`, dshName: `${m.id} · ${costTag(free ? 'free' : 'paid')}`, ...(free ? { rate: 0 } : {}), cost: free ? 'free' : 'paid', ...(m.priced ? { priced: true } : {}), group: id, groupLabel: label };
+            }),
         });
     }
     // 本机模型服务（Ollama、LM Studio）：在运行、有模型、没被关掉就接进来
@@ -104,13 +130,13 @@ export async function loadCompatUpstreams(ctx) {
             baseUrl: s.base,
             apiKey: 'local',
             direct: true,
-            models: st.models.map((id) => ({ name: id, alias: `${s.id}/${id}`, displayName: `${s.label} · ${id}`, dshName: `${id} · 本地免费`, rate: 0, group: s.id, groupLabel: `${s.label}（本地）` })),
+            models: st.models.map((id) => ({ name: id, alias: `${s.id}/${id}`, displayName: `${s.label} · ${id}`, dshName: `${id} · ${costTag('local')}`, rate: 0, cost: 'local', group: s.id, groupLabel: `${s.label}（本地）` })),
         });
     }
     addAutoModels(out);
     // 免费池（设计 §14.25）：free/auto、free/smart、free/fast，守护进程请求时现算成员
     if (bridge) {
-        const cands = poolCandidates(poolSourcesFrom(out, secrets), activeEntries(await loadCatalog(ctx.paths.home)), cfg?.freePool ?? {}, await loadPoolState(ctx.paths.home));
+        const cands = poolCandidates(poolSourcesFrom(out, secrets), entries, cfg?.freePool ?? {}, await loadPoolState(ctx.paths.home));
         const fu = freeUpstream(cands, bridge);
         if (fu)
             out.push(fu);
@@ -130,11 +156,14 @@ export function comboUpstream(combos, bridge, meta) {
         models: combos.map((c) => {
             // 上下文取成员里最小的（知道的才算），免得 dsh 按大的塞内容、换到小的就超长
             const ctxs = c.models.map((m) => meta.get(m)?.contextWindow).filter((n) => typeof n === 'number' && n > 0);
+            const cost = comboCost(c.models, meta);
             return {
                 name: c.id,
                 alias: `${COMBO_PREFIX}/${c.id}`,
                 displayName: `${c.name}（${c.models.join(' → ')}）`,
-                dshName: `${c.name} · ${c.models.length} 个模型轮换`,
+                dshName: [c.name, L(`${c.models.length} 个模型轮换`, `${c.models.length} models in turn`), cost ? costTag(cost) : ''].filter(Boolean).join(' · '),
+                ...(cost ? { cost } : {}),
+                ...(cost === 'free' ? { rate: 0 } : {}),
                 group: COMBO_PREFIX,
                 groupLabel: '组合切换',
                 ...(ctxs.length ? { contextWindow: Math.min(...ctxs) } : {}),
@@ -142,6 +171,18 @@ export function comboUpstream(combos, bridge, meta) {
             };
         }),
     };
+}
+/**
+ * 组合的花费：成员全免费 → free；有计费的 → mixed；其余（订阅、积分）不加标签。
+ * 不在 meta 里的成员是订阅模型（引擎原生 OAuth），不算计费。
+ */
+export function comboCost(models, meta) {
+    const costs = models.map((m) => meta.get(m)?.cost);
+    if (costs.some((c) => c === 'paid' || c === 'mixed'))
+        return 'mixed';
+    if (costs.length && costs.every((c) => c === 'free' || c === 'local'))
+        return 'free';
+    return undefined;
 }
 export const AUTO_PREFIX = 'auto';
 /**
@@ -160,7 +201,10 @@ export function addAutoModels(upstreams) {
             continue;
         const first = ups[0].models.find((m) => m.name === name);
         const pretty = (first.dshName ?? name).split(' · ')[0];
-        const rates = ups.map((u) => u.models.find((m) => m.name === name)?.rate).filter((r) => r !== undefined);
+        const own0 = ups.map((u) => u.models.find((m) => m.name === name));
+        // 有一个来源计费，整个 auto 就是「含计费」：请求可能落到那一家（设计 §14.34）
+        const paid = own0.some((m) => m.cost === 'paid' || m.cost === 'mixed' || m.cost === undefined);
+        const allFree = own0.every((m) => m.cost === 'free' || m.cost === 'local');
         const sources = ups.map((u) => u.label).join(' / ');
         for (const u of ups) {
             const own = u.models.find((m) => m.name === name);
@@ -168,8 +212,10 @@ export function addAutoModels(upstreams) {
                 ...own,
                 alias: `${AUTO_PREFIX}/${name}`,
                 displayName: `${pretty}（${sources}）`,
-                dshName: `${pretty} · ${ups.length} 个来源`,
-                ...(rates.length ? { rate: Math.min(...rates) } : {}),
+                dshName: [pretty, L(`${ups.length} 个来源`, `${ups.length} sources`), paid ? costTag('mixed') : allFree ? costTag('free') : ''].filter(Boolean).join(' · '),
+                // 只有全免费才算免费（以前取最低倍率，混了免费来源就被当成免费模型优先显示）
+                ...(allFree ? { rate: 0 } : { rate: undefined }),
+                cost: paid ? 'mixed' : allFree ? 'free' : 'credits',
                 group: AUTO_PREFIX,
                 groupLabel: '自动切换（多来源）',
             });

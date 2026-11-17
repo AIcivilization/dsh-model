@@ -32,6 +32,10 @@ export function parseCatalog(raw) {
             continue;
         if (e.kind === 'checkin' && typeof e.checkin !== 'string')
             continue;
+        if (e.pool !== undefined && !['account', 'priced', 'list', 'pattern'].includes(e.pool))
+            continue;
+        if (e.freeModels !== undefined && !(Array.isArray(e.freeModels) && e.freeModels.every((x) => typeof x === 'string')))
+            continue;
         if (e.models !== undefined) {
             try {
                 new RegExp(e.models, 'i');

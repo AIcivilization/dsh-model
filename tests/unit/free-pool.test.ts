@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { activeEntries, entryMatches, loadCatalog, parseCatalog, refreshCatalog, type CatalogEntry } from '../../src/free/catalog.js'
-import { cooldownUntil, isFast, isQuotaFailure, poolCandidates, poolOrder, type PoolSource } from '../../src/free/pool.js'
+import { cooldownUntil, freeProof, isFast, isQuotaFailure, needsConfirm, poolCandidates, poolOrder, type PoolSource } from '../../src/free/pool.js'
 import { freeUpstream, poolSourcesFrom, tierOf, parseCap } from '../../src/free/service.js'
 import { customId, isCustomId, keyProvider } from '../../src/integrations/apikeys.js'
 import { findSource } from '../../src/sources.js'
@@ -76,12 +76,40 @@ describe('free pool', () => {
     { id: 'gemini', label: 'G', models: [{ id: 'gemini-3-flash' }, { id: 'gemini-3-pro' }] },
   ]
   const entries = [
-    entry({ id: 'sf', source: 'siliconflow', cycle: 'forever' }),
+    entry({ id: 'sf', source: 'siliconflow', cycle: 'forever', pool: 'list', freeModels: ['qwen/qwen3-8b'] }),
     entry({ id: 'sf-voucher', source: 'siliconflow', cycle: 'once', charges: true, models: '.*', until: '2026-12-31' }),
-    entry({ id: 'ms', source: 'modelscope', cycle: 'daily', models: '.*' }),
+    entry({ id: 'ms', source: 'modelscope', cycle: 'daily', models: '.*', pool: 'account' }),
     entry({ id: 'ds', source: 'dashscope', cycle: 'once', charges: true, models: '.*' }),
-    entry({ id: 'gm', source: 'gemini', cycle: 'daily', models: 'flash' }),
+    entry({ id: 'gm', source: 'gemini', cycle: 'daily', models: 'flash', pool: 'pattern' }),
   ]
+
+  it('only takes models it can prove free: a name that looks free is not enough (§14.34)', () => {
+    const src: PoolSource[] = [{ id: 'siliconflow', label: 'SF', models: [{ id: 'Qwen/Qwen3-8B', free: true }, { id: 'THUDM/GLM-4-9B-Chat-Flash', free: true }] }]
+    const c = poolCandidates(src, entries, {}, { used: {} })
+    // 白名单里的进；名字带 flash、被猜成免费的不进
+    expect(c.map((m) => m.alias)).toEqual(['siliconflow/Qwen/Qwen3-8B'])
+    // 目录里没写证明方式（旧格式）的条目：一个都不算
+    expect(poolCandidates(src, [entry({ id: 'old', source: 'siliconflow', cycle: 'forever' })], {}, { used: {} })).toEqual([])
+    // 目录里没有这家：只认平台自己标了 0 价的
+    const or: PoolSource[] = [{ id: 'openrouter', label: 'OR', models: [{ id: 'a:free', free: true }, { id: 'b:free', free: true, priced: true }] }]
+    expect(poolCandidates(or, [], {}, { used: {} }).map((m) => m.model)).toEqual(['b:free'])
+  })
+
+  it('needs the user to confirm before an account-level quota counts (e.g. no billing on the key)', () => {
+    const e = [entry({ id: 'gq', source: 'groq', cycle: 'daily', pool: 'account', confirm: '没升级付费档' })]
+    const src: PoolSource[] = [{ id: 'groq', label: 'Groq', models: [{ id: 'llama-4-70b' }] }]
+    expect(poolCandidates(src, e, {}, { used: {} })).toEqual([])
+    expect(needsConfirm('groq', e, {})?.id).toBe('gq')
+    expect(poolCandidates(src, e, { confirmed: ['groq'] }, { used: {} }).map((m) => m.alias)).toEqual(['groq/llama-4-70b'])
+    expect(needsConfirm('groq', e, { confirmed: ['groq'] })).toBeNull()
+    expect(freeProof('groq', { id: 'llama-4-70b' }, e, { confirmed: ['groq'] })?.id).toBe('gq')
+  })
+
+  it('takes a source out entirely once its paid balance dropped, until the user says so', () => {
+    const c = poolCandidates(sources, entries, {}, { used: {}, spent: { modelscope: { from: 10, to: 9.5, at: 'x' } } })
+    expect(c.some((m) => m.source === 'modelscope')).toBe(false)
+    expect(c.some((m) => m.source === 'siliconflow')).toBe(true)
+  })
 
   it('keeps charging quotas out until opted in, and drops them at 90% of the cap', () => {
     const c0 = poolCandidates(sources, entries, {}, { used: {} })
@@ -184,5 +212,49 @@ describe('ported check-ins', () => {
     expect(mapExtResult({ outcome: 'no_task' })).toEqual({ state: 'already' })
     expect(() => mapExtResult({ outcome: 'not_yet', message: '还没到轮次' })).toThrow(/轮次/)
     expect(() => mapExtResult({ outcome: 'needs_login', message: '' })).toThrow(/expired/)
+  })
+})
+
+describe('balance guard (§14.34)', () => {
+  it('reads paid balances and ignores what it cannot read', async () => {
+    const { fetchPaidBalance, balanceDropped } = await import('../../src/free/balance.js')
+    const reply = (body: unknown, status = 200) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
+    expect(await fetchPaidBalance('siliconflow', 'k', reply({ code: 20000, data: { balance: '14.00', chargeBalance: '50.00', totalBalance: '64.00' } }))).toBe(50)
+    expect(await fetchPaidBalance('deepseek', 'k', reply({ is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '16.00', granted_balance: '6.00', topped_up_balance: '10.00' }] }))).toBe(10)
+    expect(await fetchPaidBalance('deepseek', 'k', reply({}, 401))).toBeNull()
+    expect(await fetchPaidBalance('siliconflow', 'k', reply({ data: {} }))).toBeNull()
+    expect(await fetchPaidBalance('groq', 'k', reply({}))).toBeNull()
+    expect(balanceDropped(50, 49.5)).toBe(true)
+    expect(balanceDropped(50, 49.995)).toBe(false)
+    expect(balanceDropped(50, 60)).toBe(false)
+  })
+
+  it('takes a pooled source out when its paid balance drops, and puts it back when the user says so', async () => {
+    const { FreePool } = await import('../../src/free/service.js')
+    const home = await mkdtemp(join(tmpdir(), 'dsh-free-bal-'))
+    try {
+      const pool = new FreePool({ paths: { home }, owner: undefined } as never)
+      const inp = {
+        config: {},
+        upstreams: [{ name: 'siliconflow', label: '硅基流动', baseUrl: '', apiKey: 'k', models: [{ name: 'Qwen/Qwen3-8B', alias: 'siliconflow/Qwen/Qwen3-8B' }] }],
+        secrets: { apikeys: { siliconflow: { key: 'k' } } },
+        disabled: new Set<string>(),
+      }
+      let charge = '50.00'
+      const fake = (async () => new Response(JSON.stringify({ data: { chargeBalance: charge } }))) as unknown as typeof fetch
+      expect(await pool.checkBalances(inp, fake)).toBe(0) // 第一次只记底
+      expect((await pool.candidates(inp)).some((m) => m.source === 'siliconflow')).toBe(true)
+      charge = '49.20'
+      expect(await pool.checkBalances(inp, fake)).toBe(1)
+      expect((await pool.candidates(inp)).some((m) => m.source === 'siliconflow')).toBe(false)
+      expect((await pool.loadState()).spent?.siliconflow).toMatchObject({ from: 50, to: 49.2 })
+      // 充值（变多）不算
+      charge = '100.00'
+      expect(await pool.checkBalances(inp, fake)).toBe(0)
+      await pool.ackSpent('siliconflow')
+      expect((await pool.candidates(inp)).some((m) => m.source === 'siliconflow')).toBe(true)
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
   })
 })

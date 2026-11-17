@@ -45,7 +45,8 @@ export async function downloadFile(url: string, dest: string, opts: DownloadOpti
   if (opts.proxy && curl) {
     // --noproxy ''：只用这里指定的代理，不受环境里 NO_PROXY 的影响
     const r = await run(curl, ['-fsSL', '--retry', '2', '--connect-timeout', '20', '--proxy', opts.proxy, '--noproxy', '', '-o', dest, url], { timeoutMs: 10 * 60_000 })
-    if (r.code === 0) return
+    // 只看退出码不够：macOS 自带的 curl 8.14 在 -f --retry 下遇到 404 会打印「curl: (22) …」却以 0 退出（2026-11 实测）
+    if (r.code === 0 && !/curl: \(\d+\)/.test(r.stderr)) return
     await rm(dest, { force: true })
     // curl -f：HTTP 4xx/5xx 退出码 22，stderr 里有 "The requested URL returned error: 404"
     if (/\b404\b/.test(r.stderr)) throw new DshModelError('download_not_found', L(`没有这个文件：${url}`, `No such file: ${url}`))

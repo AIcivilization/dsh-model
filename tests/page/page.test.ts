@@ -18,6 +18,7 @@ let Overlay: React.ComponentType
 let CheckinOverlay: React.ComponentType
 let root: Root | undefined
 let container: HTMLElement
+let SpentOverlay: React.ComponentType
 
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
@@ -37,7 +38,7 @@ beforeAll(async () => {
   w.__ModuleLoader__ = {
     load({ factory }: { factory: (req: (n: string) => unknown) => { apply: (ctx: unknown) => void } }) {
       const mod = factory((n) => (n === 'react' ? React : null))
-      mod.apply({ slots: { inject: (_n: string, fn: () => void) => fn(), register: (d: { name: string; id: string }, C: React.ComponentType) => (d.id === 'dsh-model-checkin' ? (CheckinOverlay = C) : d.name === 'shell.overlay' ? (Overlay = C) : (Section = C)) } })
+      mod.apply({ slots: { inject: (_n: string, fn: () => void) => fn(), register: (d: { name: string; id: string }, C: React.ComponentType) => (d.id === 'dsh-model-checkin' ? (CheckinOverlay = C) : d.id === 'dsh-model-free-spent' ? (SpentOverlay = C) : d.name === 'shell.overlay' ? (Overlay = C) : (Section = C)) } })
     },
   }
   await import('../../plugin/client.js')
@@ -503,6 +504,44 @@ describe('settings page', () => {
     await new Promise((r) => setTimeout(r, 20))
     expect(posts.at(-1)).toEqual({ path: '/custom-sources', body: { name: '我的平台', baseUrl: 'https://api.mine.test/v1', key: 'sk-abcdefgh', free: true, cycle: 'daily' } })
     prompt.mockRestore()
+  })
+
+  it('free pool money guard: a paid-balance drop shows up in the card and in the shell; confirm-first quotas ask before joining', async () => {
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    window.localStorage.setItem('dsh-model.freeOpen', '1')
+    window.localStorage.setItem('dsh-model.freeListOpen', '1')
+    const posts: { path: string; body: unknown }[] = []
+    const overview = {
+      catalogUpdatedAt: '2026-11-17',
+      summary: { connected: 2, missing: 0, missingCny: 0, checkinConnected: 0, checkinMissing: 0, poolModels: { auto: 1, smart: 1, fast: 0 } },
+      entries: [
+        { id: 'sf', kind: 'api', name: '硅基流动免费模型', amount: '长期', cycle: 'forever', charges: false, gates: [], url: 'https://x/', source: 'siliconflow', status: 'spent' },
+        { id: 'gq', kind: 'api', name: 'Groq 免费 key', amount: '每天', cycle: 'daily', charges: false, gates: [], url: 'https://x/', source: 'groq', status: 'confirm', confirm: '我的 Groq 账户是免费档' },
+      ],
+      pool: [{ tier: 'auto', models: [{ alias: 'modelscope/q', source: 'modelscope', cycle: 'daily', charges: false }] }, { tier: 'smart', models: [] }, { tier: 'fast', models: [] }],
+      custom: [], discoveries: [], config: {},
+      alerts: [{ id: 'spent:siliconflow:t', source: 'siliconflow', label: '硅基流动', from: 50, to: 49.2, at: 't' }],
+    }
+    handler = normal((c) => {
+      if (c.path === '/free' && c.method === 'GET') return [200, overview]
+      if (c.method === 'POST' && c.path.startsWith('/free/')) { posts.push({ path: c.path, body: c.body }); return [200, { ...overview, alerts: [] }] }
+      return [404, {}]
+    })
+    await render()
+    await waitText('硅基流动 的充值余额从 ¥50 变成了 ¥49.2')
+    expect(container.textContent).toContain('充值余额变少了，已移出')
+    await click('这家不再放进免费池')
+    expect(posts.at(-1)).toEqual({ path: '/free/spent', body: { source: 'siliconflow', action: 'exclude' } })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await click('确认后放进池…')
+    expect(confirm.mock.calls[0]![0]).toContain('我的 Groq 账户是免费档')
+    expect(posts.at(-1)).toEqual({ path: '/free/confirm', body: { source: 'groq', on: true } })
+    confirm.mockRestore()
+    await act(async () => root?.unmount())
+    await render(SpentOverlay)
+    await waitText('硅基流动：¥50 → ¥49.2，已移出免费池')
+    await click('知道了')
+    expect(container.textContent).not.toContain('已移出免费池')
   })
 
   it('usage: expiring credits are called out; a used-up plan gets a badge with the time back', async () => {

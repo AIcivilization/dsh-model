@@ -83,7 +83,7 @@ const ALLOWED = [
   ['POST', /^\/sources\/[a-z0-9-]{2,40}\/models$/],
   ['POST', /^\/sources\/[a-z0-9-]{2,40}\/(enable|disable|logout)$/],
   ['GET', /^\/free$/],
-  ['POST', /^\/free\/(discover|optin|optout|model|cooldown\/clear|discovery)$/],
+  ['POST', /^\/free\/(discover|optin|optout|model|cooldown\/clear|discovery|confirm|spent|source)$/],
   ['POST', /^\/custom-sources$/],
   ['POST', /^\/opencode\/key$/],
   ['POST', /^\/apikey\/[a-z0-9-]{2,40}$/],

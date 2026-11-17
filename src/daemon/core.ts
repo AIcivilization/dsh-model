@@ -159,6 +159,9 @@ export class Daemon {
     setTimeout(() => void this.refreshUsage(), 3000)
     // 探测新额度（设计 §14.27）：每 6 小时看一眼，距上次拉远程目录超过一天才拉
     this.timers.push(setInterval(() => void this.discoverFree().catch(() => {}), 6 * 60 * 60 * 1000))
+    // 余额兜底（§14.34）：能查充值余额的来源每 30 分钟看一次，变少了就移出免费池并提醒
+    this.timers.push(setInterval(() => void this.checkFreeBalances().catch(() => {}), 30 * 60 * 1000))
+    setTimeout(() => void this.checkFreeBalances().catch(() => {}), 2 * 60_000)
     setTimeout(() => void this.discoverFree().catch(() => {}), 90_000)
     // 包被换成新版（npm install -g、插件市场、别的途径）但没人重启我：自己退出，让系统服务用新代码拉起来（设计 §14.29）
     this.timers.push(setInterval(() => this.restartIfUpgraded(), 60_000))
@@ -1330,6 +1333,43 @@ export class Daemon {
     await this.resync()
   }
 
+  /** 余额兜底：查一次，有新的「充值余额变少」就重新同步（把这家从免费池里拿掉） */
+  async checkFreeBalances(): Promise<number> {
+    const n = await this.free.checkBalances(await this.poolInputs())
+    if (n) {
+      log_(`daemon: free pool: paid balance dropped on ${n} source(s); taken out of the pool until the user confirms`)
+      await this.resync()
+    }
+    return n
+  }
+
+  /** 用户确认目录里那句话（如「这把 key 没开结算」）：确认后这家的免费额度才进池 */
+  async freeConfirm(source: string, on: boolean): Promise<void> {
+    mustSource(source)
+    await this.updatePoolConfig((c) => {
+      const set = new Set(c.confirmed ?? [])
+      if (on) set.add(source)
+      else set.delete(source)
+      c.confirmed = set.size ? [...set] : undefined
+    })
+  }
+
+  /** 充值余额变少的提醒：keep 继续放在池里；exclude 这家一直不放进池 */
+  async freeSpent(source: string, action: 'keep' | 'exclude'): Promise<void> {
+    await this.free.ackSpent(source)
+    if (action === 'exclude') await this.freeExcludeSource(source, true)
+    else await this.resync()
+  }
+
+  async freeExcludeSource(source: string, on: boolean): Promise<void> {
+    await this.updatePoolConfig((c) => {
+      const set = new Set(c.excludeSources ?? [])
+      if (on) set.add(source)
+      else set.delete(source)
+      c.excludeSources = set.size ? [...set] : undefined
+    })
+  }
+
   /** 会扣钱的额度：用户确认并给 token 上限后进池 */
   async freeOptIn(source: string, capTokens: unknown): Promise<void> {
     const cap = parseCap(capTokens)
@@ -1466,6 +1506,9 @@ export class Daemon {
       if (method === 'POST' && path === '/free/optin') return ok(await this.freeOptIn(String(b.source ?? ''), b.capTokens).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/optout') return ok(await this.freeOptOut(String(b.source ?? '')).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/model') return ok(await this.freeToggleModel(String(b.alias ?? ''), b.on !== false).then(() => this.freeOverview()))
+      if (method === 'POST' && path === '/free/confirm') return ok(await this.freeConfirm(String(b.source ?? ''), b.on !== false).then(() => this.freeOverview()))
+      if (method === 'POST' && path === '/free/spent') return ok(await this.freeSpent(String(b.source ?? ''), b.action === 'exclude' ? 'exclude' : 'keep').then(() => this.freeOverview()))
+      if (method === 'POST' && path === '/free/source') return ok(await this.freeExcludeSource(String(b.source ?? ''), b.exclude === true).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/cooldown/clear') return ok(await this.free.clearCooldown(String(b.source ?? '')).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/discovery') return ok(await this.freeDiscovery(String(b.id ?? ''), b.accept === true).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/custom-sources') return ok(await this.addCustomSource(b))

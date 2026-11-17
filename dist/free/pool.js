@@ -53,12 +53,44 @@ function cycleRank(m) {
             return 9;
     }
 }
+/**
+ * 这个模型能不能证明不花钱（设计 §14.34）。返回证明它的那份额度；证明不了返回 null。
+ * 只认目录里写明的证明方式（account / priced / list / pattern），按名字猜的一律不算。
+ */
+export function freeProof(sourceId, model, entries, cfg) {
+    const mine = entries.filter((e) => e.kind === 'api' && e.source === sourceId && !e.charges);
+    for (const e of mine) {
+        if (e.models !== undefined && !new RegExp(e.models, 'i').test(model.id))
+            continue;
+        if (e.confirm && !(cfg.confirmed ?? []).includes(sourceId))
+            continue;
+        const how = e.pool ?? 'list';
+        if (how === 'account' || how === 'pattern')
+            return e;
+        if (how === 'priced' && model.priced)
+            return e;
+        if (how === 'list' && (e.freeModels ?? []).some((x) => x.toLowerCase() === model.id.toLowerCase()))
+            return e;
+    }
+    // 目录里没这家：只认平台自己标了价格为 0 的
+    if (!entries.some((e) => e.kind === 'api' && e.source === sourceId) && model.priced) {
+        return { id: `${sourceId}:priced`, kind: 'api', source: sourceId, cycle: 'forever', name: sourceId, amount: '', charges: false, url: 'https://invalid.local/', verifiedAt: '' };
+    }
+    return null;
+}
+/** 这家有没有要用户先确认、还没确认的免费额度（给页面显示「确认后进池」） */
+export function needsConfirm(sourceId, entries, cfg) {
+    return entries.find((e) => e.kind === 'api' && e.source === sourceId && !e.charges && e.confirm && !(cfg.confirmed ?? []).includes(sourceId)) ?? null;
+}
 /** 全部有资格进池的模型（不看冷却），已排好序 */
 export function poolCandidates(sources, entries, cfg, state) {
     const exclude = new Set(cfg.exclude ?? []);
     const include = new Set(cfg.include ?? []);
     const out = [];
     for (const src of sources) {
+        // 充值余额变少了的来源：等用户确认前一个都不进（余额兜底）
+        if (state.spent?.[src.id] || (cfg.excludeSources ?? []).includes(src.id))
+            continue;
         const mine = entries.filter((e) => e.kind === 'api' && e.source === src.id);
         const opt = cfg.optIn?.[src.id];
         const capped = opt ? (state.used[src.id] ?? 0) >= opt.capTokens * CAP_RATIO : true;
@@ -77,17 +109,12 @@ export function poolCandidates(sources, entries, cfg, state) {
                 out.push({ ...base, cycle: src.custom.cycle, ...(src.custom.until ? { until: src.custom.until } : {}), charges: false });
                 continue;
             }
-            // 不花钱的额度优先；没有再看用户打开了的会扣钱的额度
-            const freeHit = mine.find((e) => !e.charges && entryMatches(e, m.id, Boolean(m.free)));
-            const paidHit = !freeHit && opt && !capped ? mine.find((e) => e.charges && entryMatches(e, m.id, Boolean(m.free))) : undefined;
+            // 能证明不花钱的优先；没有再看用户打开了、设了上限的会扣钱的额度
+            const freeHit = freeProof(src.id, m, entries, cfg);
+            const paidHit = !freeHit && opt && !capped ? mine.find((e) => e.charges && entryMatches(e, m.id, true)) : undefined;
             const hit = freeHit ?? paidHit;
             if (hit) {
-                out.push({ ...base, cycle: hit.cycle, ...(hit.until ? { until: hit.until } : {}), charges: hit.charges, entryId: hit.id });
-                continue;
-            }
-            // 目录里没这家：只认模型目录标了免费的，当长期免费
-            if (!mine.length && m.free) {
-                out.push({ ...base, cycle: 'forever', charges: false });
+                out.push({ ...base, cycle: hit.cycle, ...(hit.until ? { until: hit.until } : {}), charges: hit.charges, ...(hit.id.endsWith(':priced') ? {} : { entryId: hit.id }) });
                 continue;
             }
             // 用户点名加进来的（自己选的，不管收不收费）

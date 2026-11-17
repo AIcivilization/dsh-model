@@ -101,8 +101,10 @@ export interface CustomOpts {
 
 export interface KeyModel {
   id: string
-  /** 这家标明 0 价格（OpenRouter 的 :free 等） */
+  /** 可能免费：价格为 0，或名字像免费的（freeRe）。只用来「发现」，不能凭它进免费池 */
   free?: boolean
+  /** 平台接口自己标了价格为 0（OpenRouter 的 pricing）：可信 */
+  priced?: boolean
 }
 
 export type KeyCatalog = Record<string, { updatedAt: string; models: KeyModel[] }>
@@ -128,8 +130,10 @@ export function parseModelList(providerId: string, body: unknown): KeyModel[] {
     const id = String(m.id ?? '').replace(/^models\//, '')
     if (!id) continue
     const pricing = m.pricing as { prompt?: string; completion?: string } | undefined
-    const free = id.endsWith(':free') || (pricing ? Number(pricing.prompt) === 0 && Number(pricing.completion) === 0 : false) || Boolean(keyProvider(providerId)?.freeRe?.test(id))
-    out.push({ id, ...(free ? { free: true } : {}) })
+    // priced：平台接口自己标了价格为 0（可信，免费池认它）；free：可能免费（含按名字猜的，只用来「发现」）
+    const priced = pricing ? Number(pricing.prompt) === 0 && Number(pricing.completion) === 0 && (Number((pricing as { request?: string }).request ?? 0) === 0) : false
+    const free = priced || id.endsWith(':free') || Boolean(keyProvider(providerId)?.freeRe?.test(id))
+    out.push({ id, ...(free ? { free: true } : {}), ...(priced ? { priced: true } : {}) })
   }
   // OpenRouter 有几百个模型：付费的照样能用，但先把免费的排前面，挑默认时就先挑它们
   return out.sort((a, b) => Number(Boolean(b.free)) - Number(Boolean(a.free)) || a.id.localeCompare(b.id))

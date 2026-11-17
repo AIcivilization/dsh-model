@@ -9,7 +9,8 @@ import { L, lang } from '../i18n.js';
 import { KEY_PROVIDERS, isCustomId } from '../integrations/apikeys.js';
 import { LOCAL_SERVERS } from '../integrations/local.js';
 import { activeEntries, beijingToday, loadCatalog, refreshCatalog } from './catalog.js';
-import { FREE_PREFIX, TIERS, cooldownUntil, isQuotaFailure, loadPoolState, poolCandidates, poolOrder, savePoolState } from './pool.js';
+import { BALANCE_SOURCES, balanceDropped, fetchPaidBalance } from './balance.js';
+import { FREE_PREFIX, TIERS, cooldownUntil, isQuotaFailure, loadPoolState, needsConfirm, poolCandidates, poolOrder, savePoolState } from './pool.js';
 const KEY_IDS = new Set(KEY_PROVIDERS.map((p) => p.id));
 const LOCAL_IDS = new Set(LOCAL_SERVERS.map((s) => s.id));
 /** 上游里能进免费池的：key 来源（含手动加的）和本机模型；别名带 auto/ 的是同名切换，不算 */
@@ -20,7 +21,7 @@ export function poolSourcesFrom(upstreams, secrets) {
         const isLocal = LOCAL_IDS.has(u.name);
         if (!isKey && !isLocal)
             continue;
-        const models = u.models.filter((m) => m.alias === `${u.name}/${m.name}`).map((m) => ({ id: m.name, ...(m.rate === 0 ? { free: true } : {}) }));
+        const models = u.models.filter((m) => m.alias === `${u.name}/${m.name}`).map((m) => ({ id: m.name, ...(m.rate === 0 ? { free: true } : {}), ...(m.priced ? { priced: true } : {}) }));
         const s = secrets.apikeys?.[u.name];
         out.push({
             id: u.name,
@@ -47,6 +48,7 @@ export function freeUpstream(candidates, bridge) {
         displayName: L(...TIER_LABEL[t]),
         dshName: L(...TIER_LABEL[t]),
         rate: 0,
+        cost: 'free',
         group: FREE_PREFIX,
         groupLabel: L(...FREE_GROUP_LABEL),
     }));
@@ -189,6 +191,48 @@ export class FreePool {
         delete state.cooldown[source];
         await this.persist();
     }
+    /**
+     * 余额兜底（§14.34）：能查充值余额的来源每 30 分钟看一次。充值余额变少了、而这家在免费池里，
+     * 就记下 spent，这家整个移出免费池，页面和 dsh 右下角都提醒，等用户确认。返回新出现的条数。
+     */
+    async checkBalances(inp, fetchImpl = fetch) {
+        const state = await this.loadState();
+        const inPool = new Set((await this.candidates(inp)).map((m) => m.source));
+        const paid = (state.paid ??= {});
+        let found = 0;
+        let changed = false;
+        for (const source of Object.keys(BALANCE_SOURCES)) {
+            const key = inp.secrets.apikeys?.[source]?.key;
+            if (!key || inp.disabled.has(source))
+                continue;
+            const now = await fetchPaidBalance(source, key, fetchImpl);
+            if (now === null)
+                continue;
+            const prev = paid[source];
+            if (prev && balanceDropped(prev.balance, now) && inPool.has(source) && !state.spent?.[source]) {
+                state.spent = { ...state.spent, [source]: { from: prev.balance, to: now, at: new Date().toISOString() } };
+                found++;
+            }
+            if (!prev || prev.balance !== now) {
+                paid[source] = { balance: now, at: new Date().toISOString() };
+                changed = true;
+            }
+        }
+        if (changed || found)
+            await this.persist();
+        return found;
+    }
+    /** 用户看过余额提醒：keep = 知道了、继续放在池里（以现在的余额为准重新开始看） */
+    async ackSpent(source) {
+        const state = await this.loadState();
+        if (state.spent?.[source]) {
+            const { [source]: done, ...rest } = state.spent;
+            state.spent = rest;
+            if (state.paid?.[source])
+                state.paid[source] = { balance: done.to, at: new Date().toISOString() };
+        }
+        await this.persist();
+    }
     /** 重新打开 charges 来源时清零累计 */
     async resetUsed(source) {
         const state = await this.loadState();
@@ -221,6 +265,10 @@ export class FreePool {
                 return { ...base, status: inp.checkinKinds.has(e.checkin) ? 'connected' : 'missing' };
             if (!connected.has(e.source))
                 return { ...base, status: 'missing' };
+            if (state.spent?.[e.source])
+                return { ...base, status: 'spent' };
+            if (!e.charges && needsConfirm(e.source, [e], inp.config))
+                return { ...base, status: 'confirm', confirm: lang() === 'en' ? (e.confirmEn ?? e.confirm) : e.confirm };
             const cool = state.cooldown[e.source];
             if (cool && Date.parse(cool) > now)
                 return { ...base, status: 'cooling', coolingUntil: cool };
@@ -233,7 +281,7 @@ export class FreePool {
             }
             return { ...base, status: 'connected' };
         });
-        const rank = { connected: 0, cooling: 1, optin: 2, capped: 3, missing: 4 };
+        const rank = { spent: 0, confirm: 1, connected: 2, cooling: 3, optin: 4, capped: 5, missing: 6 };
         // 同一状态里：不扣钱的在前（最该先领的），再按折合金额
         views.sort((a, b) => rank[a.status] - rank[b.status] || Number(a.charges) - Number(b.charges) || (b.cny ?? 0) - (a.cny ?? 0));
         const api = views.filter((v) => v.kind === 'api');
@@ -260,8 +308,10 @@ export class FreePool {
                     const e = byId.get(d.entryId ?? '');
                     return { ...d, title: e ? L(`新的免费额度：${localized(e).name}`, `New free quota: ${localized(e).name}`) : d.id, ...(e ? { url: e.url } : {}) };
                 }
-                return { ...d, title: L(`${d.source} 上新了免费模型 ${d.model}`, `${d.source} has a new free model: ${d.model}`) };
+                // 按名字或价格「看起来」免费：要用户自己到官网核对过再加（§14.34）
+                return { ...d, title: L(`${d.source} 上新了可能免费的模型 ${d.model}（请到官网确认是免费的再加）`, `${d.source} has a model that may be free: ${d.model} (check the official pricing before adding)`) };
             }),
+            alerts: Object.entries(state.spent ?? {}).map(([source, sp]) => ({ id: `spent:${source}:${sp.at}`, source, label: inp.upstreams.find((u) => u.name === source)?.label ?? source, ...sp })),
             config: inp.config,
         };
     }

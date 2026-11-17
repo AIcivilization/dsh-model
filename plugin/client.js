@@ -729,8 +729,10 @@ window.__ModuleLoader__.load({
       const sum = data.summary
       const list = showAll ? data.entries : data.entries.filter((e) => e.status !== 'connected' || e.kind === 'api')
       const statusTag = (e) => {
-        const color = { connected: C.ok, cooling: C.warn, optin: C.warn, capped: C.err, missing: C.faint }[e.status]
+        const color = { connected: C.ok, cooling: C.warn, optin: C.warn, capped: C.err, missing: C.faint, confirm: C.warn, spent: C.err }[e.status]
         const text = {
+          confirm: L('要你确认一句才进池', 'needs your confirmation'),
+          spent: L('充值余额变少了，已移出', 'paid balance dropped, taken out'),
           connected: e.kind === 'checkin' ? L('已在签', 'checking in') : L('在免费池里', 'in the pool'),
           cooling: L(`冷却到 ${hhmm(e.coolingUntil)}`, `cooling until ${hhmm(e.coolingUntil)}`),
           optin: L('会扣钱，没放进池', 'charges, not in the pool'),
@@ -746,6 +748,11 @@ window.__ModuleLoader__.load({
           out.push(h('a', { key: 'go', href: e.url, target: '_blank', rel: 'noopener noreferrer', style: { ...S.btn, textDecoration: 'none' } }, L('去领 ↗', 'Claim ↗')))
           if (sourceOf(e.source)) out.push(h('button', { key: 'key', type: 'button', style: S.btnPrimary, onClick: () => fill(e) }, L('填 key', 'Add key')))
         }
+        if (e.status === 'confirm') out.push(h('button', { key: 'cf', type: 'button', style: S.btn, disabled: busy === e.id, onClick: () => {
+          if (!window.confirm(L(`放进免费池之前请确认：\n\n「${e.confirm}」\n\n如果不是这样，用它的请求可能会扣你的钱。确认属实吗？`, `Before adding it to the free pool, please confirm:\n\n"${e.confirm}"\n\nIf this is not true, requests through it may charge you. Is it true?`))) return
+          void act(e.id, 'POST', '/free/confirm', { source: e.source, on: true })
+        } }, L('确认后放进池…', 'Confirm and add…')))
+        if (e.status === 'spent') out.push(h('button', { key: 'sp', type: 'button', style: S.btn, disabled: busy === e.id, onClick: () => void act(e.id, 'POST', '/free/spent', { source: e.source, action: 'keep' }) }, L('知道了，继续用', 'Got it, keep using')))
         if (e.status === 'optin') out.push(h('button', { key: 'in', type: 'button', style: S.btn, disabled: busy === e.id, onClick: () => optIn(e) }, L('放进免费池…', 'Add to pool…')))
         if (e.charges && (e.status === 'connected' || e.status === 'capped')) {
           out.push(h('button', { key: 'cap', type: 'button', style: S.btn, onClick: () => optIn(e) }, L('改上限', 'Change cap')))
@@ -756,6 +763,7 @@ window.__ModuleLoader__.load({
       }
       const excluded = data.config.exclude || []
       const expanded = open == null ? !sum.poolModels.auto : open
+      const alerts = data.alerts || []
       const fresh = data.discoveries.length
       return h('div', { style: S.section },
         h('div', { style: S.line },
@@ -764,6 +772,12 @@ window.__ModuleLoader__.load({
             !expanded && fresh ? h('span', { style: { fontSize: 12, fontWeight: 400, color: C.accent, marginLeft: 8 } }, L(`${fresh} 条新发现`, `${fresh} new`)) : null),
           expanded ? h('button', { type: 'button', style: S.btn, disabled: busy === 'discover', onClick: () => void act('discover', 'POST', '/free/discover') }, busy === 'discover' ? L('探测中…', 'Checking…') : L('探测新额度', 'Look for new')) : null,
           expanded ? h('button', { type: 'button', style: S.btn, onClick: () => setAdding(true) }, L('+ 手动添加来源', '+ Add a source')) : null),
+ alerts.length ? h('div', { style: { ...S.card, padding: '10px 14px', margin: '8px 0', borderColor: C.err } }, alerts.map((a) => h('div', { key: a.id, style: { marginBottom: 4 } },
+          h('div', { style: { fontSize: 13, color: C.err, lineHeight: 1.7 } }, L(`${a.label} 的充值余额从 ¥${a.from} 变成了 ¥${a.to}（少了 ¥${(a.from - a.to).toFixed(2)}）。可能是免费池用到了它的收费模型，也可能是你自己直接用了它的收费模型。为了不替你花钱，这家已经整个移出免费池。`, `The paid balance of ${a.label} went from ¥${a.from} to ¥${a.to} (¥${(a.from - a.to).toFixed(2)} less). Either the free pool used one of its paid models, or you used one directly. So it does not spend your money, this provider is out of the free pool.`)),
+          h('div', { style: { ...S.line, marginTop: 4 } },
+            h('span', { style: S.grow }),
+            h('button', { type: 'button', style: S.btn, disabled: busy === a.id, onClick: () => void act(a.id, 'POST', '/free/spent', { source: a.source, action: 'keep' }) }, L('是我自己用的，放回池里', 'It was me; put it back')),
+            h('button', { type: 'button', style: S.btnPrimary, disabled: busy === a.id, onClick: () => void act(a.id, 'POST', '/free/spent', { source: a.source, action: 'exclude' }) }, L('这家不再放进免费池', 'Keep it out of the pool')))))) : null,
         expanded ? h('p', { style: S.note },
           L('一把 key 用上各家官方 API 的免费额度：在 dsh 的模型列表里选 ', 'One key for the free quotas of official APIs: in the dsh model list pick '),
           h(PoolPill, null),
@@ -1610,6 +1624,28 @@ window.__ModuleLoader__.load({
         h('div', { style: { ...S.line, marginTop: 6, justifyContent: 'flex-end' } }, h('button', { type: 'button', style: S.btn, onClick: hide }, L('知道了', 'Got it'))))
     }
 
+    /** 免费池可能花了钱（充值余额变少）：在 dsh 任何页面的右下角提醒，直到在设置页处理（§14.34） */
+    const FREE_ALERT_SEEN = 'dsh-model.freeAlertSeen'
+    function FreeSpentNotice() {
+      const [alerts, setAlerts] = useState([])
+      const [seen, setSeen] = useState(() => { try { return window.localStorage.getItem(FREE_ALERT_SEEN) || '' } catch { return '' } })
+      useEffect(() => {
+        let stop = false
+        const tick = () => api('GET', '/free').then((r) => { if (!stop) setAlerts(r.alerts || []) }, () => {})
+        void tick()
+        const t = setInterval(tick, 10 * 60 * 1000)
+        return () => { stop = true; clearInterval(t) }
+      }, [])
+      const key = alerts.map((a) => a.id).join(',')
+      if (!alerts.length || seen === key) return null
+      const hide = () => { setSeen(key); try { window.localStorage.setItem(FREE_ALERT_SEEN, key) } catch { /* 无痕 */ } }
+      return h('div', { role: 'alert', style: { position: 'fixed', right: 16, bottom: 200, zIndex: 901, maxWidth: 380, background: C.base, color: C.text, border: `1px solid ${C.err}`, borderRadius: 10, padding: '10px 12px', boxShadow: 'var(--dsw-elevation-soft, 0 8px 30px rgba(0,0,0,.2))', fontSize: 13 } },
+        h('div', { style: { fontWeight: 600, marginBottom: 4, color: C.err } }, L('dsh-model：有平台的充值余额变少了', 'dsh-model: a paid balance went down')),
+        alerts.map((a) => h('div', { key: a.id, style: { lineHeight: 1.6 } }, L(`${a.label}：¥${a.from} → ¥${a.to}，已移出免费池`, `${a.label}: ¥${a.from} → ¥${a.to}, taken out of the free pool`))),
+        h('div', { style: { ...S.meta, marginTop: 4 } }, L('到「设置 → dsh-model → 免费额度」里决定要不要放回。', 'Decide in Settings → dsh-model → Free quota whether to put it back.')),
+        h('div', { style: { ...S.line, marginTop: 6, justifyContent: 'flex-end' } }, h('button', { type: 'button', style: S.btn, onClick: hide }, L('知道了', 'Got it'))))
+    }
+
     // —— 首次使用向导 ——
     const GUIDE_KEY = 'dsh-model.guideDone'
     const readGuideDone = () => {
@@ -1741,6 +1777,11 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dsh-model-checkin' }, CheckinNotice))
       } catch (error) {
         console.warn('[dsh-model] 签到提示注册失败', error)
+      }
+      try {
+        ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dsh-model-free-spent' }, FreeSpentNotice))
+      } catch (error) {
+        console.warn('[dsh-model] 余额提醒注册失败', error)
       }
     }
 

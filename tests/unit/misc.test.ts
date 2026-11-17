@@ -95,13 +95,21 @@ describe('self-update version compare', () => {
 describe('same-name models: auto/ failover entries', () => {
   it('adds auto/<name> to every source that has the model, only when two or more do', async () => {
     const { addAutoModels } = await import('../../src/engine/compat.js')
-    const up = (name: string, label: string, models: { name: string; rate?: number }[]) => ({ name, label, baseUrl: 'http://x', apiKey: 'k', models: models.map((m) => ({ ...m, alias: `${name}/${m.name}`, dshName: `${m.name.toUpperCase()} · x${m.rate ?? 1}`, group: name, groupLabel: label })) })
-    const out = addAutoModels([up('workbuddy', 'WorkBuddy', [{ name: 'ds-flash', rate: 0.11 }, { name: 'only-here' }]), up('workbuddy-ai', 'WorkBuddy AI', [{ name: 'ds-flash', rate: 0 }])])
-    const autos = out.flatMap((u) => u.models.filter((m) => m.alias.startsWith('auto/')).map((m) => [u.name, m.alias, m.dshName, m.rate]))
+    type C = 'free' | 'credits' | 'paid'
+    const up = (name: string, label: string, models: { name: string; rate?: number; cost?: C }[]) => ({ name, label, baseUrl: 'http://x', apiKey: 'k', models: models.map((m) => ({ ...m, alias: `${name}/${m.name}`, dshName: `${m.name.toUpperCase()} · x${m.rate ?? 1}`, group: name, groupLabel: label })) })
+    const out = addAutoModels([up('workbuddy', 'WorkBuddy', [{ name: 'ds-flash', rate: 0.11, cost: 'credits' }, { name: 'only-here', cost: 'credits' }]), up('workbuddy-ai', 'WorkBuddy AI', [{ name: 'ds-flash', rate: 0, cost: 'free' }])])
+    const autos = out.flatMap((u) => u.models.filter((m) => m.alias.startsWith('auto/')).map((m) => [u.name, m.alias, m.dshName, m.rate, m.cost]))
+    // 一家扣积分、一家免费：不算免费（以前取最低倍率 0，会被当成免费模型优先显示）
     expect(autos).toEqual([
-      ['workbuddy', 'auto/ds-flash', 'DS-FLASH · 2 个来源', 0],
-      ['workbuddy-ai', 'auto/ds-flash', 'DS-FLASH · 2 个来源', 0],
+      ['workbuddy', 'auto/ds-flash', 'DS-FLASH · 2 个来源', undefined, 'credits'],
+      ['workbuddy-ai', 'auto/ds-flash', 'DS-FLASH · 2 个来源', undefined, 'credits'],
     ])
+    // 有一家计费：整个 auto 标「含计费」
+    const mixed = addAutoModels([up('modelscope', 'MS', [{ name: 'q', rate: 0, cost: 'free' }]), up('siliconflow', 'SF', [{ name: 'q', cost: 'paid' }])])
+    expect(mixed[0]!.models.find((m) => m.alias === 'auto/q')).toMatchObject({ dshName: 'Q · 2 个来源 · 含计费', cost: 'mixed', rate: undefined })
+    // 全免费：标「免费」
+    const free = addAutoModels([up('modelscope', 'MS', [{ name: 'q', rate: 0, cost: 'free' }]), up('ollama', 'O', [{ name: 'q', rate: 0, cost: 'free' }])])
+    expect(free[1]!.models.find((m) => m.alias === 'auto/q')).toMatchObject({ dshName: 'Q · 2 个来源 · 免费', cost: 'free', rate: 0 })
   })
 })
 

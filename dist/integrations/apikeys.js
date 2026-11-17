@@ -83,8 +83,10 @@ export function parseModelList(providerId, body) {
         if (!id)
             continue;
         const pricing = m.pricing;
-        const free = id.endsWith(':free') || (pricing ? Number(pricing.prompt) === 0 && Number(pricing.completion) === 0 : false) || Boolean(keyProvider(providerId)?.freeRe?.test(id));
-        out.push({ id, ...(free ? { free: true } : {}) });
+        // priced：平台接口自己标了价格为 0（可信，免费池认它）；free：可能免费（含按名字猜的，只用来「发现」）
+        const priced = pricing ? Number(pricing.prompt) === 0 && Number(pricing.completion) === 0 && (Number(pricing.request ?? 0) === 0) : false;
+        const free = priced || id.endsWith(':free') || Boolean(keyProvider(providerId)?.freeRe?.test(id));
+        out.push({ id, ...(free ? { free: true } : {}), ...(priced ? { priced: true } : {}) });
     }
     // OpenRouter 有几百个模型：付费的照样能用，但先把免费的排前面，挑默认时就先挑它们
     return out.sort((a, b) => Number(Boolean(b.free)) - Number(Boolean(a.free)) || a.id.localeCompare(b.id));

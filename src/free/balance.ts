@@ -1,0 +1,45 @@
+// free/balance.ts — 余额兜底（设计 §14.34）
+//
+// 能分开查「充值余额」的平台：每 30 分钟看一次。充值余额只会因为两件事变少：免费池用了它的收费模型，
+// 或者用户自己直接用了收费模型。不管是哪个，都先把这家整个移出免费池，等用户确认——宁可少用，不能替用户花钱。
+// 赠送余额（新人券、实名送的）不算用户的钱，不看。
+
+/** 能查充值余额的来源 → 怎么查 */
+export const BALANCE_SOURCES: Record<string, { url: string; read: (body: unknown) => number | null }> = {
+  // { code: 20000, data: { balance: 赠送, chargeBalance: 充值, totalBalance } }
+  siliconflow: {
+    url: 'https://api.siliconflow.cn/v1/user/info',
+    read: (b) => num((b as { data?: { chargeBalance?: unknown } })?.data?.chargeBalance),
+  },
+  // { balance_infos: [{ currency, total_balance, granted_balance, topped_up_balance }] }
+  deepseek: {
+    url: 'https://api.deepseek.com/user/balance',
+    read: (b) => {
+      const infos = (b as { balance_infos?: { topped_up_balance?: unknown }[] })?.balance_infos
+      if (!Array.isArray(infos) || !infos.length) return null
+      const vals = infos.map((i) => num(i.topped_up_balance))
+      return vals.some((v) => v === null) ? null : vals.reduce<number>((s, v) => s + (v ?? 0), 0)
+    },
+  },
+}
+
+function num(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN
+  return Number.isFinite(n) ? n : null
+}
+
+/** 查一次充值余额；查不到（网络、key 不对、格式变了）返回 null，不当成「变少了」 */
+export async function fetchPaidBalance(source: string, key: string, fetchImpl: typeof fetch = fetch): Promise<number | null> {
+  const s = BALANCE_SOURCES[source]
+  if (!s) return null
+  try {
+    const r = await fetchImpl(s.url, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) })
+    if (!r.ok) return null
+    return s.read(await r.json())
+  } catch {
+    return null
+  }
+}
+
+/** 比较前后两次：少了超过 1 分钱才算（避免四舍五入抖动） */
+export const balanceDropped = (prev: number, now: number): boolean => now < prev - 0.01

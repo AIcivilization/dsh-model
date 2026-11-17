@@ -27,8 +27,22 @@ export interface CatalogEntry {
   cny?: number
   /** 额度用完会不会自动扣钱（转付费、扣余额）：true 的默认不进免费池 */
   charges: boolean
-  /** 这份额度覆盖哪些模型（来源里的模型 id，不分大小写的正则）；没写 = 来源模型目录里标成免费的 */
+  /** 这份额度覆盖哪些模型（来源里的模型 id，不分大小写的正则）；没写 = 不限 */
   models?: string
+  /**
+   * 怎么证明不花钱（设计 §14.34，只对 charges=false 的条目）：
+   *   account 账号本身扣不到钱（魔搭、NVIDIA 试用）→ 这家（models 范围内）全部算免费；
+   *   priced  平台接口自己标了价格为 0 的（OpenRouter 的 :free）；
+   *   list    只有 freeModels 里逐个登记的（硅基流动、星火、千帆、混元：同一把 key 免费收费混用）；
+   *   pattern 官方按名字定的免费系列（智谱：-flash 结尾的免费），用 models 正则。
+   * 没写按 list 处理：没登记就不算免费。
+   */
+  pool?: 'account' | 'priced' | 'list' | 'pattern'
+  /** pool=list：免费模型的准确 id（不分大小写），出处写在 note 或 verifiedAt */
+  freeModels?: string[]
+  /** 要用户先确认一句才算免费（比如「这把 key 所在的项目没开结算」）：确认前不进池、模型名写「计费」 */
+  confirm?: string
+  confirmEn?: string
   gates?: string[]
   /** 截止日（北京时间 YYYY-MM-DD，含当天） */
   until?: string
@@ -66,6 +80,8 @@ export function parseCatalog(raw: unknown): Catalog | null {
     if (!CYCLES.includes(e.cycle as Cycle) || typeof e.name !== 'string' || typeof e.url !== 'string' || !/^https:\/\//.test(e.url)) continue
     if (e.kind === 'api' && typeof e.source !== 'string') continue
     if (e.kind === 'checkin' && typeof e.checkin !== 'string') continue
+    if (e.pool !== undefined && !['account', 'priced', 'list', 'pattern'].includes(e.pool)) continue
+    if (e.freeModels !== undefined && !(Array.isArray(e.freeModels) && e.freeModels.every((x) => typeof x === 'string'))) continue
     if (e.models !== undefined) {
       try {
         new RegExp(e.models, 'i')
