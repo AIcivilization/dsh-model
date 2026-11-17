@@ -38,6 +38,8 @@ export interface PoolConfig {
   confirmed?: string[]
   /** 用户说「这家一直不要放进免费池」的来源 */
   excludeSources?: string[]
+  /** 运行时传入、不存盘：今天已签上的签到项。needsCheckin 的额度当天签上了才算（§14.38） */
+  checkedIn?: string[]
 }
 
 export interface Discovery {
@@ -134,11 +136,13 @@ export function stale(e: Pick<CatalogEntry, 'verifiedAt'>, now = Date.now()): bo
   return !Number.isFinite(t) || now - t > VERIFY_MAX_DAYS * 24 * 60 * 60 * 1000
 }
 
-export function freeProof(sourceId: string, model: { id: string; priced?: boolean }, entries: CatalogEntry[], cfg: Pick<PoolConfig, 'confirmed'>, now = Date.now()): CatalogEntry | null {
+export function freeProof(sourceId: string, model: { id: string; priced?: boolean }, entries: CatalogEntry[], cfg: Pick<PoolConfig, 'confirmed' | 'checkedIn'>, now = Date.now()): CatalogEntry | null {
   const mine = entries.filter((e) => e.kind === 'api' && e.source === sourceId && !e.charges)
   for (const e of mine) {
     if (e.models !== undefined && !new RegExp(e.models, 'i').test(model.id)) continue
     if (e.confirm && !(cfg.confirmed ?? []).includes(sourceId)) continue
+    // 要每天签到 / 登录领才有的额度：今天没签上就不算（签到失败时宁可不用）
+    if (e.needsCheckin && !(cfg.checkedIn ?? []).includes(e.needsCheckin)) continue
     const how = e.pool ?? 'list'
     // 靠我们手工登记的（逐个列的、按名字定的），超过 90 天没重新核实就不算（价格会变）
     if ((how === 'list' || how === 'pattern') && stale(e, now)) continue

@@ -43,6 +43,10 @@ export interface CatalogEntry {
   /** 要用户先确认一句才算免费（比如「这把 key 所在的项目没开结算」）：确认前不进池、模型名写「计费」 */
   confirm?: string
   confirmEn?: string
+  /** 哪家公司（§14.38）：同一家的签到和 API 额度在页面上互相提示 */
+  brand?: string
+  /** API 额度要每天签到 / 登录领取才有：值是签到项（checkinKind）。当天签上了才进免费池（§14.38） */
+  needsCheckin?: string
   gates?: string[]
   /** 截止日（北京时间 YYYY-MM-DD，含当天） */
   until?: string

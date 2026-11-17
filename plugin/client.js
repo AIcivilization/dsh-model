@@ -741,9 +741,10 @@ window.__ModuleLoader__.load({
       const sum = data.summary
       const list = showAll ? data.entries : data.entries.filter((e) => e.status !== 'connected' || e.kind === 'api')
       const statusTag = (e) => {
-        const color = { connected: C.ok, cooling: C.warn, optin: C.warn, capped: C.err, missing: C.faint, confirm: C.warn, spent: C.err }[e.status]
+        const color = { connected: C.ok, cooling: C.warn, optin: C.warn, capped: C.err, missing: C.faint, confirm: C.warn, spent: C.err, checkin: C.warn }[e.status]
         const text = {
           confirm: L('要你确认一句才进池', 'needs your confirmation'),
+          checkin: L('今天还没签到，签上才进池', 'not checked in today; joins after the check-in'),
           spent: L('充值余额变少了，已移出', 'paid balance dropped, taken out'),
           connected: e.kind === 'checkin' ? L('已在签', 'checking in') : L('在免费池里', 'in the pool'),
           cooling: L(`冷却到 ${hhmm(e.coolingUntil)}`, `cooling until ${hhmm(e.coolingUntil)}`),
@@ -810,6 +811,7 @@ window.__ModuleLoader__.load({
           L('dsh 的模型列表里只放免费模型（免费池、免费模型、本机模型；计费、订阅、扣积分的先不放）', 'Only free models in the dsh model list (free pool, free and local models; paid, subscription and credit models are left out)')) : null,
         err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
         expanded && routes.length ? h(RouteList, { routes: routes.slice(0, 8), title: L('最近的免费池请求（谁回答的）', 'Recent free pool requests (who answered)') }) : null,
+        expanded ? h(PoolRules, null) : null,
         expanded ? h('div', null,
         data.discoveries.length ? h('div', { style: { ...S.card, marginBottom: 10 } }, data.discoveries.map((d, i) => h('div', { key: d.id, style: i ? S.row : S.rowFirst },
           h('div', { style: S.line },
@@ -832,7 +834,8 @@ window.__ModuleLoader__.load({
               h('div', { style: { ...S.meta, marginTop: 2, lineHeight: 1.6 } },
                 [CYCLE_LABEL[e.cycle] ? CYCLE_LABEL[e.cycle]() : e.cycle, e.amount, ...(e.gates || []), e.until ? L(`到 ${e.until}`, `until ${e.until}`) : '', e.kind === 'checkin' ? L('只能签到，在产品里用', 'check-in only, used inside the product') : '', e.charges && e.kind === 'api' ? L('用完会扣钱', 'charges once used up') : ''].filter(Boolean).join(' · '),
                 e.used != null && e.capTokens ? h('span', { style: { marginLeft: 6 } }, h(Bar, { pct: (e.used / e.capTokens) * 100 }), ` ${fmtTokens(e.used)} / ${fmtTokens(e.capTokens)}`) : null,
-                e.note ? h('div', null, e.note) : null)),
+                e.note ? h('div', null, e.note) : null,
+                (e.related || []).length ? h('div', { style: { color: C.accent } }, L('同一家还有：', 'Same company: '), e.related.map((r) => `${r.name}（${r.kind === 'checkin' ? (r.status === 'connected' ? '在签' : '没加签到') : r.status === 'missing' ? '还没领' : r.status === 'connected' ? '在免费池' : '已接入'}）`).join('；')) : null)),
             statusTag(e),
             actions(e))))) : null,
         h('div', { style: { ...S.line, marginTop: 8 } },
@@ -939,6 +942,24 @@ window.__ModuleLoader__.load({
               h('input', { type: 'checkbox', checked: Boolean(info.freeOnly), onChange: (e) => { const on = e.target.checked; api('POST', '/dsh/free-only', { on, model }).then(setInfo, () => {}) } }),
               L('dsh 的模型列表里只放免费模型', 'Only free models in the dsh model list')),
             h('button', { type: 'button', style: S.btn, onClick: () => setOpen(false) }, L('关闭', 'Close')))) : null)
+    }
+
+    /** 免费池规则，公开写出来（§14.38）：什么算免费、什么永远不进、怎么排、怎么兜底、记了什么 */
+    function PoolRules() {
+      const [open, setOpen] = useState(false)
+      const items = [
+        L('只收能证明不花钱的模型：账号本身扣不到钱的（如魔搭），平台接口标明价格每一项都是 0 的（如 OpenRouter 的 :free），或者我们对照官网价格页逐个登记过的（如硅基流动的 9 个免费模型）。', 'Only models proven to cost nothing: accounts that cannot be charged (e.g. ModelScope), models the platform prices at 0 on every item (e.g. OpenRouter :free), or ones we listed one by one from the official pricing page (e.g. 9 SiliconFlow models).'),
+        L('收费模型永远不会自己进池。按名字猜着像免费的，只列在「可能免费、待你核对」里，你对照官网确认后才进。', 'Paid models never join by themselves. Ones that only look free are listed under "May be free" and join only after you check them.'),
+        L('能不能扣钱取决于你账号设置的（Gemini 项目开没开结算、Groq 升没升付费档等），要你先确认一句才进。', 'Where charging depends on your account settings (Gemini billing, Groq paid tier, …), you confirm first.'),
+        L('手工登记的名单超过 90 天没重新核对就自动失效。要每天签到才有的额度，当天签上了才进。', 'Hand-kept lists expire after 90 days without re-checking. Quotas that need a daily check-in join only once it succeeded that day.'),
+        L('顺序：每天重置的 → 每月重置的 → 快过期的 → 长期免费的 → 本机模型。一家限流或用完，冷却到它重置再用，换下一家。', 'Order: daily → monthly → expiring soon → always free → local. A provider that hits its limit cools down until it resets and the next one takes over.'),
+        L('兜底：能查充值余额的平台（目前是 DeepSeek），充值余额一变少就整家移出，并提醒你。', 'Safety net: where the paid balance can be read (DeepSeek for now), any drop takes the provider out and tells you.'),
+        L('记录：每次免费池请求试了谁、为什么换、谁回答的，只存在本机内存里，不记对话内容，不发给任何人。', 'Records: who was tried, why it switched and who answered stay in local memory only, without conversation content, and go nowhere.'),
+      ]
+      return h('div', { style: { ...S.card, padding: '8px 14px', marginBottom: 10 } },
+        h('button', { type: 'button', 'aria-expanded': open, onClick: () => setOpen(!open), style: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, color: C.text, textAlign: 'left', width: '100%' } },
+          `${open ? '▾' : '▸'} `, h('b', null, L('免费池规则（公开透明）', 'Free pool rules (in the open)'))),
+        open ? h('ol', { style: { margin: '6px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.7, color: C.sub } }, items.map((t, i) => h('li', { key: i }, t))) : null)
     }
 
     /** 看起来免费、但我们证明不了的模型：给官网链接，用户核对后自己加（§14.37） */
@@ -1683,6 +1704,7 @@ window.__ModuleLoader__.load({
             h('span', null, L('这台还能签：', 'Also available here:')),
             (st.missing || []).map((m) => h('span', { key: m.id, style: { display: 'inline-flex', alignItems: 'center', gap: 4 } },
               m.found && m.found.length ? L(`${m.label}（本机 ${m.found.join('、')} 已登录）`, `${m.label} (signed in: ${m.found.join(', ')})`) : m.label,
+              m.hint ? h('span', { style: { color: C.accent } }, `（${m.hint}）`) : null,
               m.action ? h('button', { type: 'button', style: { ...S.btn, padding: '1px 6px', fontSize: 11 }, onClick: () => { if (m.action === 'workbuddy') void addWorkbuddy(); else if (m.action === 'officeace') void addOfficeAce(); else if (m.action === 'codearts') void addCodeArts(); else if (m.action === 'manual') setManual(m.id); else if (m.action === 'qoder') setQoder(true); else setDoubao(true) } }, L('+ 添加', '+ Add')) : h('span', { style: { color: C.faint } }, `（${m.reason}）`)))) : null,
           open ? h('div', { style: { marginTop: 8 } },
             st.results.map((r) => h('div', { key: r.id, style: { fontSize: 12, lineHeight: 1.8, color: r.state === 'failed' ? C.err : r.state === 'waiting' ? C.sub : C.text } },

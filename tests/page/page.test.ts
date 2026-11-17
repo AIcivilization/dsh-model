@@ -520,6 +520,7 @@ describe('settings page', () => {
       entries: [
         { id: 'sf', kind: 'api', name: '硅基流动免费模型', amount: '长期', cycle: 'forever', charges: false, gates: [], url: 'https://x/', source: 'siliconflow', status: 'spent' },
         { id: 'gq', kind: 'api', name: 'Groq 免费 key', amount: '每天', cycle: 'daily', charges: false, gates: [], url: 'https://x/', source: 'groq', status: 'confirm', confirm: '我的 Groq 账户是免费档' },
+        { id: 'sn', kind: 'api', name: '日日新公测积分', amount: '公测', cycle: 'daily', charges: false, gates: [], url: 'https://x/', source: 'sensenova', status: 'checkin', brand: 'sensetime', related: [{ id: 'ck', kind: 'checkin', name: '小浣熊每天签到', status: 'connected' }] },
       ],
       pool: [{ tier: 'auto', models: [{ alias: 'modelscope/q', source: 'modelscope', cycle: 'daily', charges: false }] }, { tier: 'smart', models: [] }, { tier: 'fast', models: [] }],
       custom: [], discoveries: [], config: {},
@@ -533,6 +534,10 @@ describe('settings page', () => {
     await render()
     await waitText('硅基流动 的充值余额从 ¥50 变成了 ¥49.2')
     expect(container.textContent).toContain('充值余额变少了，已移出')
+    expect(container.textContent).toContain('今天还没签到，签上才进池')
+    expect(container.textContent).toContain('同一家还有：小浣熊每天签到（在签）')
+    await click('▸ 免费池规则（公开透明）')
+    expect(container.textContent).toContain('收费模型永远不会自己进池')
     await click('这家不再放进免费池')
     expect(posts.at(-1)).toEqual({ path: '/free/spent', body: { source: 'siliconflow', action: 'exclude' } })
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)

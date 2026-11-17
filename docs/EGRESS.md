@@ -45,6 +45,7 @@
 | 蚂蚁百灵 | `api.ant-ling.com` |
 | 腾讯云 TokenHub | `tokenhub.tencentmaas.com` |
 | 书生 InternLM | `chat.intern-ai.org.cn` |
+| AMD Token Lab（国际版） | `api.tokenlab.amd.com` |
 | 商汤日日新 SenseNova | `token.sensenova.cn` |
 | WorkBuddy / WorkBuddy AI | `copilot.tencent.com`、`www.codebuddy.cn` 等 WorkBuddy 自己的地址 |
 | OpenCode Zen | `opencode.ai` |

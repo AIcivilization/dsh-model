@@ -121,3 +121,8 @@ export async function setAuto(home, on, owner) {
     const file = await loadCheckin(home);
     await writeJson(checkinPath(home), { ...file, auto: on }, { owner });
 }
+/** 今天已经签上（成功或已签过）的家：qoder:2 → qoder。免费池用它判断「要签到才有」的额度（§14.38） */
+export async function checkedInKinds(home, now = new Date()) {
+    const file = await loadCheckin(home);
+    return [...new Set(todayResults(file, now).filter((r) => r.state === 'signed' || r.state === 'already').map((r) => r.id.split(':')[0]))];
+}

@@ -19,7 +19,8 @@
       ],
       "url": "https://modelscope.cn/my/myaccesstoken",
       "verifiedAt": "2026-11-12",
-      "pool": "account"
+      "pool": "account",
+      "brand": "alibaba"
     },
     {
       "id": "cloudflare-daily",
@@ -177,7 +178,8 @@
       "verifiedAt": "2026-11-17",
       "pool": "list",
       "freeModels": [],
-      "note": "官方价格页暂时核实不了哪些模型免费，先不自动放进免费池；在「可能免费、待你核对」里对照官网确认后再加入"
+      "note": "官方价格页暂时核实不了哪些模型免费，先不自动放进免费池；在「可能免费、待你核对」里对照官网确认后再加入",
+      "brand": "iflytek"
     },
     {
       "id": "qianfan-free",
@@ -194,7 +196,8 @@
       "verifiedAt": "2026-11-17",
       "pool": "list",
       "freeModels": [],
-      "note": "官方价格页暂时核实不了哪些模型免费，先不自动放进免费池；在「可能免费、待你核对」里对照官网确认后再加入"
+      "note": "官方价格页暂时核实不了哪些模型免费，先不自动放进免费池；在「可能免费、待你核对」里对照官网确认后再加入",
+      "brand": "baidu"
     },
     {
       "id": "qianfan-voucher",
@@ -214,7 +217,8 @@
       ],
       "until": "2026-11-30",
       "url": "https://console.bce.baidu.com/qianfan/",
-      "verifiedAt": "2026-11-11"
+      "verifiedAt": "2026-11-11",
+      "brand": "baidu"
     },
     {
       "id": "hunyuan-lite",
@@ -231,7 +235,8 @@
       "verifiedAt": "2026-11-17",
       "pool": "list",
       "freeModels": [],
-      "note": "官方价格页暂时核实不了哪些模型免费，先不自动放进免费池；在「可能免费、待你核对」里对照官网确认后再加入"
+      "note": "官方价格页暂时核实不了哪些模型免费，先不自动放进免费池；在「可能免费、待你核对」里对照官网确认后再加入",
+      "brand": "tencent"
     },
     {
       "id": "mistral-free",
@@ -253,6 +258,28 @@
       "pool": "account",
       "confirm": "我的 Mistral 账户是免费的 Experiment 档，没有升级付费档",
       "confirmEn": "My Mistral account is on the free Experiment plan, not a paid plan"
+    },
+    {
+      "id": "amd-tokenlab",
+      "kind": "api",
+      "source": "amd-tokenlab",
+      "cycle": "once",
+      "brand": "amd",
+      "name": "AMD Token Lab（国际版）开发者计划赠送点数",
+      "nameEn": "AMD Token Lab (global): complimentary points for AI Developer Program members",
+      "amount": "加入 AMD AI 开发者计划送点数（数额以账户为准）",
+      "amountEn": "Complimentary points for program members (see your account)",
+      "charges": false,
+      "pool": "account",
+      "confirm": "我的 AMD 账号没有绑定任何付款方式，Token Lab 用的只是开发者计划赠送的点数",
+      "confirmEn": "My AMD account has no payment method; Token Lab only uses the program's complimentary points",
+      "gates": [
+        "要能上外网",
+        "加入 AMD AI 开发者计划（Global）"
+      ],
+      "url": "https://notebooks.amd.com/tokenlab",
+      "verifiedAt": "2026-11-18",
+      "note": "OpenAI 兼容地址 https://api.tokenlab.amd.com/v1（不带 key 回 401，2026-11-18 实测）；点数用完前请留意账户页"
     },
     {
       "id": "nvidia-trial",
@@ -343,7 +370,8 @@
       ],
       "until": "2026-12-31",
       "url": "https://console.cloud.tencent.com/tokenhub",
-      "verifiedAt": "2026-11-12"
+      "verifiedAt": "2026-11-12",
+      "brand": "tencent"
     },
     {
       "id": "intern-monthly",
@@ -380,7 +408,8 @@
         "用完自动转付费"
       ],
       "url": "https://bailian.console.aliyun.com/?tab=model#/api-key",
-      "verifiedAt": "2026-11-12"
+      "verifiedAt": "2026-11-12",
+      "brand": "alibaba"
     },
     {
       "id": "dashscope-student",
@@ -401,7 +430,8 @@
       ],
       "until": "2027-03-31",
       "url": "https://university.aliyun.com/",
-      "verifiedAt": "2026-11-12"
+      "verifiedAt": "2026-11-12",
+      "brand": "alibaba"
     },
     {
       "id": "ark-new",
@@ -419,7 +449,8 @@
         "仅在线推理"
       ],
       "url": "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
-      "verifiedAt": "2026-11-12"
+      "verifiedAt": "2026-11-12",
+      "brand": "bytedance"
     },
     {
       "id": "sensenova-beta",
@@ -439,7 +470,8 @@
       ],
       "url": "https://platform.sensenova.cn/console/keys",
       "verifiedAt": "2026-11-14",
-      "note": "官方文档没写额度用完会不会转付费，所以默认不进免费池"
+      "note": "官方文档没写额度用完会不会转付费，所以默认不进免费池",
+      "brand": "sensetime"
     },
     {
       "id": "deepseek-login",
@@ -471,7 +503,8 @@
       "amountEn": "About 100–200 credits a day",
       "charges": false,
       "url": "https://www.trae.cn/",
-      "verifiedAt": "2026-11-12"
+      "verifiedAt": "2026-11-12",
+      "brand": "bytedance"
     },
     {
       "id": "checkin-qoder",
@@ -484,7 +517,8 @@
       "amountEn": "100 credits a day",
       "charges": false,
       "url": "https://qoder.com/",
-      "verifiedAt": "2026-11-12"
+      "verifiedAt": "2026-11-12",
+      "brand": "alibaba"
     },
     {
       "id": "checkin-workbuddy",
@@ -497,7 +531,8 @@
       "amountEn": "100 credits a day",
       "charges": false,
       "url": "https://www.codebuddy.cn/",
-      "verifiedAt": "2026-11-08"
+      "verifiedAt": "2026-11-08",
+      "brand": "tencent"
     },
     {
       "id": "checkin-doubao",
@@ -510,7 +545,8 @@
       "amountEn": "200 a day",
       "charges": false,
       "url": "https://www.doubao.com/",
-      "verifiedAt": "2026-11-08"
+      "verifiedAt": "2026-11-08",
+      "brand": "bytedance"
     },
     {
       "id": "checkin-officeace",
@@ -562,7 +598,8 @@
       "amountEn": "Daily credits",
       "charges": false,
       "url": "https://console.bce.baidu.com/",
-      "verifiedAt": "2026-11-12"
+      "verifiedAt": "2026-11-12",
+      "brand": "baidu"
     },
     {
       "id": "checkin-xiaohuanxiong",
@@ -575,7 +612,8 @@
       "amountEn": "300 credits a day (valid 7 days if you sign in that day)",
       "charges": false,
       "url": "https://xiaohuanxiong.com/work",
-      "verifiedAt": "2026-11-14"
+      "verifiedAt": "2026-11-14",
+      "brand": "sensetime"
     },
     {
       "id": "checkin-astudio",
@@ -588,7 +626,8 @@
       "amountEn": "100 credits a day",
       "charges": false,
       "url": "https://agent.xfyun.cn/",
-      "verifiedAt": "2026-11-12"
+      "verifiedAt": "2026-11-12",
+      "brand": "iflytek"
     }
   ]
 }

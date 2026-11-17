@@ -16,7 +16,7 @@ import { lang } from '../i18n.js';
 import { which } from '../util/exec.js';
 import { spawnDetached } from '../util/detach.js';
 import { classify, recentFailures } from './failures.js';
-import { autoDue, beijingNow, checkinAdvice, ensureJitter, loadCheckin, runCheckin, setAuto, todayResults } from '../checkin/index.js';
+import { autoDue, beijingNow, checkedInKinds, checkinAdvice, ensureJitter, loadCheckin, runCheckin, setAuto, todayResults } from '../checkin/index.js';
 import { QODER_REGIONS, exchangePat, qoderCheckin } from '../checkin/qoder.js';
 import { findTraeCredentials, traeCheckin } from '../checkin/trae.js';
 import { DoubaoAuthError, doubaoCheckin, doubaoStatus, normalizeCookie } from '../checkin/doubao.js';
@@ -54,7 +54,7 @@ import { comboId, normalizeCombo, runCombo } from '../combo.js';
 import { compatModelIndex } from '../engine/compat.js';
 import { FreePool, parseCap, tierOf } from '../free/service.js';
 import { loadCompatUpstreams } from '../engine/compat.js';
-import { customId, isCustomId } from '../integrations/apikeys.js';
+import { customId, isCustomId, keyProvider } from '../integrations/apikeys.js';
 import { customSourceDef } from '../sources.js';
 const LOGIN_POLL_MS = 2000;
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000;
@@ -66,6 +66,7 @@ const USAGE_REFRESH_MS = 5 * 60 * 1000;
 /** 查不了用量的来源多久重新实测一次 */
 const PROBE_MS = 6 * 60 * 60 * 1000;
 const log_ = (m) => log(m);
+const keyLabel = (id) => keyProvider(id)?.label ?? id;
 /** 进程还在不在（signal 0 只做检查） */
 const alive = (pid) => {
     try {
@@ -841,6 +842,7 @@ export class Daemon {
     async checkinStatus() {
         const file = await loadCheckin(this.ctx.paths.home);
         const checkers = await this.checkers();
+        const hints = await this.checkinHints();
         const qoders = await loadQoders(this.ctx);
         const extra = await listWorkbuddyAccounts(this.ctx.paths.home);
         const ids = new Set(checkers.map((c) => c.id));
@@ -868,14 +870,44 @@ export class Daemon {
                 ...(checkers.some((c) => checkinKind(c.id) === 'officeace') ? [] : [{ id: 'officeace', label: L('OfficeAce（华为云）', 'OfficeAce (Huawei Cloud)'), action: 'officeace' }]),
                 ...(checkers.some((c) => checkinKind(c.id) === 'trae') ? [] : [{ id: 'trae', label: 'Trae', reason: L('这台没装 Trae：要在装了 Trae 的电脑上签', 'Trae is not installed here: it is checked in on a computer with Trae') }]),
                 ...extMissing(new Set(checkers.map((c) => checkinKind(c.id)))),
-            ],
+            ].map((m) => ({ ...m, ...(hints.get(m.id) ? { hint: hints.get(m.id) } : {}) })),
         };
+    }
+    /**
+     * 签到和免费池互相提示（§14.38）：签到项 → 一句话。
+     * 免费池里有额度要每天签到才有（needsCheckin）→「免费池里的 X 要每天签到才有额度」；
+     * 接入了同一家公司的 API → 「你接入了同一家的 X」。
+     */
+    async checkinHints() {
+        const out = new Map();
+        try {
+            const entries = (await this.free.catalog()).entries;
+            const secrets = await loadSecrets(this.ctx);
+            const connected = new Set(Object.keys(secrets.apikeys ?? {}));
+            for (const e of entries) {
+                if (e.kind === 'api' && e.needsCheckin && e.source && connected.has(e.source))
+                    out.set(e.needsCheckin, L(`免费池里的「${e.name}」要每天签到才有额度`, `"${e.nameEn ?? e.name}" in the free pool needs a daily check-in`));
+            }
+            for (const c of entries.filter((e) => e.kind === 'checkin' && e.brand && e.checkin)) {
+                if (out.has(c.checkin))
+                    continue;
+                const api = entries.find((e) => e.kind === 'api' && e.brand === c.brand && e.source && connected.has(e.source));
+                if (api)
+                    out.set(c.checkin, L(`你接入了同一家的「${keyLabel(api.source)}」；签到另送积分，只能在它自己的软件里用`, `You connected "${keyLabel(api.source)}" from the same company; check-in credits are extra and only work in its own app`));
+            }
+        }
+        catch {
+            // 目录读不到：不提示
+        }
+        return out;
     }
     checkinInflight;
     /** 一键签到（force：今天已成功的也再确认一遍） */
     async checkinNow(force = true) {
         this.checkinInflight ??= runCheckin(this.ctx.paths.home, await this.checkers(), { force, ...(this.ctx.owner ? { owner: this.ctx.owner } : {}) }).finally(() => (this.checkinInflight = undefined));
         await this.checkinInflight;
+        // 有的免费额度要当天签上才算（§14.38）：签完重新同步，免费池和模型名跟着变
+        void this.resync();
         return this.checkinStatus();
     }
     /** 自动签到：到点且有没签上的就签 */
@@ -1381,7 +1413,7 @@ export class Daemon {
         const all = await loadAll(this.ctx);
         const checkers = await this.checkers().catch(() => []);
         return {
-            config: all.config.freePool ?? {},
+            config: { ...(all.config.freePool ?? {}), checkedIn: await checkedInKinds(this.ctx.paths.home).catch(() => []) },
             upstreams: await loadCompatUpstreams(this.ctx),
             secrets: await loadSecrets(this.ctx),
             disabled: new Set(all.config.disabledSources ?? []),

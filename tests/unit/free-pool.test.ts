@@ -10,7 +10,7 @@ import { customId, isCustomId, keyProvider } from '../../src/integrations/apikey
 import { findSource } from '../../src/sources.js'
 import { mapExtResult } from '../../src/checkin/ext.js'
 
-const entry = (e: Partial<CatalogEntry> & Pick<CatalogEntry, 'id' | 'source' | 'cycle'>): CatalogEntry => ({ kind: 'api', name: e.id, amount: '', charges: false, url: 'https://x.test/', verifiedAt: '2026-11-13', ...e })
+const entry = (e: Partial<CatalogEntry> & Pick<CatalogEntry, 'id' | 'source' | 'cycle'>): CatalogEntry => ({ kind: 'api', name: e.id, amount: '', charges: false, url: 'https://x.test/', verifiedAt: new Date().toISOString().slice(0, 10), ...e })
 
 describe('free catalog', () => {
   it('ships a valid catalog', () => {
@@ -257,5 +257,40 @@ describe('balance guard (§14.34)', () => {
     } finally {
       await rm(home, { recursive: true, force: true })
     }
+  })
+})
+
+describe('free pool ↔ check-in (§14.38)', () => {
+  it('a quota that needs a daily check-in joins only once it succeeded that day', () => {
+    const e = [entry({ id: 'x', source: 'xsrc', cycle: 'daily', pool: 'account', needsCheckin: 'xck' })]
+    const src: PoolSource[] = [{ id: 'xsrc', label: 'X', models: [{ id: 'm1' }] }]
+    expect(poolCandidates(src, e, {}, { used: {} })).toEqual([])
+    expect(poolCandidates(src, e, { checkedIn: ['other'] }, { used: {} })).toEqual([])
+    expect(poolCandidates(src, e, { checkedIn: ['xck'] }, { used: {} }).map((m) => m.alias)).toEqual(['xsrc/m1'])
+  })
+
+  it('knows which check-ins succeeded today', async () => {
+    const { checkedInKinds, checkinPath } = await import('../../src/checkin/index.js')
+    const { writeFile } = await import('node:fs/promises')
+    const home = await mkdtemp(join(tmpdir(), 'dsh-ck-'))
+    try {
+      const now = new Date('2026-11-18T04:00:00Z')
+      await writeFile(checkinPath(home), JSON.stringify({ date: '2026-11-18', results: [{ id: 'qoder:2', label: 'q', state: 'signed', at: 'x' }, { id: 'trae', label: 't', state: 'failed', at: 'x' }, { id: 'lingxi', label: 'l', state: 'already', at: 'x' }, { id: 'minimax', label: 'm', state: 'waiting', at: 'x' }] }))
+      expect((await checkedInKinds(home, now)).sort()).toEqual(['lingxi', 'qoder'])
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('ships AMD Token Lab as a confirm-first account quota and pairs check-ins with API quotas by company', () => {
+    const cat = parseCatalog(JSON.parse(readFileSync(join(__dirname, '../../free-catalog.json'), 'utf8')))!
+    const amd = cat.entries.find((e) => e.id === 'amd-tokenlab')!
+    expect(amd).toMatchObject({ source: 'amd-tokenlab', pool: 'account', charges: false })
+    expect(amd.confirm).toBeTruthy()
+    expect(findSource('amd-tokenlab')?.kind).toBe('apikey')
+    const brands = new Map<string, string[]>()
+    for (const e of cat.entries) if (e.brand) brands.set(e.brand, [...(brands.get(e.brand) ?? []), e.kind])
+    expect(brands.get('sensetime')?.sort()).toEqual(['api', 'checkin'])
+    expect(brands.get('bytedance')).toContain('checkin')
   })
 })

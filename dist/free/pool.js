@@ -70,6 +70,9 @@ export function freeProof(sourceId, model, entries, cfg, now = Date.now()) {
             continue;
         if (e.confirm && !(cfg.confirmed ?? []).includes(sourceId))
             continue;
+        // 要每天签到 / 登录领才有的额度：今天没签上就不算（签到失败时宁可不用）
+        if (e.needsCheckin && !(cfg.checkedIn ?? []).includes(e.needsCheckin))
+            continue;
         const how = e.pool ?? 'list';
         // 靠我们手工登记的（逐个列的、按名字定的），超过 90 天没重新核实就不算（价格会变）
         if ((how === 'list' || how === 'pattern') && stale(e, now))

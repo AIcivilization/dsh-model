@@ -7,6 +7,7 @@ import { bridgeConfigPath, loadCatalogs } from '../bridge/runtime.js';
 import { loadSecrets } from '../secrets.js';
 import { readJson } from '../util/fs.js';
 import { L } from '../i18n.js';
+import { checkedInKinds } from '../checkin/index.js';
 import { LOCAL_SERVERS, loadLocalCatalog } from '../integrations/local.js';
 import { keyProvider, loadKeyCatalog } from '../integrations/apikeys.js';
 import { COMBO_PREFIX } from '../combo.js';
@@ -96,6 +97,8 @@ export async function loadCompatUpstreams(ctx) {
     // 自带 API key 的来源：有 key、有模型、没被关掉就接进来（海外的走出站代理，国内平台直连）
     const keyCat = await loadKeyCatalog(ctx.paths.home);
     const entries = activeEntries(await loadCatalog(ctx.paths.home));
+    // 免费池的判定要知道今天签上了哪些（§14.38）
+    const poolCfg = { ...(cfg?.freePool ?? {}), checkedIn: await checkedInKinds(ctx.paths.home).catch(() => []) };
     for (const [id, s] of Object.entries(secrets.apikeys ?? {})) {
         const p = keyProvider(id);
         const models = keyCat[id]?.models ?? [];
@@ -113,7 +116,7 @@ export async function loadCompatUpstreams(ctx) {
             models: models.map((m) => {
                 // 只有能证明不花钱的才写「免费」（目录写明的证明方式，或平台自己标了 0 价），按名字猜的写「计费」
                 // 用户在「发现」里核对后加进免费池的，也按免费（是用户自己确认的）
-                const free = Boolean(s.free) || freeProof(id, m, entries, cfg?.freePool ?? {}) !== null || (cfg?.freePool?.include ?? []).includes(`${id}/${m.id}`);
+                const free = Boolean(s.free) || freeProof(id, m, entries, poolCfg) !== null || (cfg?.freePool?.include ?? []).includes(`${id}/${m.id}`);
                 const gift = !free && Boolean(p.giftFirst);
                 return { name: m.id, alias: `${id}/${m.id}`, displayName: `${label} · ${m.id}`, dshName: `${m.id} · ${costTag(free ? 'free' : 'paid')}${gift ? ` · ${L('先扣赠送额度', 'gift credit first')}` : ''}`, ...(gift ? { giftFirst: true } : {}), ...(free ? { rate: 0 } : {}), cost: free ? 'free' : 'paid', ...(m.priced ? { priced: true } : {}), group: id, groupLabel: label };
             }),
@@ -137,7 +140,7 @@ export async function loadCompatUpstreams(ctx) {
     addAutoModels(out);
     // 免费池（设计 §14.25）：free/auto、free/smart、free/fast，守护进程请求时现算成员
     if (bridge) {
-        const cands = poolCandidates(poolSourcesFrom(out, secrets), entries, cfg?.freePool ?? {}, await loadPoolState(ctx.paths.home));
+        const cands = poolCandidates(poolSourcesFrom(out, secrets), entries, poolCfg, await loadPoolState(ctx.paths.home));
         const fu = freeUpstream(cands, bridge);
         if (fu)
             out.push(fu);

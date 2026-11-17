@@ -39,6 +39,8 @@ export const KEY_PROVIDERS = [
     { id: 'sensenova', label: '商汤日日新 SenseNova', base: 'https://token.sensenova.cn/v1', keyUrl: 'https://platform.sensenova.cn/console/keys', fallbackModels: ['sensenova-6.8-flash-lite', 'sensenova-6.8-flash', 'deepseek-flash', 'glm-5.3', 'kimi-k3'], direct: true },
     // Cloudflare：地址里带账户 ID，GET /models 不支持（实测 405），用常用模型验证 key
     { id: 'cloudflare', label: 'Cloudflare Workers AI', base: '', keyUrl: 'https://dash.cloudflare.com/profile/api-tokens', needsBase: true, baseHint: 'https://api.cloudflare.com/client/v4/accounts/<账户 ID>/ai/v1', fallbackModels: ['@cf/openai/gpt-oss-120b', '@cf/openai/gpt-oss-20b', '@cf/meta/llama-4-scout-17b-16e-instruct'], freeRe: /./ },
+    // AMD Token Lab（国际版，2026-11-18 加，§14.38）：AMD AI 开发者计划送点数；不带 key 回 401（invalid_api_key）
+    { id: 'amd-tokenlab', label: 'AMD Token Lab（国际版）', base: 'https://api.tokenlab.amd.com/v1', keyUrl: 'https://notebooks.amd.com/tokenlab' },
     { id: 'custom', label: '其他 OpenAI 兼容服务', base: '', keyUrl: '', needsBase: true },
 ];
 /** 用户手动加的来源：custom-<短名>，可以有很多个（设计 §14.26） */

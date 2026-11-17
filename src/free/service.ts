@@ -83,7 +83,11 @@ export interface FreeEntryView {
    * connected 在池里；missing 还没领；optin 会扣钱、用户没打开；capped 到上限；cooling 冷却中；
    * confirm 要用户先确认一句（比如没开结算）才进池；spent 充值余额变少了，已移出等用户确认
    */
-  status: 'connected' | 'missing' | 'optin' | 'capped' | 'cooling' | 'confirm' | 'spent'
+  status: 'connected' | 'missing' | 'optin' | 'capped' | 'cooling' | 'confirm' | 'spent' | 'checkin'
+  /** 哪家公司（§14.38） */
+  brand?: string
+  /** 同一家的其他条目：签到 ↔ API 额度（§14.38） */
+  related?: { id: string; kind: CatalogEntry['kind']; name: string; status: FreeEntryView['status'] }[]
   /** status=confirm：要用户确认的那句话 */
   confirm?: string
   coolingUntil?: string
@@ -325,10 +329,13 @@ export class FreePool {
         ...(e.note ? { note: e.note } : {}),
         ...(e.source ? { source: e.source } : {}),
         ...(e.checkin ? { checkin: e.checkin } : {}),
+        ...(e.brand ? { brand: e.brand } : {}),
       }
       if (e.kind === 'checkin') return { ...base, status: inp.checkinKinds.has(e.checkin!) ? 'connected' : 'missing' }
       if (!connected.has(e.source!)) return { ...base, status: 'missing' }
       if (state.spent?.[e.source!]) return { ...base, status: 'spent' }
+      // 要每天签到才有额度：今天还没签上（§14.38）
+      if (e.needsCheckin && !(inp.config.checkedIn ?? []).includes(e.needsCheckin)) return { ...base, status: 'checkin' }
       if (!e.charges && needsConfirm(e.source!, [e], inp.config)) return { ...base, status: 'confirm', confirm: lang() === 'en' ? (e.confirmEn ?? e.confirm!) : e.confirm! }
       const cool = state.cooldown[e.source!]
       if (cool && Date.parse(cool) > now) return { ...base, status: 'cooling', coolingUntil: cool }
@@ -340,7 +347,13 @@ export class FreePool {
       }
       return { ...base, status: 'connected' }
     })
-    const rank = { spent: 0, confirm: 1, connected: 2, cooling: 3, optin: 4, capped: 5, missing: 6 }
+    const rank = { spent: 0, confirm: 1, checkin: 2, connected: 3, cooling: 4, optin: 5, capped: 6, missing: 7 }
+    // 同一家的签到和 API 额度互相提示
+    for (const v of views) {
+      if (!v.brand) continue
+      const rel = views.filter((o) => o.brand === v.brand && o.id !== v.id).map((o) => ({ id: o.id, kind: o.kind, name: o.name, status: o.status }))
+      if (rel.length) v.related = rel
+    }
     // 同一状态里：不扣钱的在前（最该先领的），再按折合金额
     views.sort((a, b) => rank[a.status] - rank[b.status] || Number(a.charges) - Number(b.charges) || (b.cny ?? 0) - (a.cny ?? 0))
     const api = views.filter((v) => v.kind === 'api')
