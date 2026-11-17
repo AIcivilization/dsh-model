@@ -230,6 +230,8 @@ export async function checkin(ctx) {
             failed++;
             warn(`${r.label}：${L('失败', 'failed')}：${r.message ?? ''}${r.advice ? ` — ${r.advice}` : ''}`);
         }
+        else if (r.state === 'waiting')
+            info(`${r.label}：${L(`活动北京时间 ${r.message} 开放，到点自动签`, `opens at ${r.message} Beijing time; checked in automatically then`)}`);
         else
             ok(`${r.label}：${r.state === 'signed' ? L(`签到成功${r.credit ? ` +${r.credit} 积分` : ''}`, `checked in${r.credit ? ` +${r.credit} credits` : ''}`) : L('今天已签过', 'already checked in today')}`);
     }

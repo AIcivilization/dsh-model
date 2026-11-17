@@ -233,7 +233,8 @@ export async function checkin(ctx: Ctx): Promise<number> {
     if (r.state === 'failed') {
       failed++
       warn(`${r.label}：${L('失败', 'failed')}：${r.message ?? ''}${r.advice ? ` — ${r.advice}` : ''}`)
-    } else ok(`${r.label}：${r.state === 'signed' ? L(`签到成功${r.credit ? ` +${r.credit} 积分` : ''}`, `checked in${r.credit ? ` +${r.credit} credits` : ''}`) : L('今天已签过', 'already checked in today')}`)
+    } else if (r.state === 'waiting') info(`${r.label}：${L(`活动北京时间 ${r.message} 开放，到点自动签`, `opens at ${r.message} Beijing time; checked in automatically then`)}`)
+    else ok(`${r.label}：${r.state === 'signed' ? L(`签到成功${r.credit ? ` +${r.credit} 积分` : ''}`, `checked in${r.credit ? ` +${r.credit} credits` : ''}`) : L('今天已签过', 'already checked in today')}`)
   }
   info(dim(L(`自动签到：${st.auto ? '开' : '关'}（北京时间 ${st.date}）`, `Auto check-in: ${st.auto ? 'on' : 'off'} (Beijing date ${st.date})`)))
   return failed ? 1 : 0

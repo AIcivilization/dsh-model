@@ -7,6 +7,18 @@ import { join } from 'node:path';
 import { L } from '../i18n.js';
 import { readJson, writeJson } from '../util/fs.js';
 export const checkinPath = (home) => join(home, 'checkin.json');
+/**
+ * 各家每日签到活动的开放时刻（北京时间，开放后 1 分钟，单位：当天第几分钟）。设计 §14.33。
+ * 开放前去签只会拿到「现在没有可领取的活动」：以前记成失败、每小时重试、页面一上午红字。
+ * 只登记实测过的：Qoder（国内版、国际版）每天 10:00 开放。
+ */
+export const CHECKIN_WINDOWS = {
+    qoder: 10 * 60 + 1,
+};
+/** 这个签到项（qoder / qoder:2 …）的开放时刻；没有就是 0 点 */
+export const windowOf = (id) => CHECKIN_WINDOWS[id.split(':')[0]] ?? 0;
+/** 当天第几分钟 → "10:01" */
+export const hhmm = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 /** 北京时间的日期与时刻 */
 export function beijingNow(now = new Date()) {
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now).map((p) => [p.type, p.value]));
@@ -49,13 +61,20 @@ export function checkinAdvice(itemId, message) {
  */
 export async function runCheckin(home, checkers, opts = {}) {
     const file = await loadCheckin(home);
-    const { date } = beijingNow();
-    const results = new Map(todayResults(file).map((r) => [r.id, r]));
+    const { date, minutes } = beijingNow(opts.now);
+    const results = new Map(todayResults(file, opts.now).map((r) => [r.id, r]));
     for (const c of checkers) {
         const prev = results.get(c.id);
-        if (!opts.force && prev && prev.state !== 'failed')
+        if (!opts.force && prev && prev.state !== 'failed' && prev.state !== 'waiting')
             continue;
-        const at = new Date().toISOString();
+        const at = (opts.now ?? new Date()).toISOString();
+        // 活动还没开放：不去请求（请求了也只会被记成失败），记「等开放」，到点由自动签到补上
+        const win = windowOf(c.id);
+        if (minutes < win) {
+            if (!prev || prev.state === 'failed' || prev.state === 'waiting')
+                results.set(c.id, { id: c.id, label: c.label, state: 'waiting', message: hhmm(win), at });
+            continue;
+        }
         try {
             const r = await c.run();
             results.set(c.id, { id: c.id, label: c.label, state: r.state, ...(r.credit !== undefined ? { credit: r.credit } : {}), at });
@@ -80,7 +99,10 @@ export function autoDue(file, checkers, now = new Date()) {
     const today = new Map(todayResults(file, now).map((r) => [r.id, r]));
     return checkers.some((c) => {
         const r = today.get(c.id);
-        if (!r)
+        // 还没到这家的开放时刻：不急（没有结果时也先签别家，这家会被记成「等开放」）
+        if (minutes < windowOf(c.id))
+            return !r;
+        if (!r || r.state === 'waiting')
             return true;
         return r.state === 'failed' && now.getTime() - Date.parse(r.at) > 60 * 60 * 1000;
     });

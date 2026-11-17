@@ -1262,7 +1262,7 @@ window.__ModuleLoader__.load({
     }
 
     // —— 每日签到 ——
-    const CHECKIN_TEXT = (r) => (r.state === 'signed' ? L(`成功${r.credit ? ` +${r.credit} 积分` : ''}`, `done${r.credit ? ` +${r.credit} credits` : ''}`) : r.state === 'already' ? L('今天已签过', 'already today') : L(`失败：${r.message || ''}`, `failed: ${r.message || ''}`))
+    const CHECKIN_TEXT = (r) => (r.state === 'signed' ? L(`成功${r.credit ? ` +${r.credit} 积分` : ''}`, `done${r.credit ? ` +${r.credit} credits` : ''}`) : r.state === 'already' ? L('今天已签过', 'already today') : r.state === 'waiting' ? L(`活动北京时间 ${r.message || ''} 开放，到点自动签`, `opens at ${r.message || ''} Beijing time; checked in automatically then`) : L(`失败：${r.message || ''}`, `failed: ${r.message || ''}`))
 
     function QoderDialog({ onDone, onClose, another }) {
       const [pat, setPat] = useState('')
@@ -1502,8 +1502,10 @@ window.__ModuleLoader__.load({
       useEffect(() => { if (open) void loadManual() }, [open, loadManual])
       if (!st) return null
       const byId = new Map(st.results.map((r) => [r.id, r]))
-      const done = st.available.filter((a) => { const r = byId.get(a.id); return r && r.state !== 'failed' })
-      const pending = st.available.filter((a) => !done.includes(a))
+      const done = st.available.filter((a) => { const r = byId.get(a.id); return r && (r.state === 'signed' || r.state === 'already') })
+      // 活动还没开放的（如 Qoder 10:00）：不算失败、也不催「一键签到」，到点自动签
+      const waiting = st.available.filter((a) => { const r = byId.get(a.id); return r && r.state === 'waiting' })
+      const pending = st.available.filter((a) => !done.includes(a) && !waiting.includes(a))
       const run = async () => {
         setBusy(true)
         setErr('')
@@ -1533,7 +1535,9 @@ window.__ModuleLoader__.load({
             h('span', { style: { ...S.grow, fontSize: 13 } },
               done.length ? h('span', { style: { color: C.ok } }, L(`今日已完成签到：${done.map((a) => a.label).join('、')}`, `Checked in today: ${done.map((a) => a.label).join(', ')}`)) : null,
               done.length && pending.length ? h('span', { style: { color: C.sub } }, L('；', '; ')) : null,
-              pending.length ? h('span', { style: { color: C.text } }, L(`还没签：${pending.map((a) => a.label).join('、')}`, `Not yet: ${pending.map((a) => a.label).join(', ')}`)) : null),
+              pending.length ? h('span', { style: { color: C.text } }, L(`还没签：${pending.map((a) => a.label).join('、')}`, `Not yet: ${pending.map((a) => a.label).join(', ')}`)) : null,
+              (done.length || pending.length) && waiting.length ? h('span', { style: { color: C.sub } }, L('；', '; ')) : null,
+              waiting.length ? h('span', { style: { color: C.sub } }, L(`等开放：${waiting.map((a) => `${a.label} ${byId.get(a.id).message || ''}`).join('、')}（到点自动签）`, `Waiting: ${waiting.map((a) => `${a.label} ${byId.get(a.id).message || ''}`).join(', ')} (checked in automatically)`)) : null),
             pending.length ? h('button', { type: 'button', style: S.btnPrimary, disabled: busy, onClick: () => void run() }, busy ? L('签到中…', 'Checking in…') : L('一键签到', 'Check in all')) : null,
             // 详情里还有管理账号的按钮，所以没签过也要能打开
             h('button', { type: 'button', style: S.btn, onClick: () => setOpen(!open) }, open ? L('收起', 'Hide') : L('详情', 'Details')),
@@ -1546,7 +1550,7 @@ window.__ModuleLoader__.load({
               m.found && m.found.length ? L(`${m.label}（本机 ${m.found.join('、')} 已登录）`, `${m.label} (signed in: ${m.found.join(', ')})`) : m.label,
               m.action ? h('button', { type: 'button', style: { ...S.btn, padding: '1px 6px', fontSize: 11 }, onClick: () => { if (m.action === 'workbuddy') void addWorkbuddy(); else if (m.action === 'officeace') void addOfficeAce(); else if (m.action === 'codearts') void addCodeArts(); else if (m.action === 'manual') setManual(m.id); else if (m.action === 'qoder') setQoder(true); else setDoubao(true) } }, L('+ 添加', '+ Add')) : h('span', { style: { color: C.faint } }, `（${m.reason}）`)))) : null,
           open ? h('div', { style: { marginTop: 8 } },
-            st.results.map((r) => h('div', { key: r.id, style: { fontSize: 12, lineHeight: 1.8, color: r.state === 'failed' ? C.err : C.text } },
+            st.results.map((r) => h('div', { key: r.id, style: { fontSize: 12, lineHeight: 1.8, color: r.state === 'failed' ? C.err : r.state === 'waiting' ? C.sub : C.text } },
               `${r.label}：${CHECKIN_TEXT(r)}`, r.advice ? h('span', { style: { color: C.sub, marginLeft: 6 } }, r.advice) : null)),
             // 多账号：多加的 WorkBuddy 签到账号、每个 Qoder 令牌，都能删；再加一个
             h('div', { style: { marginTop: 8, borderTop: `1px solid ${C.border}`, paddingTop: 8 } },
@@ -1593,14 +1597,16 @@ window.__ModuleLoader__.load({
         const t = setInterval(tick, 15 * 60 * 1000)
         return () => { stop = true; clearInterval(t) }
       }, [])
-      if (!st || !st.results.length) return null
-      const key = `${st.date}:${st.results.map((r) => `${r.id}=${r.state}`).join(',')}`
+      // 等开放的不进提示：到点签好后再提示一次
+      const shown = st ? st.results.filter((r) => r.state !== 'waiting') : []
+      if (!shown.length) return null
+      const key = `${st.date}:${shown.map((r) => `${r.id}=${r.state}`).join(',')}`
       if (seen === key) return null
       const failed = st.results.filter((r) => r.state === 'failed')
       const hide = () => { setSeen(key); try { window.localStorage.setItem(CHECKIN_SEEN, key) } catch { /* 无痕模式 */ } }
       return h('div', { role: 'status', style: { position: 'fixed', right: 16, bottom: 120, zIndex: 900, maxWidth: 360, background: C.base, color: C.text, border: `1px solid ${failed.length ? C.err : C.ok}`, borderRadius: 10, padding: '10px 12px', boxShadow: 'var(--dsw-elevation-soft, 0 8px 30px rgba(0,0,0,.2))', fontSize: 13 } },
         h('div', { style: { fontWeight: 600, marginBottom: 4, color: failed.length ? C.err : C.ok } }, failed.length ? L('dsh-model：有签到没成功', 'dsh-model: a check-in failed') : L('dsh-model：今日签到完成', 'dsh-model: checked in for today')),
-        st.results.map((r) => h('div', { key: r.id, style: { lineHeight: 1.6 } }, `${r.label}：${CHECKIN_TEXT(r)}`)),
+        shown.map((r) => h('div', { key: r.id, style: { lineHeight: 1.6 } }, `${r.label}：${CHECKIN_TEXT(r)}`)),
         h('div', { style: { ...S.line, marginTop: 6, justifyContent: 'flex-end' } }, h('button', { type: 'button', style: S.btn, onClick: hide }, L('知道了', 'Got it'))))
     }
 
