@@ -44,7 +44,7 @@ import { refreshOpencodeModels, removeOpencodeKey, saveOpencodeKey, validateKeyS
 import { blockedNotice as workbuddyBlockedNotice, riskNotice as workbuddyRiskNotice } from '../integrations/workbuddy.js'
 import { DSH_KEY_NAME, addKey, findActive, loadKeys, revokeKey, rotateKey, saveKeys } from '../keys.js'
 import { applyKeyChange, dshCandidates, dshKey, loadAll, saveAll, syncAll } from '../ops.js'
-import { defaultPick, pickedFor } from '../dsh/pick.js'
+import { isPaidCost, safePick } from '../dsh/pick.js'
 import { loadSecrets, saveSecrets } from '../secrets.js'
 import { SOURCES, credsFor, findSource, paymentRequired, type SourceDef } from '../sources.js'
 import { withLock } from '../state.js'
@@ -1230,15 +1230,16 @@ export class Daemon {
   }
 
   /** 这个来源的全部模型，以及哪些显示在 dsh 里 */
-  async sourceModels(id: string): Promise<{ custom: boolean; models: { id: string; name: string; selected: boolean; recommended: boolean }[] }> {
+  async sourceModels(id: string): Promise<{ custom: boolean; models: { id: string; name: string; selected: boolean; recommended: boolean; paid: boolean }[] }> {
     const def = mustSource(id)
     const all = await loadAll(this.ctx)
     const c = (await dshCandidates(this.ctx, all)).get(def.id)
-    const list = (c?.models ?? []).map((m) => ({ id: m.id, name: m.name, rate: m.rate }))
+    const list = (c?.models ?? []).map((m) => ({ id: m.id, name: m.name, rate: m.rate, cost: m.cost }))
     const chosen = all.config.dshModels?.[def.id]
-    const picked = new Set(pickedFor(list, chosen))
-    const rec = new Set(defaultPick(list))
-    return { custom: chosen !== undefined, models: list.map((m) => ({ id: m.id, name: m.name, selected: picked.has(m.id), recommended: rec.has(m.id) })) }
+    // 默认只勾不花钱的；收费的要用户亲手勾（§14.37）
+    const picked = new Set(safePick(list, chosen))
+    const rec = new Set(safePick(list, undefined))
+    return { custom: chosen !== undefined, models: list.map((m) => ({ id: m.id, name: m.name, selected: picked.has(m.id), recommended: rec.has(m.id), paid: isPaidCost(m.cost) })) }
   }
 
   /** 保存勾选；null = 恢复默认挑选 */

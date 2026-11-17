@@ -4,7 +4,7 @@ import { connectDshGroups } from './dsh/connect.js';
 import { listModels, waitHealthy, waitModelsChange } from './engine/client.js';
 import { compatModelIndex, loadCompatUpstreams } from './engine/compat.js';
 import { subscriptionMap } from './engine/sourcemap.js';
-import { pickedFor } from './dsh/pick.js';
+import { isPaidCost, safePick } from './dsh/pick.js';
 import { writeEngineConfig } from './engine/config.js';
 import { DshModelError, isDshModelError } from './errors.js';
 import { L } from './i18n.js';
@@ -97,7 +97,9 @@ export async function syncModels(ctx, all, opts = {}) {
         // 组合是自己建的、免费池只有三个：全部显示
         // 只看免费时，没手动勾选过的来源放全部免费模型（默认挑选每家只挑 5 个，会把免费的筛掉）
         const showAll = c.source === 'combo' || c.source === 'free' || (all.config.dshFreeOnly === true && !all.config.dshModels?.[c.source]);
-        const picked = new Set(showAll ? c.models.map((m) => m.id) : pickedFor(c.models.map((m) => ({ id: m.id, name: m.name, rate: m.rate })), all.config.dshModels?.[c.source]));
+        // 默认不放任何计费模型，用户在「选模型」里亲手勾了才放（§14.37）；组合是用户自己建的，照放
+        const showAllSafe = showAll && c.source !== 'combo' ? c.models.filter((m) => !isPaidCost(m.cost)).map((m) => m.id) : c.models.map((m) => m.id);
+        const picked = new Set(showAll ? showAllSafe : safePick(c.models.map((m) => ({ id: m.id, name: m.name, rate: m.rate, cost: m.cost })), all.config.dshModels?.[c.source]));
         // 「只看免费模型」：只放免费的（免费池、免费、本机），计费 / 订阅 / 扣积分的都不放（§14.36）
         const freeOnly = all.config.dshFreeOnly === true;
         const models = c.models.filter((m) => picked.has(m.id) && (!freeOnly || m.cost === 'free' || m.cost === 'local')).map(({ rate: _r, cost: _c, ...m }) => m);

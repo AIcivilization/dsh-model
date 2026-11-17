@@ -15,7 +15,7 @@ import { LOCAL_SERVERS } from '../integrations/local.js'
 import type { CompatUpstream } from '../engine/compat.js'
 import { activeEntries, beijingToday, loadCatalog, refreshCatalog, type Catalog, type CatalogEntry } from './catalog.js'
 import { BALANCE_SOURCES, balanceDropped, fetchPaidBalance } from './balance.js'
-import { FREE_PREFIX, TIERS, cooldownUntil, isQuotaFailure, loadPoolState, needsConfirm, poolCandidates, poolOrder, savePoolState, type Discovery, type Member, type PoolConfig, type PoolSource, type PoolState, type Tier } from './pool.js'
+import { FREE_PREFIX, TIERS, cooldownUntil, freeProof, isQuotaFailure, loadPoolState, needsConfirm, poolCandidates, poolOrder, savePoolState, type Discovery, type Member, type PoolConfig, type PoolSource, type PoolState, type Tier } from './pool.js'
 
 const KEY_IDS = new Set(KEY_PROVIDERS.map((p) => p.id))
 const LOCAL_IDS = new Set<string>(LOCAL_SERVERS.map((s) => s.id))
@@ -99,6 +99,8 @@ export interface FreeOverview {
   pool: { tier: Tier; models: { alias: string; source: string; label: string; model: string; why: string; cycle: string; charges: boolean }[] }[]
   custom: { id: string; label: string; cycle?: string; until?: string }[]
   discoveries: (Discovery & { title: string; url?: string })[]
+  /** 看起来免费、但证明不了的模型（§14.37）：要用户对照官网核对后自己加 */
+  unverified: { source: string; label: string; model: string; alias: string; url?: string }[]
   /** 必须让用户知道的事：充值余额变少了（§14.34） */
   alerts: { id: string; source: string; label: string; from: number; to: number; at: string }[]
   config: PoolConfig
@@ -377,6 +379,22 @@ export class FreePool {
         // 按名字或价格「看起来」免费：要用户自己到官网核对过再加（§14.34）
         return { ...d, title: L(`${d.source} 上新了可能免费的模型 ${d.model}（请到官网确认是免费的再加）`, `${d.source} has a model that may be free: ${d.model} (check the official pricing before adding)`) }
       }),
+      unverified: (() => {
+        const out: FreeOverview['unverified'] = []
+        const inPool = new Set(cands.map((m) => m.alias))
+        for (const [source, cat] of Object.entries(inp.keyCat)) {
+          if (!connected.has(source)) continue
+          const url = entries.find((e) => e.kind === 'api' && e.source === source)?.url ?? KEY_PROVIDERS.find((p) => p.id === source)?.keyUrl
+          for (const m of cat.models) {
+            const alias = `${source}/${m.id}`
+            if (!m.free || inPool.has(alias) || (inp.config.exclude ?? []).includes(alias)) continue
+            if (/image|embed|bge-|rerank|tts|whisper|audio|ocr|asr/i.test(m.id)) continue
+            if (freeProof(source, m, entries, inp.config)) continue
+            out.push({ source, label: labelOf(source), model: m.id, alias, ...(url ? { url } : {}) })
+          }
+        }
+        return out.slice(0, 60)
+      })(),
       alerts: Object.entries(state.spent ?? {}).map(([source, sp]) => ({ id: `spent:${source}:${sp.at}`, source, label: inp.upstreams.find((u) => u.name === source)?.label ?? source, ...sp })),
       config: inp.config,
     }

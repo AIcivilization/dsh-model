@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-17",
+  "updatedAt": "2026-11-18",
   "entries": [
     {
       "id": "modelscope-daily",
@@ -156,10 +156,11 @@
       "amount": "Flash 系列长期免费",
       "amountEn": "Flash models free",
       "charges": false,
-      "models": "-flash(-\\d+)?$",
       "url": "https://open.bigmodel.cn/usercenter/apikeys",
-      "verifiedAt": "2026-11-12",
-      "pool": "pattern"
+      "verifiedAt": "2026-11-17",
+      "pool": "list",
+      "freeModels": [],
+      "note": "官方价格页暂时核实不了哪些模型免费，先不自动放进免费池；在「可能免费、待你核对」里对照官网确认后再加入"
     },
     {
       "id": "spark-lite",
@@ -173,11 +174,10 @@
       "charges": false,
       "models": "lite",
       "url": "https://console.xfyun.cn/services/cbm",
-      "verifiedAt": "2026-11-12",
+      "verifiedAt": "2026-11-17",
       "pool": "list",
-      "freeModels": [
-        "lite"
-      ]
+      "freeModels": [],
+      "note": "官方价格页暂时核实不了哪些模型免费，先不自动放进免费池；在「可能免费、待你核对」里对照官网确认后再加入"
     },
     {
       "id": "qianfan-free",
@@ -191,14 +191,10 @@
       "charges": false,
       "models": "speed|lite",
       "url": "https://console.bce.baidu.com/iam/#/iam/apikey/list",
-      "verifiedAt": "2026-11-12",
+      "verifiedAt": "2026-11-17",
       "pool": "list",
-      "freeModels": [
-        "ernie-speed-128k",
-        "ernie-speed-8k",
-        "ernie-lite-8k",
-        "ernie-tiny-8k"
-      ]
+      "freeModels": [],
+      "note": "官方价格页暂时核实不了哪些模型免费，先不自动放进免费池；在「可能免费、待你核对」里对照官网确认后再加入"
     },
     {
       "id": "qianfan-voucher",
@@ -232,11 +228,10 @@
       "charges": false,
       "models": "lite",
       "url": "https://console.cloud.tencent.com/hunyuan/start",
-      "verifiedAt": "2026-11-12",
+      "verifiedAt": "2026-11-17",
       "pool": "list",
-      "freeModels": [
-        "hunyuan-lite"
-      ]
+      "freeModels": [],
+      "note": "官方价格页暂时核实不了哪些模型免费，先不自动放进免费池；在「可能免费、待你核对」里对照官网确认后再加入"
     },
     {
       "id": "mistral-free",

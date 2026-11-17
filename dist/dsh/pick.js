@@ -57,3 +57,18 @@ export function pickedFor(models, chosen) {
     // 勾选的模型全都下线了：退回默认，免得这个来源整组消失
     return kept.length || !chosen.length ? kept : defaultPick(models);
 }
+/**
+ * 默认放进 dsh 的模型（设计 §14.37）：计费、含计费的一个都不放，除非用户在「选模型」里亲手勾了。
+ * 剩下的（免费、本机、订阅、扣积分）按原来的挑法，免费的在前，每家最多 8 个。
+ */
+export const DEFAULT_PICK_SAFE = 8;
+export const isPaidCost = (cost) => cost === 'paid' || cost === 'mixed';
+export function safePick(models, chosen) {
+    const safeDefault = () => defaultPick(models.filter((m) => !isPaidCost(m.cost)), DEFAULT_PICK_SAFE);
+    if (!chosen)
+        return safeDefault();
+    const have = new Set(models.map((m) => m.id));
+    const kept = chosen.filter((id) => have.has(id));
+    // 勾过的全下线了：退回「不花钱的默认」，不能退回含计费的默认挑选
+    return kept.length || !chosen.length ? kept : safeDefault();
+}

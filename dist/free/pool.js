@@ -57,7 +57,13 @@ function cycleRank(m) {
  * 这个模型能不能证明不花钱（设计 §14.34）。返回证明它的那份额度；证明不了返回 null。
  * 只认目录里写明的证明方式（account / priced / list / pattern），按名字猜的一律不算。
  */
-export function freeProof(sourceId, model, entries, cfg) {
+/** 白名单 / 名字规则多久没重新核实就不算数（§14.37）：各家会改价，过期的宁可不用 */
+export const VERIFY_MAX_DAYS = 90;
+export function stale(e, now = Date.now()) {
+    const t = Date.parse(`${e.verifiedAt}T00:00:00+08:00`);
+    return !Number.isFinite(t) || now - t > VERIFY_MAX_DAYS * 24 * 60 * 60 * 1000;
+}
+export function freeProof(sourceId, model, entries, cfg, now = Date.now()) {
     const mine = entries.filter((e) => e.kind === 'api' && e.source === sourceId && !e.charges);
     for (const e of mine) {
         if (e.models !== undefined && !new RegExp(e.models, 'i').test(model.id))
@@ -65,6 +71,9 @@ export function freeProof(sourceId, model, entries, cfg) {
         if (e.confirm && !(cfg.confirmed ?? []).includes(sourceId))
             continue;
         const how = e.pool ?? 'list';
+        // 靠我们手工登记的（逐个列的、按名字定的），超过 90 天没重新核实就不算（价格会变）
+        if ((how === 'list' || how === 'pattern') && stale(e, now))
+            continue;
         if (how === 'account' || how === 'pattern')
             return e;
         if (how === 'priced' && model.priced)

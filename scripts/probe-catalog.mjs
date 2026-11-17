@@ -55,6 +55,32 @@ for (const e of cat.entries) {
   if (!okay) bad++
   console.log(`${okay ? '✓' : '✗'} ${e.id.padEnd(22)} ${s}  ${e.url}`)
 }
+console.log('\n— 白名单复核（官网价格页）—')
+// 硅基流动：价格页里内嵌了每个模型的 pricing 数组；白名单里的每个模型都必须仍然全部是 0（§14.37）
+{
+  const sf = cat.entries.find((e) => e.id === 'siliconflow-free')
+  if (sf?.freeModels?.length) {
+    try {
+      const html = (await (await fetch('https://siliconflow.cn/pricing', { signal: AbortSignal.timeout(20_000) })).text()).replaceAll('\\"', '"')
+      for (const id of sf.freeModels) {
+        // 只认 "modelName":"<id>" 后面那段的价格（同一个名字在页面里还出现在别处，那里没有价格）
+        const at = html.indexOf(`"modelName":"${id}"`)
+        // 同一个对象里的 "price"（展示价）和 "inputPrice"（输入价）都必须是 0
+        const seg = at < 0 ? '' : html.slice(at, at + 4000)
+        const p1 = /"price":"([^"]*)"/.exec(seg)
+        const p2 = /"inputPrice":"([^"]*)"/.exec(seg)
+        const prices = p1 && p2 ? [Number(p1[1]), Number(p2[1])] : null
+        const free = Array.isArray(prices) && prices.length > 0 && prices.every((x) => x === 0)
+        if (!free) bad++
+        console.log(`${free ? '✓' : '✗'} siliconflow ${id.padEnd(40)} ${prices ? prices.join('/') : '价格页里找不到'}`)
+      }
+    } catch (e) {
+      bad++
+      console.log(`✗ siliconflow 价格页打不开：${e.message}`)
+    }
+  }
+}
+
 console.log('\n— 过期 / 久未核实 —')
 const old = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10)
 for (const e of cat.entries) {

@@ -85,7 +85,8 @@ export function parseModelList(providerId, body) {
             continue;
         const pricing = m.pricing;
         // priced：平台接口自己标了价格为 0（可信，免费池认它）；free：可能免费（含按名字猜的，只用来「发现」）
-        const priced = pricing ? Number(pricing.prompt) === 0 && Number(pricing.completion) === 0 && (Number(pricing.request ?? 0) === 0) : false;
+        // 价格的每一项都必须是 0（输入、输出、按次、图片、联网……）；有一项读不懂或不是 0 就不算（§14.37）
+        const priced = pricing && typeof pricing === 'object' && Object.keys(pricing).length > 0 ? Object.values(pricing).every((v) => v !== null && v !== '' && Number(v) === 0) : false;
         const free = priced || id.endsWith(':free') || Boolean(keyProvider(providerId)?.freeRe?.test(id));
         out.push({ id, ...(free ? { free: true } : {}), ...(priced ? { priced: true } : {}) });
     }

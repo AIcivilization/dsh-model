@@ -390,7 +390,12 @@ window.__ModuleLoader__.load({
         return () => { alive = false }
       }, [source.id])
       if (!data) return h('div', { style: { ...S.meta, paddingLeft: 46, marginTop: 8 } }, msg || L('加载中…', 'Loading…'))
-      const flip = (id) => setSel((x) => { const n = new Set(x); n.has(id) ? n.delete(id) : n.add(id); return n })
+      // 勾一个收费模型：先说清楚会花钱，用户确认了才勾（§14.37）
+      const flip = (id) => {
+        const m = data.models.find((x) => x.id === id)
+        if (m && m.paid && !sel.has(id) && !window.confirm(L(`「${m.name}」是收费模型：在 dsh 里用它，每次请求都会花钱（有赠送额度的先扣赠送额度）。确定要放进 dsh 的模型列表吗？`, `"${m.name}" is a paid model: every request through it in dsh costs money (gift credit first where the provider does that). Put it in the dsh model list?`))) return
+        setSel((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n })
+      }
       const save = async (models) => {
         setSaving(true)
         setMsg('')
@@ -405,12 +410,14 @@ window.__ModuleLoader__.load({
       }
       const shown = data.models.filter((m) => !q || `${m.name} ${m.id}`.toLowerCase().includes(q.toLowerCase()))
       return h('div', { style: { marginTop: 10, marginLeft: 46, padding: 10, border: `1px solid ${C.border}`, borderRadius: 8 } },
+        data.models.some((m) => m.paid) ? h('div', { style: { fontSize: 12, color: C.warn, marginBottom: 6 } }, L('默认只勾不花钱的模型；标「收费」的要你亲手勾，勾的时候会再确认一次。', 'Only models that cost nothing are checked by default; ones marked "Paid" have to be checked by hand, with a confirmation.')) : null,
         h('div', { style: { ...S.line, marginBottom: 6, flexWrap: 'wrap' } },
           h('span', { style: { ...S.meta, ...S.grow } }, L(`勾选的模型显示在 dsh 的模型列表里（已选 ${sel.size} / ${data.models.length}）。其他软件经统一端点仍可用全部模型。`, `Checked models appear in dsh's model list (${sel.size} / ${data.models.length} selected). Other tools can still use every model through the endpoint.`)),
           data.models.length > 10 ? h('input', { style: { ...S.input, width: 140 }, placeholder: L('搜索', 'Search'), value: q, onChange: (e) => setQ(e.target.value) }) : null),
         h('div', { style: { maxHeight: 300, overflowY: 'auto' } }, shown.map((m) => h('label', { key: m.id, style: { ...S.line, minHeight: 26, fontSize: 13, cursor: 'pointer' } },
           h('input', { type: 'checkbox', checked: sel.has(m.id), onChange: () => flip(m.id) }),
           h('span', { style: S.grow }, m.name),
+          m.paid ? h('span', { style: { fontSize: 11, color: C.err } }, L('收费', 'Paid')) : null,
           m.recommended ? h('span', { style: { fontSize: 11, color: C.accent } }, L('推荐', 'Suggested')) : null,
           tests[m.id] ? h('span', { style: { fontSize: 11, color: tests[m.id].running ? C.sub : tests[m.id].ok ? C.ok : C.err, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: tests[m.id].message || tests[m.id].reply || '' },
             tests[m.id].running ? L('测试中…', 'Testing…') : tests[m.id].ok ? L(`可用 · ${(tests[m.id].ms / 1000).toFixed(1)} 秒${tests[m.id].reply ? ` · ${tests[m.id].reply}` : ''}`, `OK · ${(tests[m.id].ms / 1000).toFixed(1)}s${tests[m.id].reply ? ` · ${tests[m.id].reply}` : ''}`) : `${tests[m.id].retryAt ? L(`约 ${dur(tests[m.id].retryAt) || '片刻'}后恢复（${hhmm(tests[m.id].retryAt)}）· `, `back in about ${dur(tests[m.id].retryAt) || 'a moment'} (${hhmm(tests[m.id].retryAt)}) · `) : ''}${tests[m.id].advice || L('不可用', 'Not working')}`) : null,
@@ -420,7 +427,8 @@ window.__ModuleLoader__.load({
         h('div', { style: { ...S.line, marginTop: 8, flexWrap: 'wrap' } },
           h('button', { type: 'button', style: S.btnPrimary, disabled: saving, onClick: () => save([...sel]) }, saving ? L('保存中…', 'Saving…') : L('保存', 'Save')),
           h('button', { type: 'button', style: S.btn, disabled: saving, onClick: () => save(null) }, L('恢复推荐', 'Use suggested')),
-          h('button', { type: 'button', style: S.btn, onClick: () => setSel(new Set(data.models.map((m) => m.id))) }, L('全选', 'All')),
+          // 「全选」只选不花钱的；收费的要一个个亲手勾
+          h('button', { type: 'button', style: S.btn, onClick: () => setSel(new Set(data.models.filter((m) => !m.paid).map((m) => m.id))) }, data.models.some((m) => m.paid) ? L('全选免费的', 'All free ones') : L('全选', 'All')),
           h('button', { type: 'button', style: S.btn, onClick: () => setSel(new Set()) }, L('全不选', 'None')),
           h('span', { style: S.grow }),
           h('button', { type: 'button', style: S.btn, onClick: () => onClose(false) }, L('取消', 'Cancel'))))
@@ -831,6 +839,10 @@ window.__ModuleLoader__.load({
           listOpen ? h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: 0, color: C.sub }, onClick: () => { const v = !showAll; setShowAll(v); try { window.localStorage.setItem(FREE_SHOW_ALL, v ? '1' : '0') } catch { /* 无痕 */ } } }, showAll ? L('▾ 收起已在签的', '▾ Hide check-ins already running') : L('▸ 也显示已在签的', '▸ Also show check-ins already running')) : null,
           h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: 0, color: C.sub }, onClick: () => setShowPool(!showPool) }, showPool ? L('▾ 收起免费池顺序', '▾ Hide pool order') : L('▸ 看免费池顺序', '▸ Show pool order')),
           h('span', { style: { ...S.meta, ...S.grow, textAlign: 'right' } }, L(`目录 ${data.catalogUpdatedAt}`, `Catalog ${data.catalogUpdatedAt}`))),
+        (data.unverified || []).length ? h(UnverifiedList, { items: data.unverified, busy, onAdd: (it) => {
+          if (!window.confirm(L(`你在官网价格页确认过「${it.label} · ${it.model}」是免费的吗？\n\n确认后它会进免费池，模型名也写「免费」。如果它其实收费，用它会花钱。`, `Did you confirm on the official pricing page that "${it.label} · ${it.model}" is free?\n\nIt then joins the free pool and is labelled free. If it is actually paid, using it costs money.`))) return
+          void act(it.alias, 'POST', '/free/model', { alias: it.alias, on: true })
+        } }) : null,
         showPool ? h('div', { style: { ...S.card, marginTop: 8, padding: '8px 14px' } },
           h('div', { style: { ...S.meta, marginBottom: 4 } }, L('按这个顺序试：前面的限流或用完了，就换下一个。每一行写着它为什么算免费。', 'Tried in this order; when one is rate limited or used up the next takes over. Each row says why it counts as free.')),
           data.pool.map((p) => h('div', { key: p.tier, style: { padding: '4px 0' } },
@@ -927,6 +939,19 @@ window.__ModuleLoader__.load({
               h('input', { type: 'checkbox', checked: Boolean(info.freeOnly), onChange: (e) => { const on = e.target.checked; api('POST', '/dsh/free-only', { on, model }).then(setInfo, () => {}) } }),
               L('dsh 的模型列表里只放免费模型', 'Only free models in the dsh model list')),
             h('button', { type: 'button', style: S.btn, onClick: () => setOpen(false) }, L('关闭', 'Close')))) : null)
+    }
+
+    /** 看起来免费、但我们证明不了的模型：给官网链接，用户核对后自己加（§14.37） */
+    function UnverifiedList({ items, busy, onAdd }) {
+      const [open, setOpen] = useState(false)
+      return h('div', { style: { ...S.card, padding: '8px 14px', marginTop: 8 } },
+        h('button', { type: 'button', 'aria-expanded': open, onClick: () => setOpen(!open), style: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, color: C.text, textAlign: 'left', width: '100%' } },
+          `${open ? '▾' : '▸'} `, h('b', null, L(`可能免费、待你核对（${items.length} 个）`, `May be free, check before adding (${items.length})`)),
+          h('span', { style: { color: C.sub, marginLeft: 6 } }, L('名字或价格看着像免费，但我们找不到官方依据，所以没放进免费池', 'They look free by name or price, but we found no official proof, so they are not in the pool'))),
+        open ? items.map((it) => h('div', { key: it.alias, style: { ...S.line, minHeight: 24, fontSize: 12 } },
+          h('span', { style: S.grow }, h('b', { style: { fontWeight: 500 } }, it.label), ` · ${it.model}`),
+          it.url ? h('a', { href: it.url, target: '_blank', rel: 'noopener noreferrer', style: { ...S.btn, padding: '1px 6px', textDecoration: 'none' } }, L('官网 ↗', 'Site ↗')) : null,
+          h('button', { type: 'button', style: { ...S.btn, padding: '1px 6px' }, disabled: busy === it.alias, onClick: () => onAdd(it) }, L('核对过，是免费的', 'Checked, it is free')))) : null)
     }
 
     /** 手动添加一个 OpenAI 兼容来源（可以勾成免费额度，进免费池） */
