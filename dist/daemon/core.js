@@ -51,6 +51,7 @@ import { Stats } from './stats.js';
 import { USAGE_UNSUPPORTED, probeEngineSource, fetchEngineUsage, fetchWorkbuddyUsage, usageFilePath } from './usage.js';
 import { writeJson } from '../util/fs.js';
 import { comboId, normalizeCombo, runCombo } from '../combo.js';
+import { compatModelIndex } from '../engine/compat.js';
 import { FreePool, parseCap, tierOf } from '../free/service.js';
 import { loadCompatUpstreams } from '../engine/compat.js';
 import { customId, isCustomId } from '../integrations/apikeys.js';
@@ -87,6 +88,8 @@ export class Daemon {
     usageCache = new Map();
     usageInflight;
     free;
+    /** 免费池和组合最近的请求：试了谁、谁回答的（设计 §14.35，只在内存里，不记对话内容） */
+    routes = [];
     constructor(ctx) {
         this.ctx = ctx;
         this.stats = new Stats(Stats.path(ctx.paths.home), ctx.owner);
@@ -1191,7 +1194,32 @@ export class Daemon {
             // 原样
         }
         const c = classify({ status: res.status, ...(code ? { code } : {}), message });
-        return { ok: false, ms, status: res.status, advice: c.advice, message };
+        const retryAt = c.kind === 'rate' || c.kind === 'quota' ? await this.retryAtOf(model, res.headers.get('retry-after')) : undefined;
+        return { ok: false, ms, status: res.status, advice: c.advice, message, ...(retryAt ? { retryAt } : {}) };
+    }
+    /**
+     * 限流 / 额度用完的模型什么时候能再用（§14.35「说清楚」）：上游的 Retry-After → 免费池对这家的冷却 →
+     * 这家套餐用量里用满了的窗口最晚的重置时间。都不知道就不说，不猜。
+     */
+    async retryAtOf(model, retryAfter) {
+        if (retryAfter) {
+            const n = Number(retryAfter);
+            if (Number.isFinite(n) && n > 0)
+                return new Date(Date.now() + n * 1000).toISOString();
+            const t = Date.parse(retryAfter);
+            if (Number.isFinite(t) && t > Date.now())
+                return new Date(t).toISOString();
+        }
+        const source = model.includes('/') ? model.split('/')[0] : undefined;
+        if (source) {
+            const cd = (await this.free.loadState()).cooldown[source];
+            if (cd && Date.parse(cd) > Date.now())
+                return cd;
+        }
+        // 订阅模型的名字不带来源前缀：看所有已登录来源里用满了的窗口
+        const candidates = source ? [this.usageCache.get(source)].filter(Boolean) : [...this.usageCache.values()];
+        const resets = candidates.flatMap((u) => (u.windows ?? []).filter((w) => (w.usedPercent ?? 0) >= 100 && w.resetAt).map((w) => w.resetAt));
+        return resets.length ? resets.sort().pop() : undefined;
     }
     /** 这个来源的全部模型，以及哪些显示在 dsh 里 */
     async sourceModels(id) {
@@ -1273,15 +1301,65 @@ export class Daemon {
     async runCombo(id, raw, res, signal, log) {
         const all = await loadAll(this.ctx);
         const tier = tierOf(id);
+        const onDone = (r) => this.recordRoute(tier ? `free/${tier}` : `combo/${id}`, r);
         if (tier) {
-            await this.free.run(tier, await this.poolInputs(), { port: all.config.port, key: dshKey(all.keys), raw, res, signal, ...(log ? { log } : {}) });
+            await this.free.run(tier, await this.poolInputs(), { port: all.config.port, key: dshKey(all.keys), raw, res, signal, ...(log ? { log } : {}), onDone });
             return true;
         }
         const combo = all.config.combos?.find((c) => c.id === id);
         if (!combo)
             return false;
-        await runCombo({ port: all.config.port, key: dshKey(all.keys), combo, raw, res, signal, ...(log ? { log } : {}) });
+        await runCombo({ port: all.config.port, key: dshKey(all.keys), combo, raw, res, signal, ...(log ? { log } : {}), onDone });
         return true;
+    }
+    // —— 看得见：每次请求谁回答的、最近 24 小时花在哪（设计 §14.35） ——
+    recordRoute(route, r) {
+        this.routes.push({ at: new Date().toISOString(), route, ...r });
+        if (this.routes.length > 200)
+            this.routes = this.routes.slice(-200);
+    }
+    /** 最近的免费池 / 组合请求（新的在前） */
+    recentRoutes(limit = 50) {
+        return this.routes.slice(-limit).reverse();
+    }
+    /**
+     * 最近 24 小时的账单：按花费类别（免费 / 扣积分 / 计费 / 订阅 / 本机）合计请求数和 token；
+     * 计费的逐个模型列出来。free/、combo/ 是外壳（里面真正调用的模型会单独记一笔），不重复算。
+     * model 给了就顺便回答这个模型的花费类别和用量（输入框读数用）。
+     */
+    async spend(model) {
+        const index = compatModelIndex(await loadCompatUpstreams(this.ctx));
+        const costOf = (alias) => index.get(alias)?.cost ?? 'subscription';
+        const snap = this.stats.snapshot();
+        const empty = () => ({ requests: 0, tokens: 0 });
+        const classes = { free: empty(), credits: empty(), paid: empty(), local: empty(), mixed: empty(), subscription: empty() };
+        const paid = [];
+        for (const [alias, st] of Object.entries(snap.byModel)) {
+            if (alias.startsWith('free/') || alias.startsWith('combo/'))
+                continue;
+            const c = costOf(alias);
+            const tokens = st.d1.inputTokens + st.d1.outputTokens;
+            classes[c].requests += st.d1.requests;
+            classes[c].tokens += tokens;
+            if (c === 'paid' || c === 'mixed')
+                paid.push({ model: alias, requests: st.d1.requests, tokens });
+        }
+        paid.sort((a, b) => b.tokens - a.tokens);
+        let one;
+        if (model) {
+            const st = snap.byModel[model]?.d1;
+            const last = this.routes.slice().reverse().find((r) => r.route === model);
+            const m = index.get(model);
+            one = {
+                id: model,
+                cost: costOf(model),
+                ...(m?.dshName ? { name: m.dshName } : {}),
+                requests: st?.requests ?? 0,
+                tokens: st ? st.inputTokens + st.outputTokens : 0,
+                ...(last ? { last: { ...(last.answered ? { answered: last.answered } : {}), at: last.at, tried: last.tried.length } } : {}),
+            };
+        }
+        return { window: '24h', classes, paid, ...(one ? { model: one } : {}) };
     }
     // —— 免费额度（设计 §14.25–14.27） ——
     /** 免费池要的输入：配置、将要写进引擎的上游、secrets */
@@ -1488,6 +1566,10 @@ export class Daemon {
             }
             if (method === 'GET' && path === '/free')
                 return ok(await this.freeOverview());
+            if (method === 'GET' && path === '/spend')
+                return ok(await this.spend(query.get('model') ?? undefined));
+            if (method === 'GET' && path === '/routes')
+                return ok(this.recentRoutes(Number(query.get('limit')) || 50));
             if (method === 'POST' && path === '/free/discover')
                 return ok({ found: await this.discoverFree(true), ...(await this.freeOverview()) });
             if (method === 'POST' && path === '/free/optin')

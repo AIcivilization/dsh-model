@@ -413,7 +413,7 @@ window.__ModuleLoader__.load({
           h('span', { style: S.grow }, m.name),
           m.recommended ? h('span', { style: { fontSize: 11, color: C.accent } }, L('推荐', 'Suggested')) : null,
           tests[m.id] ? h('span', { style: { fontSize: 11, color: tests[m.id].running ? C.sub : tests[m.id].ok ? C.ok : C.err, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: tests[m.id].message || tests[m.id].reply || '' },
-            tests[m.id].running ? L('测试中…', 'Testing…') : tests[m.id].ok ? L(`可用 · ${(tests[m.id].ms / 1000).toFixed(1)} 秒${tests[m.id].reply ? ` · ${tests[m.id].reply}` : ''}`, `OK · ${(tests[m.id].ms / 1000).toFixed(1)}s${tests[m.id].reply ? ` · ${tests[m.id].reply}` : ''}`) : (tests[m.id].advice || L('不可用', 'Not working'))) : null,
+            tests[m.id].running ? L('测试中…', 'Testing…') : tests[m.id].ok ? L(`可用 · ${(tests[m.id].ms / 1000).toFixed(1)} 秒${tests[m.id].reply ? ` · ${tests[m.id].reply}` : ''}`, `OK · ${(tests[m.id].ms / 1000).toFixed(1)}s${tests[m.id].reply ? ` · ${tests[m.id].reply}` : ''}`) : `${tests[m.id].retryAt ? L(`约 ${dur(tests[m.id].retryAt) || '片刻'}后恢复（${hhmm(tests[m.id].retryAt)}）· `, `back in about ${dur(tests[m.id].retryAt) || 'a moment'} (${hhmm(tests[m.id].retryAt)}) · `) : ''}${tests[m.id].advice || L('不可用', 'Not working')}`) : null,
           tests[m.id]?.ok && tests[m.id].note ? h('span', { style: { fontSize: 11, color: C.warn } }, tests[m.id].note) : null,
           h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, disabled: tests[m.id]?.running, onClick: (e) => { e.preventDefault(); void test(m.id) } }, L('测一下', 'Test'))))),
         msg ? h('div', { style: { fontSize: 12, color: C.err, marginTop: 6 } }, msg) : null,
@@ -707,6 +707,10 @@ window.__ModuleLoader__.load({
       const [listOpen, setListOpenRaw] = useState(() => { try { return window.localStorage.getItem(FREE_LIST_OPEN) === '1' } catch { return false } })
       const setListOpen = (v) => { setListOpenRaw(v); try { window.localStorage.setItem(FREE_LIST_OPEN, v ? '1' : '0') } catch { /* 无痕 */ } }
       // 后台服务比页面旧（还没有 /free）：说人话，并且隔一会儿自己再试（后台会自己切到新版，设计 §14.29）
+      const [spend, setSpend] = useState(null)
+      const [routes, setRoutes] = useState([])
+      const loadSpend = useCallback(() => { api('GET', '/spend').then(setSpend, () => {}); api('GET', '/routes').then((r) => setRoutes((r || []).filter((x) => String(x.route).startsWith('free/'))), () => {}) }, [])
+      useEffect(() => { loadSpend(); const t = setInterval(loadSpend, 60_000); return () => clearInterval(t) }, [loadSpend])
       const load = useCallback(() => api('GET', '/free').then((d) => { setData(d); setErr('') }, (e) => setErr(e.code === 'not_found' ? L('后台服务还是旧版本，还不认识「免费额度」：看页面顶部的提示。它更新好后这里会自动出现', 'The background service is an older version that does not know "Free quota" yet: see the notice at the top of the page. This card appears by itself once it is updated') : e.message)), [])
       useEffect(() => { if (!err || data) return; const t = setInterval(() => void load(), 30_000); return () => clearInterval(t) }, [err, data, load])
       useEffect(() => { void load() }, [load])
@@ -792,7 +796,9 @@ window.__ModuleLoader__.load({
           sum.poolModels.auto ? h('div', { style: { ...S.line, marginTop: 4 } },
             h('span', { style: { ...S.meta, ...S.grow } }, L('在 dsh 里：模型列表 → ', 'In dsh: model list → '), h('b', { style: { color: C.accent } }, L('「🆓 免费池」分组', 'the "🆓 Free pool" group')), L('；其他软件的模型名：', '; model names elsewhere: '), h('span', { style: S.mono }, 'free/auto · free/smart · free/fast')),
             h(CopyButton, { get: 'free/auto', label: L('复制 free/auto', 'Copy free/auto') })) : h('div', { style: { fontSize: 12, color: C.warn, marginTop: 4, lineHeight: 1.6 } }, L('免费池还是空的，所以 dsh 的模型列表里还没有 free/auto。领一份官方免费额度、填上 key 就会出现。最省事的是智谱 GLM（Flash 系列免费）、硅基流动、魔搭 ModelScope，点开下面的「各家免费额度」，在「还没领」的里点「去领」再「填 key」。WorkBuddy、Trae 这类积分只能在它们自己的软件里用，不进免费池。', 'The free pool is empty, so free/auto is not in the dsh model list yet. Claim an official free quota and add its key and it appears. The quickest are Zhipu GLM (Flash models are free), SiliconFlow and ModelScope: open "Free quotas by provider" below and use "Claim" then "Add key" on one not claimed yet. Credits from WorkBuddy, Trae and the like only work in their own apps, so they never join the pool.'))),
+        spend ? h(SpendLine, { spend }) : null,
         err ? h('div', { style: { fontSize: 12, color: C.err, margin: '0 0 8px' } }, err) : null,
+        expanded && routes.length ? h(RouteList, { routes: routes.slice(0, 8), title: L('最近的免费池请求（谁回答的）', 'Recent free pool requests (who answered)') }) : null,
         expanded ? h('div', null,
         data.discoveries.length ? h('div', { style: { ...S.card, marginBottom: 10 } }, data.discoveries.map((d, i) => h('div', { key: d.id, style: i ? S.row : S.rowFirst },
           h('div', { style: S.line },
@@ -823,14 +829,94 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: 0, color: C.sub }, onClick: () => setShowPool(!showPool) }, showPool ? L('▾ 收起免费池顺序', '▾ Hide pool order') : L('▸ 看免费池顺序', '▸ Show pool order')),
           h('span', { style: { ...S.meta, ...S.grow, textAlign: 'right' } }, L(`目录 ${data.catalogUpdatedAt}`, `Catalog ${data.catalogUpdatedAt}`))),
         showPool ? h('div', { style: { ...S.card, marginTop: 8, padding: '8px 14px' } },
+          h('div', { style: { ...S.meta, marginBottom: 4 } }, L('按这个顺序试：前面的限流或用完了，就换下一个。每一行写着它为什么算免费。', 'Tried in this order; when one is rate limited or used up the next takes over. Each row says why it counts as free.')),
           data.pool.map((p) => h('div', { key: p.tier, style: { padding: '4px 0' } },
-            h('div', { style: { ...S.meta, ...S.mono } }, `free/${p.tier}`),
-            p.models.length ? h('div', { style: { fontSize: 12, lineHeight: 1.9 } }, p.models.map((m, j) => h('span', { key: m.alias, style: { whiteSpace: 'nowrap', marginRight: 6 } },
-              `${j + 1}. ${m.alias}`,
-              h('span', { style: { color: C.faint } }, ` (${(CYCLE_LABEL[m.cycle] || (() => m.cycle))()}${m.charges ? L('，扣钱', ', charges') : ''})`),
-              h('button', { type: 'button', title: L('移出免费池', 'Remove from the pool'), style: { ...S.btn, border: 'none', padding: '0 4px', color: C.faint }, onClick: () => void act(m.alias, 'POST', '/free/model', { alias: m.alias, on: false }) }, '✕')))) : h('div', { style: S.meta }, L('（没有）', '(none)')))),
+            h('div', { style: { fontSize: 12, fontWeight: 600 } }, { auto: L('free/auto（全部，强的在前）', 'free/auto (all, stronger first)'), smart: L('free/smart（只用大模型）', 'free/smart (large models only)'), fast: L('free/fast（只用小而快的）', 'free/fast (small and fast only)') }[p.tier] || `free/${p.tier}`),
+            p.models.length ? p.models.map((m, j) => h('div', { key: m.alias, style: { ...S.line, minHeight: 22, fontSize: 12 } },
+              h('span', { style: { color: C.faint, width: 18 } }, `${j + 1}.`),
+              h('span', { style: S.grow },
+                h('b', { style: { fontWeight: 500 } }, m.label || m.source), ` · ${m.model || m.alias}`,
+                h('span', { style: { color: C.sub } }, `　${m.why || ''}（${(CYCLE_LABEL[m.cycle] || (() => m.cycle))()}）`),
+                m.charges ? h('span', { style: { color: C.warn } }, L('　会扣钱，有上限', '　charges, capped')) : null),
+              h('button', { type: 'button', title: L('移出免费池', 'Remove from the pool'), style: { ...S.btn, border: 'none', padding: '0 4px', color: C.faint }, onClick: () => void act(m.alias, 'POST', '/free/model', { alias: m.alias, on: false }) }, '✕'))) : h('div', { style: S.meta }, L('（没有）', '(none)')))),
           excluded.length ? h('div', { style: { ...S.meta, marginTop: 6 } }, L('移出的：', 'Removed: '), excluded.map((a) => h('span', { key: a, style: { marginRight: 8 } }, a, h('button', { type: 'button', style: { ...S.btn, border: 'none', padding: '0 4px', color: C.accent }, onClick: () => void act(a, 'POST', '/free/model', { alias: a, on: true }) }, L('放回', 'Restore'))))) : null) : null) : null,
         adding ? h(CustomSourceDialog, { onClose: (saved) => { setAdding(false); if (saved) { void load(); reload() } } }) : null)
+    }
+
+    /** 模型 id → 给人看的「来源 · 模型」：siliconflow/Qwen/Qwen3-8B → siliconflow · Qwen/Qwen3-8B */
+    const prettyModel = (id) => { const i = String(id || '').indexOf('/'); return i > 0 ? `${id.slice(0, i)} · ${id.slice(i + 1)}` : String(id || '') }
+    const fmtMs = (ms) => (ms == null ? '' : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
+    const COST_LABEL = {
+      free: () => L('免费', 'free'), local: () => L('本机', 'local'), credits: () => L('扣积分', 'credits'),
+      subscription: () => L('订阅额度', 'subscription'), paid: () => L('计费', 'paid'), mixed: () => L('含计费', 'includes paid'),
+    }
+
+    /** 最近 24 小时花在哪：按花费类别；计费的不为 0 时标红并列出模型（§14.35） */
+    function SpendLine({ spend }) {
+      const c = spend.classes || {}
+      const order = ['free', 'local', 'credits', 'subscription', 'paid', 'mixed']
+      const parts = order.filter((k) => c[k] && c[k].requests).map((k) => h('span', { key: k, style: { marginRight: 10, color: k === 'paid' || k === 'mixed' ? C.err : C.text } }, `${COST_LABEL[k]()} ${c[k].requests} ${L('次', 'req')}${c[k].tokens ? ` · ${fmtTokens(c[k].tokens)} token` : ''}`))
+      return h('div', { style: { fontSize: 12, margin: '0 0 10px', lineHeight: 1.8 } },
+        h('span', { style: { color: C.sub, marginRight: 8 } }, L('最近 24 小时：', 'Last 24 hours: ')),
+        parts.length ? parts : h('span', { style: { color: C.sub } }, L('还没有请求', 'no requests yet')),
+        (spend.paid || []).length ? h('div', { style: { color: C.err } }, L('花钱的：', 'Paid: '), spend.paid.slice(0, 5).map((p) => `${prettyModel(p.model)} ${p.requests} ${L('次', 'req')}`).join('、')) : h('div', { style: { color: C.ok } }, L('没有花钱的请求', 'No paid requests')))
+    }
+
+    /** 免费池 / 组合最近的请求：试了谁、为什么换、最后谁回答的、首字时间 */
+    function RouteList({ routes, title }) {
+      const [openIdx, setOpenIdx] = useState(-1)
+      return h('div', { style: { ...S.card, padding: '8px 14px', marginBottom: 10 } },
+        h('div', { style: { ...S.meta, marginBottom: 4 } }, title),
+        routes.map((r, i) => h('div', { key: `${r.at}-${i}`, style: { fontSize: 12, lineHeight: 1.8, borderTop: i ? `1px solid ${C.border}` : 'none' } },
+          h('button', { type: 'button', onClick: () => setOpenIdx(openIdx === i ? -1 : i), style: { background: 'none', border: 'none', padding: 0, cursor: r.tried.length ? 'pointer' : 'default', textAlign: 'left', width: '100%', color: C.text, fontSize: 12 } },
+            h('span', { style: { color: C.faint, marginRight: 8 } }, ago(r.at)),
+            h('span', { style: { ...S.mono, marginRight: 8 } }, r.route),
+            r.answered ? h('span', { style: { color: C.ok } }, `✓ ${prettyModel(r.answered)}`) : h('span', { style: { color: C.err } }, L('✗ 都失败了', '✗ all failed')),
+            r.firstByteMs != null ? h('span', { style: { color: C.sub, marginLeft: 8 } }, L(`首字 ${fmtMs(r.firstByteMs)}`, `first byte ${fmtMs(r.firstByteMs)}`)) : null,
+            r.tried.length ? h('span', { style: { color: C.warn, marginLeft: 8 } }, `${openIdx === i ? '▾' : '▸'} ${L(`换过 ${r.tried.length} 次`, `${r.tried.length} switch${r.tried.length > 1 ? 'es' : ''}`)}`) : null),
+          openIdx === i ? r.tried.map((t, j) => h('div', { key: j, style: { color: C.sub, paddingLeft: 16 } }, `${j + 1}. ${prettyModel(t.model)}：HTTP ${t.status} ${t.reason || ''}`)) : null)))
+    }
+
+    /**
+     * 输入框旁边的读数（§14.35）：选中 dsh-model 的模型时显示它花不花钱、最近 24 小时用了多少；
+     * 免费池还显示上一次是谁回答的。点开是 24 小时账单和最近的免费池请求。
+     * dsh 给插槽一个 useProjection('modelSelection')：next（刚切换、还没发）优先于 lastUsed。
+     */
+    function ComposerSpend(props) {
+      const projection = props.useProjection ? props.useProjection('modelSelection') : undefined
+      const sel = projection ? (projection.next || projection.lastUsed) : undefined
+      const provider = sel && typeof sel.provider === 'string' ? sel.provider : ''
+      const model = sel ? String(sel.model || sel.modelId || sel.id || '') : ''
+      const mine = provider.startsWith('dsh-model')
+      const [info, setInfo] = useState(null)
+      const [open, setOpen] = useState(false)
+      const [routes, setRoutes] = useState([])
+      useEffect(() => {
+        if (!mine || !model) return undefined
+        let stop = false
+        const tick = () => api('GET', `/spend?model=${encodeURIComponent(model)}`).then((r) => { if (!stop) setInfo(r) }, () => {})
+        void tick()
+        const t = setInterval(tick, 30_000)
+        return () => { stop = true; clearInterval(t) }
+      }, [mine, model])
+      useEffect(() => { if (open) api('GET', '/routes').then((r) => setRoutes(r || []), () => {}) }, [open])
+      if (!mine || !model || !info || !info.model) return null
+      const m = info.model
+      const pool = model.startsWith('free/')
+      const color = m.cost === 'paid' || m.cost === 'mixed' ? C.err : m.cost === 'free' || m.cost === 'local' ? C.ok : C.sub
+      const text = pool
+        ? `🆓 ${m.last && m.last.answered ? L(`上次：${prettyModel(m.last.answered)}`, `last: ${prettyModel(m.last.answered)}`) : L('免费池', 'Free pool')}`
+        : `${COST_LABEL[m.cost] ? COST_LABEL[m.cost]() : m.cost} · ${L(`24 小时 ${m.requests} 次`, `${m.requests} in 24h`)}`
+      return h('span', { style: { position: 'relative', display: 'inline-flex' } },
+        h('button', { type: 'button', title: L('dsh-model：这个模型花不花钱、用了多少', 'dsh-model: what this model costs and how much it was used'), onClick: () => setOpen(!open), style: { fontSize: 12, padding: '2px 8px', borderRadius: 999, border: `1px solid ${color}`, background: 'transparent', color, cursor: 'pointer', whiteSpace: 'nowrap' } }, text),
+        open ? h('div', { style: { position: 'absolute', bottom: '120%', right: 0, zIndex: 50, width: 360, background: C.base, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', boxShadow: 'var(--dsw-elevation-soft, 0 8px 30px rgba(0,0,0,.2))' } },
+          h('div', { style: { fontSize: 13, fontWeight: 600, marginBottom: 4 } }, m.name || prettyModel(m.id)),
+          h('div', { style: { fontSize: 12, color, marginBottom: 6 } }, pool
+            ? L('免费池：只用能证明不花钱的模型，按顺序试，一家用完换下一家。', 'Free pool: only models proven free, tried in order; when one runs out the next takes over.')
+            : { free: L('免费：不会扣钱。', 'Free: no charge.'), local: L('本机模型，不花钱。', 'Local model, no charge.'), credits: L('扣这个账号的积分（按倍率），不花真钱。', 'Uses account credits (by rate), no real money.'), subscription: L('用订阅套餐的额度，不另外花钱。', 'Uses your subscription quota.'), paid: L('计费：每次请求都会花钱（按量付费）。', 'Paid: every request costs money (pay as you go).'), mixed: L('含计费：里面有收费的来源，请求可能落到那里。', 'Includes paid sources; a request may land there.') }[m.cost] || ''),
+          h(SpendLine, { spend: info }),
+          routes.filter((r) => !pool || r.route === model).length ? h(RouteList, { routes: routes.filter((r) => !pool || r.route === model).slice(0, 5), title: L('最近的免费池 / 组合请求', 'Recent free pool / combo requests') }) : null,
+          h('div', { style: { ...S.line, justifyContent: 'flex-end' } }, h('button', { type: 'button', style: S.btn, onClick: () => setOpen(false) }, L('关闭', 'Close')))) : null)
     }
 
     /** 手动添加一个 OpenAI 兼容来源（可以勾成免费额度，进免费池） */
@@ -1777,6 +1863,11 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dsh-model-checkin' }, CheckinNotice))
       } catch (error) {
         console.warn('[dsh-model] 签到提示注册失败', error)
+      }
+      try {
+        ctx.slots.inject('conversation.input.right', () => ctx.slots.register({ name: 'conversation.input.right', id: 'dsh-model-composer-spend', order: 5 }, ComposerSpend))
+      } catch (error) {
+        console.warn('[dsh-model] 输入框读数注册失败', error)
       }
       try {
         ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dsh-model-free-spent' }, FreeSpentNotice))

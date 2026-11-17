@@ -99,6 +99,14 @@ export class FreePool {
             res: req.res,
             signal: req.signal,
             ...(req.log ? { log: req.log } : {}),
+            ...(req.onDone ? { onDone: req.onDone } : {}),
+            failHint: () => {
+                const now = Date.now();
+                const next = Object.values(state.cooldown).filter((t) => Date.parse(t) > now).sort()[0];
+                return next
+                    ? L(`免费池里的来源都在冷却，最早 ${new Date(next).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}（北京时间）恢复。现在要用，可以换一个计费或订阅的模型；也可以在 dsh-model 设置页「免费额度」里再领一份`, `Every source in the free pool is cooling down; the first is back at ${new Date(next).toISOString()}. To continue now, pick a paid or subscription model, or claim another quota under "Free quota" in the dsh-model settings`)
+                    : L('在 dsh-model 设置页「免费额度」里能看到每一家的状态和失败原因', 'See each source and why it failed under "Free quota" in the dsh-model settings');
+            },
             onFailure: (alias, status, text) => {
                 const m = byAlias.get(alias);
                 if (!m || !isQuotaFailure(status, text))
@@ -286,8 +294,21 @@ export class FreePool {
         views.sort((a, b) => rank[a.status] - rank[b.status] || Number(a.charges) - Number(b.charges) || (b.cny ?? 0) - (a.cny ?? 0));
         const api = views.filter((v) => v.kind === 'api');
         const ck = views.filter((v) => v.kind === 'checkin');
-        const pool = TIERS.map((tier) => ({ tier, models: poolOrder(cands, tier, state).map((m) => ({ alias: m.alias, source: m.source, cycle: m.cycle, charges: m.charges })) }));
         const byId = new Map(entries.map((e) => [e.id, e]));
+        const labelOf = (source) => inp.upstreams.find((u) => u.name === source)?.label ?? source;
+        const whyOf = (m) => {
+            if (m.cycle === 'local')
+                return L('本机模型', 'Local model');
+            const e = m.entryId ? byId.get(m.entryId) : undefined;
+            if (e)
+                return m.charges ? L(`${localized(e).name}（会扣钱，你设了上限）`, `${localized(e).name} (charges; you set a cap)`) : localized(e).name;
+            if (isCustomId(m.source))
+                return L('你标成免费额度的来源', 'A source you marked as free');
+            if ((inp.config.include ?? []).includes(m.alias))
+                return L('你核对后加进来的', 'You checked and added it');
+            return L('平台标明价格为 0', 'Priced at 0 by the platform');
+        };
+        const pool = TIERS.map((tier) => ({ tier, models: poolOrder(cands, tier, state).map((m) => ({ alias: m.alias, source: m.source, label: labelOf(m.source), model: m.model, why: whyOf(m), cycle: m.cycle, charges: m.charges })) }));
         return {
             catalogUpdatedAt: cat.updatedAt,
             summary: {

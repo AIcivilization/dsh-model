@@ -66,6 +66,17 @@ export interface ComboRun {
   log?: (message: string) => void
   /** 一个成员失败了（免费池据此冷却来源） */
   onFailure?: (model: string, status: number, text: string) => void
+  /** 全部失败时，报错后面再补一句该怎么办（免费池：最早几点恢复、去哪看） */
+  failHint?: () => string | undefined
+  /** 一次请求结束：试过哪些、谁回答的（没有就是全失败）、首字节和总耗时（设计 §14.35「看得见」） */
+  onDone?: (r: RouteResult) => void
+}
+
+export interface RouteResult {
+  tried: { model: string; status: number; reason: string }[]
+  answered?: string
+  firstByteMs?: number
+  totalMs: number
 }
 
 /** 按顺序试组合里的模型，把第一个成功的响应原样转回客户端 */
@@ -79,6 +90,8 @@ export async function runCombo(run: ComboRun): Promise<void> {
     return reply(res, 400, { error: { message: 'request body is not JSON', type: 'invalid_json', code: 'invalid_json' } })
   }
   const tried: string[] = []
+  const attempts: RouteResult['tried'] = []
+  const started = Date.now()
   let last: { status: number; text: string } | undefined
   for (const model of combo.models) {
     if (run.signal.aborted) return
@@ -94,6 +107,7 @@ export async function runCombo(run: ComboRun): Promise<void> {
       if (run.signal.aborted) return
       last = { status: 502, text: String((error as Error).message ?? error) }
       tried.push(`${model}: ${last.text.slice(0, 120)}`)
+      attempts.push({ model, status: last.status, reason: last.text.slice(0, 160) })
       run.onFailure?.(model, last.status, last.text)
       continue
     }
@@ -104,6 +118,8 @@ export async function runCombo(run: ComboRun): Promise<void> {
         'Cache-Control': 'no-cache',
         'X-Dsh-Model-Combo-Model': model,
       })
+      const firstByteAt = Date.now()
+      res.on('close', () => run.onDone?.({ tried: attempts, answered: model, firstByteMs: firstByteAt - started, totalMs: Date.now() - started }))
       const stream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0])
       stream.on('error', (error: unknown) => {
         log(`combo ${combo.id}: ${model} stream failed mid-flight: ${String(error)}`)
@@ -115,11 +131,14 @@ export async function runCombo(run: ComboRun): Promise<void> {
     const text = await upstream.text().catch(() => '')
     last = { status: upstream.status, text }
     tried.push(`${model}: HTTP ${upstream.status}`)
+    attempts.push({ model, status: upstream.status, reason: errorReason(text) })
     run.onFailure?.(model, upstream.status, text)
     if (!shouldFallBack(upstream.status, text)) break
   }
   log(`combo ${combo.id}: all failed (${tried.join(' | ')})`)
-  const message = L(`组合「${combo.name}」里的模型都失败了：${tried.join('；')}`, `Every model in combo "${combo.name}" failed: ${tried.join('; ')}`)
+  run.onDone?.({ tried: attempts, totalMs: Date.now() - started })
+  const hint = run.failHint?.()
+  const message = L(`组合「${combo.name}」里的模型都失败了：${tried.join('；')}`, `Every model in combo "${combo.name}" failed: ${tried.join('; ')}`) + (hint ? `${L('。', '. ')}${hint}` : '')
   let detail: unknown
   try {
     detail = last ? JSON.parse(last.text) : undefined
@@ -128,6 +147,18 @@ export async function runCombo(run: ComboRun): Promise<void> {
   }
   const upstreamError = (detail as { error?: unknown } | undefined)?.error
   reply(res, last?.status && last.status >= 400 ? last.status : 502, { error: { message, type: 'combo_failed', code: 'combo_failed', ...(upstreamError ? { last: upstreamError } : {}) } })
+}
+
+/** 上游报错里挑出给人看的那句（error.message），挑不出就截一段原文 */
+export function errorReason(text: string): string {
+  try {
+    const j = JSON.parse(text) as { error?: { message?: unknown } | string; message?: unknown }
+    const m = typeof j.error === 'string' ? j.error : (j.error?.message ?? j.message)
+    if (typeof m === 'string' && m.trim()) return m.trim().slice(0, 160)
+  } catch {
+    // 不是 JSON
+  }
+  return text.trim().slice(0, 160)
 }
 
 function reply(res: ServerResponse, status: number, body: unknown): void {

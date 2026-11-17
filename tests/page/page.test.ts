@@ -19,6 +19,7 @@ let CheckinOverlay: React.ComponentType
 let root: Root | undefined
 let container: HTMLElement
 let SpentOverlay: React.ComponentType
+let ComposerSpend: React.ComponentType<Record<string, unknown>>
 
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
@@ -38,7 +39,7 @@ beforeAll(async () => {
   w.__ModuleLoader__ = {
     load({ factory }: { factory: (req: (n: string) => unknown) => { apply: (ctx: unknown) => void } }) {
       const mod = factory((n) => (n === 'react' ? React : null))
-      mod.apply({ slots: { inject: (_n: string, fn: () => void) => fn(), register: (d: { name: string; id: string }, C: React.ComponentType) => (d.id === 'dsh-model-checkin' ? (CheckinOverlay = C) : d.id === 'dsh-model-free-spent' ? (SpentOverlay = C) : d.name === 'shell.overlay' ? (Overlay = C) : (Section = C)) } })
+      mod.apply({ slots: { inject: (_n: string, fn: () => void) => fn(), register: (d: { name: string; id: string }, C: React.ComponentType) => (d.id === 'dsh-model-checkin' ? (CheckinOverlay = C) : d.id === 'dsh-model-free-spent' ? (SpentOverlay = C) : d.id === 'dsh-model-composer-spend' ? (ComposerSpend = C) : d.name === 'shell.overlay' ? (Overlay = C) : (Section = C)) } })
     },
   }
   await import('../../plugin/client.js')
@@ -464,7 +465,9 @@ describe('settings page', () => {
     // 点「🆓 免费池」直接展开并显示顺序
     await click('🆓 免费池')
     await waitText('free/auto')
-    expect(container.textContent).toContain('1. modelscope/Qwen3-235B')
+    // 免费池清单说人话：来源 · 模型 · 为什么算免费
+    expect(container.textContent).toContain('1.modelscope · modelscope/Qwen3-235B')
+    expect(container.textContent).toContain('free/auto（全部，强的在前）')
     // 收起再展开（点标题）
     await click('▾ 免费额度')
     expect(container.textContent).not.toContain('百炼新人额度')
@@ -542,6 +545,37 @@ describe('settings page', () => {
     await waitText('硅基流动：¥50 → ¥49.2，已移出免费池')
     await click('知道了')
     expect(container.textContent).not.toContain('已移出免费池')
+  })
+
+  it('see the spending: composer readout for dsh-model models, 24-hour bill, who answered in the free pool', async () => {
+    const spend = (model?: string) => ({
+      window: '24h',
+      classes: { free: { requests: 12, tokens: 30000 }, credits: { requests: 0, tokens: 0 }, paid: { requests: 2, tokens: 5000 }, local: { requests: 0, tokens: 0 }, mixed: { requests: 0, tokens: 0 }, subscription: { requests: 3, tokens: 9000 } },
+      paid: [{ model: 'deepseek/deepseek-chat', requests: 2, tokens: 5000 }],
+      ...(model === 'free/auto' ? { model: { id: 'free/auto', cost: 'free', name: '🆓 免费池 · 自动（推荐）', requests: 5, tokens: 1000, last: { answered: 'modelscope/Qwen/Qwen3-235B', at: new Date().toISOString(), tried: 1 } } } : {}),
+      ...(model === 'deepseek/deepseek-chat' ? { model: { id: 'deepseek/deepseek-chat', cost: 'paid', name: 'deepseek-chat · 计费', requests: 2, tokens: 5000 } } : {}),
+    })
+    const routes = [{ at: new Date().toISOString(), route: 'free/auto', tried: [{ model: 'siliconflow/Qwen/Qwen3-8B', status: 429, reason: 'rate limit' }], answered: 'modelscope/Qwen/Qwen3-235B', firstByteMs: 820, totalMs: 4000 }]
+    handler = normal((c) => {
+      if (c.path.startsWith('/spend')) return [200, spend(decodeURIComponent((c.path.split('model=')[1] || '')))]
+      if (c.path === '/routes') return [200, routes]
+      return [404, {}]
+    })
+    // 选的不是 dsh-model 的模型：什么都不显示
+    const proj = (provider: string, model: string) => ({ useProjection: () => ({ lastUsed: { provider, model } }) })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    await act(async () => { root = createRoot(container); root.render(createElement(ComposerSpend, proj('deepseek', 'deepseek-v4'))) })
+    await act(async () => new Promise((r) => setTimeout(r, 30)))
+    expect(container.textContent).toBe('')
+    await act(async () => root?.render(createElement(ComposerSpend, proj('dsh-model-free', 'free/auto'))))
+    await waitText('🆓 上次：modelscope · Qwen/Qwen3-235B')
+    await click('🆓 上次：modelscope · Qwen/Qwen3-235B')
+    await waitText('换过 1 次')
+    expect(container.textContent).toContain('首字 820ms')
+    expect(container.textContent).toContain('花钱的：deepseek · deepseek-chat 2 次')
+    await act(async () => root?.render(createElement(ComposerSpend, proj('dsh-model-deepseek', 'deepseek/deepseek-chat'))))
+    await waitText('计费 · 24 小时 2 次')
   })
 
   it('usage: expiring credits are called out; a used-up plan gets a badge with the time back', async () => {

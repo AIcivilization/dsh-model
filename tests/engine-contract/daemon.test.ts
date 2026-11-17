@@ -266,6 +266,14 @@ describe('daemon core against a real engine', () => {
       const chat = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${dshKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'free/auto', messages: [{ role: 'user', content: 'ping' }] }) })
       expect(chat.status).toBe(200)
       expect(((await chat.json()) as { choices: { message: { content: string } }[] }).choices[0]!.message.content).toBe('free-ok')
+      // 看得见（§14.35）：记下了试过谁、为什么换、最后谁回答的
+      await new Promise((r) => setTimeout(r, 100))
+      const route = daemon.recentRoutes(1)[0]!
+      expect(route).toMatchObject({ route: 'free/auto', answered: 'custom-good/good-8b' })
+      expect(route.tried).toEqual([expect.objectContaining({ model: 'custom-busy/busy-70b', status: 429, reason: 'rate limit' })])
+      expect(route.firstByteMs).toBeGreaterThanOrEqual(0)
+      // 手动加的、勾了免费的：模型名写「免费」
+      expect((await daemon.spend('custom-good/good-8b')).model).toMatchObject({ cost: 'free' })
       // busy 回了 429：冷却到北京时间次日 0 点，之后不再先试它
       const after = await daemon.freeOverview()
       expect(after.pool.find((p) => p.tier === 'auto')!.models.map((m) => m.alias)).toEqual(['custom-good/good-8b'])

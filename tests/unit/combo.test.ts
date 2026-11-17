@@ -26,3 +26,13 @@ describe('combos', () => {
     expect(shouldFallBack(400, '{"error":{"message":"WorkBuddy AI upstream client (http 400): 请求被拦截，请重新发送"}}')).toBe(true)
   })
 })
+
+describe('route results (§14.35)', () => {
+  it('pulls the human sentence out of an upstream error', async () => {
+    const { errorReason } = await import('../../src/combo.js')
+    expect(errorReason('{"error":{"message":"Rate limit reached for model"}}')).toBe('Rate limit reached for model')
+    expect(errorReason('{"error":"quota exceeded"}')).toBe('quota exceeded')
+    expect(errorReason('{"message":"余额不足"}')).toBe('余额不足')
+    expect(errorReason('<html>bad gateway</html>')).toBe('<html>bad gateway</html>')
+  })
+})

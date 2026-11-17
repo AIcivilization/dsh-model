@@ -62,6 +62,8 @@ export async function runCombo(run) {
         return reply(res, 400, { error: { message: 'request body is not JSON', type: 'invalid_json', code: 'invalid_json' } });
     }
     const tried = [];
+    const attempts = [];
+    const started = Date.now();
     let last;
     for (const model of combo.models) {
         if (run.signal.aborted)
@@ -80,6 +82,7 @@ export async function runCombo(run) {
                 return;
             last = { status: 502, text: String(error.message ?? error) };
             tried.push(`${model}: ${last.text.slice(0, 120)}`);
+            attempts.push({ model, status: last.status, reason: last.text.slice(0, 160) });
             run.onFailure?.(model, last.status, last.text);
             continue;
         }
@@ -91,6 +94,8 @@ export async function runCombo(run) {
                 'Cache-Control': 'no-cache',
                 'X-Dsh-Model-Combo-Model': model,
             });
+            const firstByteAt = Date.now();
+            res.on('close', () => run.onDone?.({ tried: attempts, answered: model, firstByteMs: firstByteAt - started, totalMs: Date.now() - started }));
             const stream = Readable.fromWeb(upstream.body);
             stream.on('error', (error) => {
                 log(`combo ${combo.id}: ${model} stream failed mid-flight: ${String(error)}`);
@@ -103,12 +108,15 @@ export async function runCombo(run) {
         const text = await upstream.text().catch(() => '');
         last = { status: upstream.status, text };
         tried.push(`${model}: HTTP ${upstream.status}`);
+        attempts.push({ model, status: upstream.status, reason: errorReason(text) });
         run.onFailure?.(model, upstream.status, text);
         if (!shouldFallBack(upstream.status, text))
             break;
     }
     log(`combo ${combo.id}: all failed (${tried.join(' | ')})`);
-    const message = L(`组合「${combo.name}」里的模型都失败了：${tried.join('；')}`, `Every model in combo "${combo.name}" failed: ${tried.join('; ')}`);
+    run.onDone?.({ tried: attempts, totalMs: Date.now() - started });
+    const hint = run.failHint?.();
+    const message = L(`组合「${combo.name}」里的模型都失败了：${tried.join('；')}`, `Every model in combo "${combo.name}" failed: ${tried.join('; ')}`) + (hint ? `${L('。', '. ')}${hint}` : '');
     let detail;
     try {
         detail = last ? JSON.parse(last.text) : undefined;
@@ -118,6 +126,19 @@ export async function runCombo(run) {
     }
     const upstreamError = detail?.error;
     reply(res, last?.status && last.status >= 400 ? last.status : 502, { error: { message, type: 'combo_failed', code: 'combo_failed', ...(upstreamError ? { last: upstreamError } : {}) } });
+}
+/** 上游报错里挑出给人看的那句（error.message），挑不出就截一段原文 */
+export function errorReason(text) {
+    try {
+        const j = JSON.parse(text);
+        const m = typeof j.error === 'string' ? j.error : (j.error?.message ?? j.message);
+        if (typeof m === 'string' && m.trim())
+            return m.trim().slice(0, 160);
+    }
+    catch {
+        // 不是 JSON
+    }
+    return text.trim().slice(0, 160);
 }
 function reply(res, status, body) {
     const payload = JSON.stringify(body);
