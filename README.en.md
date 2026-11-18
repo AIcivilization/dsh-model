@@ -83,7 +83,7 @@ ModelScope's daily free calls, Cloudflare's daily Neurons, OpenRouter's `:free` 
 - **Soon-to-expire first**: daily quotas → monthly → ones with an end date → always-free → local models as the last resort.
 - **Moves on when one runs out**: a provider that hits its limit cools down until it resets (daily ones at midnight Beijing time, monthly ones on the 1st) and the next one takes over.
 - **Never spends your money**: new-user vouchers and quotas that "switch to pay as you go" stay **out** of the pool; to add one you set a token cap, and it is taken out at 90%.
-- **See what is left to claim**: the "Free quota" card lists every quota (cycle, amount, requirements, end date, value), with "Claim" to open the official page and "Add key" to put it in the pool.
+- **See what is left to claim**: the "Free quota" card lists every quota (cycle, the free amount the provider gives, requirements, end date), with "Claim" to open the official page and "Add key" to put it in the pool.
 - **Finds new ones**: once a day it checks the quota catalog for new entries and connected platforms for new free models, and **asks you** before adding.
 - **Add your own**: any OpenAI-compatible service, as many as you like; tick "free quota" and it joins the pool.
 

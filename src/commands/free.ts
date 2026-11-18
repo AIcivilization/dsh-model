@@ -24,7 +24,7 @@ const CYCLE: Record<string, () => string> = {
 
 function show(o: FreeOverview): void {
   const s = o.summary
-  info(bold(L(`免费额度：已接入 ${s.connected} 份，免费池 ${s.poolModels.auto} 个模型；还有 ${s.missing} 份可领${s.missingCny ? `（一次性和每月的约 ¥${s.missingCny}）` : ''}；签到 ${s.checkinConnected}/${s.checkinConnected + s.checkinMissing} 家`, `Free quota: ${s.connected} connected, ${s.poolModels.auto} models in the pool; ${s.missing} more to claim${s.missingCny ? ` (≈ ¥${s.missingCny})` : ''}; check-in ${s.checkinConnected}/${s.checkinConnected + s.checkinMissing}`)))
+  info(bold(L(`免费额度：已接入 ${s.connected} 份，免费池 ${s.poolModels.auto} 个模型；还有 ${s.missing} 份可领；签到 ${s.checkinConnected}/${s.checkinConnected + s.checkinMissing} 家`, `Free quota: ${s.connected} connected, ${s.poolModels.auto} models in the pool; ${s.missing} more to claim; check-in ${s.checkinConnected}/${s.checkinConnected + s.checkinMissing}`)))
   if (s.poolModels.auto) info(dim(L('模型名：free/auto、free/smart、free/fast', 'Model names: free/auto, free/smart, free/fast')))
   for (const d of o.discoveries) info(`  ${L('新发现', 'new')}: ${d.title}${d.url ? `  ${d.url}` : ''}`)
   const tag: Record<string, () => string> = {
@@ -36,7 +36,7 @@ function show(o: FreeOverview): void {
   }
   for (const e of o.entries) {
     const meta = [CYCLE[e.cycle]?.() ?? e.cycle, e.amount, e.until ? L(`到 ${e.until}`, `until ${e.until}`) : '', e.kind === 'checkin' ? L('只签到', 'check-in only') : ''].filter(Boolean).join(' · ')
-    info(`${tag[e.status]!()}  ${e.name}${e.cny ? ` ≈ ¥${e.cny}` : ''}\n      ${dim(meta)}${e.status === 'missing' ? `\n      ${dim(e.url)}` : ''}`)
+    info(`${tag[e.status]!()}  ${e.name}\n      ${dim(meta)}${e.status === 'missing' ? `\n      ${dim(e.url)}` : ''}`)
   }
   for (const p of o.pool) if (p.models.length) info(`${bold(`free/${p.tier}`)}  ${dim(p.models.map((m) => m.alias).join(' → '))}`)
 }

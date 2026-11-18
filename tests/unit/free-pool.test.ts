@@ -294,3 +294,13 @@ describe('free pool ↔ check-in (§14.38)', () => {
     expect(brands.get('bytedance')).toContain('checkin')
   })
 })
+
+describe('no money conversion (§14.39)', () => {
+  it('ships no converted yuan values and drops them from older catalogs', () => {
+    const raw = JSON.parse(readFileSync(join(__dirname, '../../free-catalog.json'), 'utf8')) as { entries: Record<string, unknown>[] }
+    expect(raw.entries.some((e) => 'cny' in e)).toBe(false)
+    const old = parseCatalog({ version: 1, updatedAt: '2026-11-13', entries: [{ id: 'a', kind: 'api', source: 'scnet', cycle: 'once', name: 'a', url: 'https://a.test', amount: '1 亿 Token', cny: 60 }] })
+    expect(old!.entries[0]).not.toHaveProperty('cny')
+    expect(old!.entries[0]!.amount).toBe('1 亿 Token')
+  })
+})

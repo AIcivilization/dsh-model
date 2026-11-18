@@ -71,7 +71,6 @@ export interface FreeEntryView {
   name: string
   amount: string
   cycle: CatalogEntry['cycle']
-  cny?: number
   charges: boolean
   gates: string[]
   until?: string
@@ -97,7 +96,7 @@ export interface FreeEntryView {
 
 export interface FreeOverview {
   catalogUpdatedAt: string
-  summary: { connected: number; missing: number; missingCny: number; checkinConnected: number; checkinMissing: number; poolModels: Record<Tier, number> }
+  summary: { connected: number; missing: number; checkinConnected: number; checkinMissing: number; poolModels: Record<Tier, number> }
   entries: FreeEntryView[]
   /** 免费池里每个档的实际尝试顺序：来源名、模型、为什么算免费（哪份额度 / 你确认的 / 本机） */
   pool: { tier: Tier; models: { alias: string; source: string; label: string; model: string; why: string; cycle: string; charges: boolean }[] }[]
@@ -321,7 +320,6 @@ export class FreePool {
         kind: e.kind,
         ...localized(e),
         cycle: e.cycle,
-        ...(e.cny !== undefined ? { cny: e.cny } : {}),
         charges: e.charges,
         gates: e.gates ?? [],
         ...(e.until ? { until: e.until } : {}),
@@ -354,8 +352,8 @@ export class FreePool {
       const rel = views.filter((o) => o.brand === v.brand && o.id !== v.id).map((o) => ({ id: o.id, kind: o.kind, name: o.name, status: o.status }))
       if (rel.length) v.related = rel
     }
-    // 同一状态里：不扣钱的在前（最该先领的），再按折合金额
-    views.sort((a, b) => rank[a.status] - rank[b.status] || Number(a.charges) - Number(b.charges) || (b.cny ?? 0) - (a.cny ?? 0))
+    // 同一状态里：不扣钱的在前（最该先领的），其余按目录顺序。不换算成钱比大小（§14.39）
+    views.sort((a, b) => rank[a.status] - rank[b.status] || Number(a.charges) - Number(b.charges))
     const api = views.filter((v) => v.kind === 'api')
     const ck = views.filter((v) => v.kind === 'checkin')
     const byId = new Map(entries.map((e) => [e.id, e]))
@@ -374,7 +372,6 @@ export class FreePool {
       summary: {
         connected: api.filter((v) => v.status !== 'missing').length,
         missing: api.filter((v) => v.status === 'missing').length,
-        missingCny: Math.round(api.filter((v) => v.status === 'missing').reduce((s, v) => s + (v.cny ?? 0), 0)),
         checkinConnected: ck.filter((v) => v.status === 'connected').length,
         checkinMissing: ck.filter((v) => v.status === 'missing').length,
         poolModels: Object.fromEntries(pool.map((p) => [p.tier, p.models.length])) as Record<Tier, number>,

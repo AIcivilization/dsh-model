@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-18",
+  "updatedAt": "2026-11-19",
   "entries": [
     {
       "id": "modelscope-daily",
@@ -137,7 +137,6 @@
       "nameEn": "SiliconFlow ¥16 voucher after verification",
       "amount": "16 元",
       "amountEn": "¥16",
-      "cny": 16,
       "charges": true,
       "models": ".*",
       "gates": [
@@ -208,7 +207,6 @@
       "nameEn": "Baidu Qianfan ¥20 voucher for new users",
       "amount": "20 元",
       "amountEn": "¥20",
-      "cny": 20,
       "charges": true,
       "models": ".*",
       "gates": [
@@ -305,7 +303,6 @@
       "nameEn": "SCNet 100M tokens for new users",
       "amount": "1 亿 Token（当前为 GLM-5.3-Flash）",
       "amountEn": "100M tokens (GLM-5.3-Flash for now)",
-      "cny": 60,
       "charges": true,
       "models": "glm",
       "gates": [
@@ -327,7 +324,6 @@
       "nameEn": "Ant Ling ¥10 credit on the 1st of each month",
       "amount": "每月 10 元",
       "amountEn": "¥10 a month",
-      "cny": 10,
       "charges": true,
       "models": ".*",
       "url": "https://ling.tbox.cn/open",
@@ -361,7 +357,6 @@
       "nameEn": "Tencent Cloud TokenHub 1M tokens for new users",
       "amount": "100 万 Token",
       "amountEn": "1M tokens",
-      "cny": 2.4,
       "charges": true,
       "models": ".*",
       "gates": [
@@ -399,7 +394,6 @@
       "nameEn": "Alibaba Bailian about 1M tokens per model for new users",
       "amount": "每个模型约 100 万 Token（北京地域）",
       "amountEn": "About 1M tokens per model (Beijing region)",
-      "cny": 7.1,
       "charges": true,
       "models": ".*",
       "gates": [
@@ -420,7 +414,6 @@
       "nameEn": "Alibaba Cloud ¥300 model credit for students",
       "amount": "300 元",
       "amountEn": "¥300",
-      "cny": 300,
       "charges": true,
       "models": ".*",
       "gates": [
@@ -482,7 +475,6 @@
       "nameEn": "DeepSeek platform ¥6 on sign-in",
       "amount": "6 元",
       "amountEn": "¥6",
-      "cny": 6,
       "charges": true,
       "models": ".*",
       "gates": [

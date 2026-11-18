@@ -436,11 +436,11 @@ describe('settings page', () => {
     const posts: { path: string; body: unknown }[] = []
     const overview = {
       catalogUpdatedAt: '2026-11-13',
-      summary: { connected: 2, missing: 1, missingCny: 60, checkinConnected: 1, checkinMissing: 0, poolModels: { auto: 2, smart: 1, fast: 1 } },
+      summary: { connected: 2, missing: 1, checkinConnected: 1, checkinMissing: 0, poolModels: { auto: 2, smart: 1, fast: 1 } },
       entries: [
         { id: 'ms', kind: 'api', name: '魔搭每天免费调用', amount: '每天约 2000 次', cycle: 'daily', charges: false, gates: [], url: 'https://modelscope.cn/', source: 'modelscope', status: 'connected' },
         { id: 'ds', kind: 'api', name: '百炼新人额度', amount: '每个模型 100 万', cycle: 'once', charges: true, gates: ['用完自动转付费'], url: 'https://bailian.test/', source: 'dashscope', status: 'optin' },
-        { id: 'sc', kind: 'api', name: '超算互联网 1 亿 Token', amount: '1 亿', cycle: 'once', cny: 60, charges: true, gates: [], until: '2026-12-31', url: 'https://www.scnet.cn/', source: 'scnet', status: 'missing' },
+        { id: 'sc', kind: 'api', name: '超算互联网 1 亿 Token', amount: '1 亿', cycle: 'once', charges: true, gates: [], until: '2026-12-31', url: 'https://www.scnet.cn/', source: 'scnet', status: 'missing' },
         { id: 'ck', kind: 'checkin', name: 'Trae 每天签到', amount: '每天 100', cycle: 'daily', charges: false, gates: [], url: 'https://www.trae.cn/', checkin: 'trae', status: 'connected' },
       ],
       pool: [{ tier: 'auto', models: [{ alias: 'modelscope/Qwen3-235B', source: 'modelscope', cycle: 'daily', charges: false }, { alias: 'ollama/llama', source: 'ollama', cycle: 'local', charges: false }] }, { tier: 'smart', models: [] }, { tier: 'fast', models: [] }],
@@ -482,7 +482,10 @@ describe('settings page', () => {
     await waitText('百炼新人额度')
     expect(window.localStorage.getItem('dsh-model.freeListOpen')).toBe('1')
     expect(window.localStorage.getItem('dsh-model.freeOpen')).toBe('1')
-    expect(container.textContent).toContain('还有 1 份可领（一次性和每月的约 ¥60）')
+    expect(container.textContent).toContain('还有 1 份可领')
+    // 不换算成钱（§14.39）
+    expect(container.textContent).not.toContain('¥60')
+    expect(container.textContent).toContain('1 亿')
     expect(container.textContent).toContain('会扣钱，没放进池')
     // 已在签的签到条目默认收起
     expect(container.textContent).not.toContain('Trae 每天签到')
@@ -516,7 +519,7 @@ describe('settings page', () => {
     const posts: { path: string; body: unknown }[] = []
     const overview = {
       catalogUpdatedAt: '2026-11-17',
-      summary: { connected: 2, missing: 0, missingCny: 0, checkinConnected: 0, checkinMissing: 0, poolModels: { auto: 1, smart: 1, fast: 0 } },
+      summary: { connected: 2, missing: 0, checkinConnected: 0, checkinMissing: 0, poolModels: { auto: 1, smart: 1, fast: 0 } },
       entries: [
         { id: 'sf', kind: 'api', name: '硅基流动免费模型', amount: '长期', cycle: 'forever', charges: false, gates: [], url: 'https://x/', source: 'siliconflow', status: 'spent' },
         { id: 'gq', kind: 'api', name: 'Groq 免费 key', amount: '每天', cycle: 'daily', charges: false, gates: [], url: 'https://x/', source: 'groq', status: 'confirm', confirm: '我的 Groq 账户是免费档' },

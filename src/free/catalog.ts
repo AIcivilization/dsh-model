@@ -23,8 +23,6 @@ export interface CatalogEntry {
   nameEn?: string
   amount: string
   amountEn?: string
-  /** 折合人民币（一次性 / 每月的才有） */
-  cny?: number
   /** 额度用完会不会自动扣钱（转付费、扣余额）：true 的默认不进免费池 */
   charges: boolean
   /** 这份额度覆盖哪些模型（来源里的模型 id，不分大小写的正则）；没写 = 不限 */
@@ -94,7 +92,9 @@ export function parseCatalog(raw: unknown): Catalog | null {
       }
     }
     seen.add(e.id)
-    entries.push({ ...(e as CatalogEntry), charges: e.charges !== false, amount: String(e.amount ?? '') })
+    // 不换算成钱（§14.39）：旧目录里的 cny（折合人民币）丢掉，只留平台给的原始数量 amount
+    const { cny: _cny, ...rest } = e as CatalogEntry & { cny?: unknown }
+    entries.push({ ...(rest as CatalogEntry), charges: e.charges !== false, amount: String(e.amount ?? '') })
   }
   return { version: 1, updatedAt: doc.updatedAt, entries }
 }
