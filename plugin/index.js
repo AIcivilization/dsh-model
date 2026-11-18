@@ -86,7 +86,7 @@ const ALLOWED = [
   ['GET', /^\/spend(\?model=[^\s&#]{1,200})?$/],
   ['GET', /^\/routes$/],
   ['POST', /^\/dsh\/free-only$/],
-  ['POST', /^\/free\/(discover|optin|optout|model|cooldown\/clear|discovery|confirm|spent|source)$/],
+  ['POST', /^\/free\/(discover|optin|optout|model|cooldown\/clear|discovery|confirm|spent|source|retry)$/],
   ['POST', /^\/custom-sources$/],
   ['POST', /^\/opencode\/key$/],
   ['POST', /^\/apikey\/[a-z0-9-]{2,40}$/],

@@ -1462,12 +1462,21 @@ export class Daemon {
 
   /** 余额兜底：查一次，有新的「充值余额变少」就重新同步（把这家从免费池里拿掉） */
   async checkFreeBalances(): Promise<number> {
-    const n = await this.free.checkBalances(await this.poolInputs())
-    if (n) {
-      log_(`daemon: free pool: paid balance dropped on ${n} source(s); taken out of the pool until the user confirms`)
-      await this.resync()
-    }
-    return n
+    const inp = await this.poolInputs()
+    const n = await this.free.checkBalances(inp)
+    if (n) log_(`daemon: free pool: paid balance dropped on ${n} source(s); taken out of the pool until the user confirms`)
+    // 连续几天只有失败的来源：怀疑免费额度没了（§14.40）
+    const m = await this.free.checkHealth(inp)
+    if (m) log_(`daemon: free pool: ${m} source(s) had only failures for days; taken out until the user retries`)
+    if (n || m) await this.resync()
+    return n + m
+  }
+
+  /** 用户点「再试一次」：把怀疑没了的额度放回免费池 */
+  async freeRetry(source: string): Promise<void> {
+    await this.free.retrySuspect(source)
+    await this.free.clearCooldown(source)
+    await this.resync()
   }
 
   /** 用户确认目录里那句话（如「这把 key 没开结算」）：确认后这家的免费额度才进池 */
@@ -1639,6 +1648,7 @@ export class Daemon {
       if (method === 'POST' && path === '/free/confirm') return ok(await this.freeConfirm(String(b.source ?? ''), b.on !== false).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/spent') return ok(await this.freeSpent(String(b.source ?? ''), b.action === 'exclude' ? 'exclude' : 'keep').then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/source') return ok(await this.freeExcludeSource(String(b.source ?? ''), b.exclude === true).then(() => this.freeOverview()))
+      if (method === 'POST' && path === '/free/retry') return ok(await this.freeRetry(String(b.source ?? '')).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/cooldown/clear') return ok(await this.free.clearCooldown(String(b.source ?? '')).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/discovery') return ok(await this.freeDiscovery(String(b.id ?? ''), b.accept === true).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/custom-sources') return ok(await this.addCustomSource(b))

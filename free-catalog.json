@@ -330,25 +330,6 @@
       "verifiedAt": "2026-11-12"
     },
     {
-      "id": "ling-flash-free",
-      "kind": "api",
-      "source": "ling",
-      "cycle": "limited",
-      "name": "蚂蚁百灵 Ling-3.2-flash 限时免费",
-      "nameEn": "Ant Ling Ling-3.2-flash free for a limited time",
-      "amount": "限时免费",
-      "amountEn": "Free for a limited time",
-      "charges": true,
-      "models": "ling-3\\.2-flash",
-      "gates": [
-        "绑定支付宝",
-        "免费期后收费"
-      ],
-      "until": "2026-11-17",
-      "url": "https://ling.tbox.cn/open",
-      "verifiedAt": "2026-11-13"
-    },
-    {
       "id": "tokenhub-new",
       "kind": "api",
       "source": "tokenhub",

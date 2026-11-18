@@ -304,3 +304,52 @@ describe('no money conversion (§14.39)', () => {
     expect(old!.entries[0]!.amount).toBe('1 亿 Token')
   })
 })
+
+describe('is a free quota still alive? (§14.40)', () => {
+  it('drops any hand-verified entry after 90 days, except live-priced ones', async () => {
+    const { freeProof, verifiedDaysAgo } = await import('../../src/free/pool.js')
+    const old = new Date(Date.now() - 100 * 86_400_000).toISOString().slice(0, 10)
+    expect(freeProof('ms', { id: 'm' }, [entry({ id: 'a', source: 'ms', cycle: 'daily', pool: 'account', verifiedAt: old })], {})).toBeNull()
+    expect(freeProof('or', { id: 'm', priced: true }, [entry({ id: 'p', source: 'or', cycle: 'daily', pool: 'priced', verifiedAt: old })], {})?.id).toBe('p')
+    expect(verifiedDaysAgo({ verifiedAt: old })).toBeGreaterThanOrEqual(99)
+  })
+
+  it('tells "the quota is gone" apart from normal rate limits', async () => {
+    const { isGoneFailure } = await import('../../src/free/pool.js')
+    expect(isGoneFailure(429, 'quota exceeded for today')).toBe(false)
+    expect(isGoneFailure(404, 'model not found')).toBe(false)
+    expect(isGoneFailure(500, 'boom')).toBe(false)
+    expect(isGoneFailure(401, 'invalid api key')).toBe(true)
+    expect(isGoneFailure(402, '')).toBe(true)
+    expect(isGoneFailure(403, 'Insufficient balance')).toBe(true)
+    expect(isGoneFailure(403, 'too many requests')).toBe(false)
+    expect(isGoneFailure(400, '{"error":{"message":"账户余额不足"}}')).toBe(true)
+    expect(isGoneFailure(400, 'messages: field required')).toBe(false)
+  })
+
+  it('flags a pooled source after 3 failure-only days, records health from usage, and puts it back on retry', async () => {
+    const { FreePool } = await import('../../src/free/service.js')
+    const { onlyFailures } = await import('../../src/free/pool.js')
+    const home = await mkdtemp(join(tmpdir(), 'dsh-free-health-'))
+    try {
+      const pool = new FreePool({ paths: { home }, owner: undefined } as never)
+      const inp = { config: {}, upstreams: [{ name: 'modelscope', label: '魔搭', baseUrl: '', apiKey: 'k', models: [{ name: 'Qwen/Qwen3-235B', alias: 'modelscope/Qwen/Qwen3-235B' }] }], secrets: { apikeys: { modelscope: { key: 'k' } } } }
+      const day = (i: number) => new Date(Date.now() - i * 86_400_000).toISOString()
+      await pool.recordUsage([0, 1, 2].map((i) => ({ alias: 'modelscope/Qwen/Qwen3-235B', failed: true, timestamp: day(i) })), undefined)
+      await pool.recordUsage([{ alias: 'free/auto', failed: true }, { alias: 'combo/x', failed: true }], undefined)
+      const st = await pool.loadState()
+      expect(Object.keys(st.health ?? {})).toEqual(['modelscope'])
+      expect(onlyFailures(st.health!.modelscope)).toBe(true)
+      expect(await pool.checkHealth(inp)).toBe(1)
+      expect((await pool.candidates(inp)).some((m) => m.source === 'modelscope')).toBe(false)
+      await pool.retrySuspect('modelscope')
+      expect((await pool.candidates(inp)).some((m) => m.source === 'modelscope')).toBe(true)
+      expect(await pool.checkHealth(inp)).toBe(0)
+      // 有一次成功就不算
+      await pool.recordUsage([0, 1, 2].map((i) => ({ alias: 'modelscope/Qwen/Qwen3-235B', failed: true, timestamp: day(i) })).concat([{ alias: 'modelscope/Qwen/Qwen3-235B', failed: false, timestamp: day(1) }]), undefined)
+      expect(onlyFailures((await pool.loadState()).health!.modelscope)).toBe(false)
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+})

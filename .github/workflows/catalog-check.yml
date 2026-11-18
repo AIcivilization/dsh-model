@@ -1,0 +1,38 @@
+# 每天体检免费额度目录（设计 §14.40）：接口地址、领取链接、硅基流动免费名单、过期 / 久未核实的条目。
+# 有问题就开一个 issue（已有没关的就在下面追加评论），免得目录悄悄过时。
+# 国外的 CI 机器常连不上国内网站：连不上只记警告，不开 issue。
+name: catalog-check
+on:
+  schedule:
+    - cron: '30 1 * * *' # 每天北京时间 09:30
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - id: probe
+        run: PROBE_REPORT=report.md node scripts/probe-catalog.mjs
+        continue-on-error: true
+      - if: steps.probe.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create catalog-check --color d93f0b --description "免费额度目录体检" --force
+          [ -s report.md ] || echo "体检脚本失败，详见 ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" > report.md
+          echo "" >> report.md
+          echo "运行记录：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> report.md
+          n=$(gh issue list --label catalog-check --state open --json number --jq '.[0].number')
+          if [ -n "$n" ]; then gh issue comment "$n" --body-file report.md
+          else gh issue create --title "免费额度目录需要重新核实" --label catalog-check --body-file report.md; fi

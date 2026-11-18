@@ -741,10 +741,12 @@ window.__ModuleLoader__.load({
       const sum = data.summary
       const list = showAll ? data.entries : data.entries.filter((e) => e.status !== 'connected' || e.kind === 'api')
       const statusTag = (e) => {
-        const color = { connected: C.ok, cooling: C.warn, optin: C.warn, capped: C.err, missing: C.faint, confirm: C.warn, spent: C.err, checkin: C.warn }[e.status]
+        const color = { connected: C.ok, cooling: C.warn, optin: C.warn, capped: C.err, missing: C.faint, confirm: C.warn, spent: C.err, checkin: C.warn, stale: C.err, suspect: C.err }[e.status]
         const text = {
           confirm: L('要你确认一句才进池', 'needs your confirmation'),
           checkin: L('今天还没签到，签上才进池', 'not checked in today; joins after the check-in'),
+          stale: L('核实已超过 90 天，已移出免费池', 'not re-checked for 90+ days; out of the pool'),
+          suspect: L('可能失效了，已移出免费池', 'may be gone; out of the pool'),
           spent: L('充值余额变少了，已移出', 'paid balance dropped, taken out'),
           connected: e.kind === 'checkin' ? L('已在签', 'checking in') : L('在免费池里', 'in the pool'),
           cooling: L(`冷却到 ${hhmm(e.coolingUntil)}`, `cooling until ${hhmm(e.coolingUntil)}`),
@@ -765,6 +767,7 @@ window.__ModuleLoader__.load({
           if (!window.confirm(L(`放进免费池之前请确认：\n\n「${e.confirm}」\n\n如果不是这样，用它的请求可能会扣你的钱。确认属实吗？`, `Before adding it to the free pool, please confirm:\n\n"${e.confirm}"\n\nIf this is not true, requests through it may charge you. Is it true?`))) return
           void act(e.id, 'POST', '/free/confirm', { source: e.source, on: true })
         } }, L('确认后放进池…', 'Confirm and add…')))
+        if (e.status === 'suspect') out.push(h('button', { key: 'rt', type: 'button', style: S.btn, disabled: busy === e.id, onClick: () => void act(e.id, 'POST', '/free/retry', { source: e.source }) }, L('再试一次', 'Try again')))
         if (e.status === 'spent') out.push(h('button', { key: 'sp', type: 'button', style: S.btn, disabled: busy === e.id, onClick: () => void act(e.id, 'POST', '/free/spent', { source: e.source, action: 'keep' }) }, L('知道了，继续用', 'Got it, keep using')))
         if (e.status === 'optin') out.push(h('button', { key: 'in', type: 'button', style: S.btn, disabled: busy === e.id, onClick: () => optIn(e) }, L('放进免费池…', 'Add to pool…')))
         if (e.charges && (e.status === 'connected' || e.status === 'capped')) {
@@ -835,6 +838,11 @@ window.__ModuleLoader__.load({
                 [CYCLE_LABEL[e.cycle] ? CYCLE_LABEL[e.cycle]() : e.cycle, e.amount, ...(e.gates || []), e.until ? L(`到 ${e.until}`, `until ${e.until}`) : '', e.kind === 'checkin' ? L('只能签到，在产品里用', 'check-in only, used inside the product') : '', e.charges && e.kind === 'api' ? L('用完会扣钱', 'charges once used up') : ''].filter(Boolean).join(' · '),
                 e.used != null && e.capTokens ? h('span', { style: { marginLeft: 6 } }, h(Bar, { pct: (e.used / e.capTokens) * 100 }), ` ${fmtTokens(e.used)} / ${fmtTokens(e.capTokens)}`) : null,
                 e.note ? h('div', null, e.note) : null,
+                // 新不新、还活不活（§14.40）
+                h('div', null,
+                  e.verifiedDays != null ? h('span', { style: { color: e.fresh === 'stale' ? C.err : e.fresh === 'warn' ? C.warn : C.sub, marginRight: 10 } }, e.fresh === 'warn' ? L(`核实于 ${e.verifiedDays} 天前，待重新核实`, `checked ${e.verifiedDays} days ago, due for a re-check`) : L(`核实于 ${e.verifiedDays} 天前`, `checked ${e.verifiedDays} days ago`)) : null,
+                  e.health && (e.health.ok || e.health.fail) ? h('span', { style: { color: e.health.ok ? C.ok : C.err, marginRight: 10 } }, L(`最近 7 天：成功 ${e.health.ok} 次 · 失败 ${e.health.fail} 次`, `last 7 days: ${e.health.ok} ok · ${e.health.fail} failed`)) : null,
+                  e.status === 'suspect' && e.suspectReason ? h('span', { style: { color: C.err } }, L(`原因：${e.suspectReason}`, `Why: ${e.suspectReason}`)) : null),
                 (e.related || []).length ? h('div', { style: { color: C.accent } }, L('同一家还有：', 'Same company: '), e.related.map((r) => `${r.name}（${r.kind === 'checkin' ? (r.status === 'connected' ? '在签' : '没加签到') : r.status === 'missing' ? '还没领' : r.status === 'connected' ? '在免费池' : '已接入'}）`).join('；')) : null)),
             statusTag(e),
             actions(e))))) : null,

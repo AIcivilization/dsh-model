@@ -523,6 +523,7 @@ describe('settings page', () => {
       entries: [
         { id: 'sf', kind: 'api', name: '硅基流动免费模型', amount: '长期', cycle: 'forever', charges: false, gates: [], url: 'https://x/', source: 'siliconflow', status: 'spent' },
         { id: 'gq', kind: 'api', name: 'Groq 免费 key', amount: '每天', cycle: 'daily', charges: false, gates: [], url: 'https://x/', source: 'groq', status: 'confirm', confirm: '我的 Groq 账户是免费档' },
+        { id: 'ms', kind: 'api', name: '魔搭每天免费调用', amount: '每天', cycle: 'daily', charges: false, gates: [], url: 'https://x/', source: 'modelscope', status: 'suspect', suspectReason: '连续 3 天只有失败、没有一次成功', verifiedDays: 65, fresh: 'warn', health: { ok: 0, fail: 9 } },
         { id: 'sn', kind: 'api', name: '日日新公测积分', amount: '公测', cycle: 'daily', charges: false, gates: [], url: 'https://x/', source: 'sensenova', status: 'checkin', brand: 'sensetime', related: [{ id: 'ck', kind: 'checkin', name: '小浣熊每天签到', status: 'connected' }] },
       ],
       pool: [{ tier: 'auto', models: [{ alias: 'modelscope/q', source: 'modelscope', cycle: 'daily', charges: false }] }, { tier: 'smart', models: [] }, { tier: 'fast', models: [] }],
@@ -541,6 +542,10 @@ describe('settings page', () => {
     expect(container.textContent).toContain('同一家还有：小浣熊每天签到（在签）')
     await click('▸ 免费池规则（公开透明）')
     expect(container.textContent).toContain('收费模型永远不会自己进池')
+    expect(container.textContent).toContain('可能失效了，已移出免费池')
+    expect(container.textContent).toContain('核实于 65 天前，待重新核实')
+    expect(container.textContent).toContain('最近 7 天：成功 0 次 · 失败 9 次')
+    expect(container.textContent).toContain('原因：连续 3 天只有失败、没有一次成功')
     await click('这家不再放进免费池')
     expect(posts.at(-1)).toEqual({ path: '/free/spent', body: { source: 'siliconflow', action: 'exclude' } })
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -548,6 +553,8 @@ describe('settings page', () => {
     expect(confirm.mock.calls[0]![0]).toContain('我的 Groq 账户是免费档')
     expect(posts.at(-1)).toEqual({ path: '/free/confirm', body: { source: 'groq', on: true } })
     confirm.mockRestore()
+    await click('再试一次')
+    expect(posts.at(-1)).toEqual({ path: '/free/retry', body: { source: 'modelscope' } })
     await act(async () => root?.unmount())
     await render(SpentOverlay)
     await waitText('硅基流动：¥50 → ¥49.2，已移出免费池')

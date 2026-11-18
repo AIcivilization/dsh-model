@@ -15,6 +15,33 @@ export const TIERS = ['auto', 'smart', 'fast'];
 export const PER_SOURCE = 3;
 /** charges 来源用到上限的这个比例就移出 */
 export const CAP_RATIO = 0.9;
+/** 连续几天只有失败、没有一次成功，就怀疑免费额度没了 */
+export const SUSPECT_DAYS = 3;
+/**
+ * 一次失败是不是「免费额度可能没了」（而不是正常限流）：key 失效、要付费、余额不足。
+ * 429（限流、今天的次数用完）是正常的，只冷却不怀疑；404（单个模型没了）也不算整家没了。
+ */
+export function isGoneFailure(status, text) {
+    if (status === 429 || status === 404 || status >= 500)
+        return false;
+    if (status === 401 || status === 402)
+        return true;
+    if (status === 403 && !/rate|频繁|too many/i.test(text))
+        return true;
+    return /insufficient (balance|quota|credit)|balance (is )?(not enough|insufficient)|余额不足|欠费|arrears|payment required|requires? (a )?(paid|payment)|free (tier|trial|quota) (has )?(ended|expired|is no longer)|免费(额度|试用)(已)?(用完|结束|到期)|no longer free/i.test(text);
+}
+/** 最近 days 天（北京时间日期，从今天往前），这家每天都有失败、没有一次成功？ */
+export function onlyFailures(days, n = SUSPECT_DAYS, now = new Date()) {
+    if (!days)
+        return false;
+    for (let i = 0; i < n; i++) {
+        const d = beijingToday(new Date(now.getTime() - i * 86_400_000));
+        const v = days[d];
+        if (!v || v.fail === 0 || v.ok > 0)
+            return false;
+    }
+    return true;
+}
 export const poolStatePath = (home) => join(home, 'free-pool.json');
 export async function loadPoolState(home) {
     const s = await readJson(poolStatePath(home));
@@ -57,8 +84,14 @@ function cycleRank(m) {
  * 这个模型能不能证明不花钱（设计 §14.34）。返回证明它的那份额度；证明不了返回 null。
  * 只认目录里写明的证明方式（account / priced / list / pattern），按名字猜的一律不算。
  */
-/** 白名单 / 名字规则多久没重新核实就不算数（§14.37）：各家会改价，过期的宁可不用 */
+/** 多久没重新核实就不算数（§14.37、§14.40）：各家会改价、会停免费档，过期的宁可不用。60 天起提醒 */
 export const VERIFY_MAX_DAYS = 90;
+export const VERIFY_WARN_DAYS = 60;
+/** 核实于几天前（北京时间） */
+export function verifiedDaysAgo(e, now = Date.now()) {
+    const t = Date.parse(`${e.verifiedAt}T00:00:00+08:00`);
+    return Number.isFinite(t) ? Math.max(0, Math.floor((now - t) / 86_400_000)) : null;
+}
 export function stale(e, now = Date.now()) {
     const t = Date.parse(`${e.verifiedAt}T00:00:00+08:00`);
     return !Number.isFinite(t) || now - t > VERIFY_MAX_DAYS * 24 * 60 * 60 * 1000;
@@ -74,8 +107,8 @@ export function freeProof(sourceId, model, entries, cfg, now = Date.now()) {
         if (e.needsCheckin && !(cfg.checkedIn ?? []).includes(e.needsCheckin))
             continue;
         const how = e.pool ?? 'list';
-        // 靠我们手工登记的（逐个列的、按名字定的），超过 90 天没重新核实就不算（价格会变）
-        if ((how === 'list' || how === 'pattern') && stale(e, now))
+        // 超过 90 天没重新核实就不算（价格会变、免费档会停）；平台接口实时标价的（priced）不靠我们核实，不受限
+        if (how !== 'priced' && stale(e, now))
             continue;
         if (how === 'account' || how === 'pattern')
             return e;
@@ -101,7 +134,7 @@ export function poolCandidates(sources, entries, cfg, state) {
     const out = [];
     for (const src of sources) {
         // 充值余额变少了的来源：等用户确认前一个都不进（余额兜底）
-        if (state.spent?.[src.id] || (cfg.excludeSources ?? []).includes(src.id))
+        if (state.spent?.[src.id] || state.suspect?.[src.id] || (cfg.excludeSources ?? []).includes(src.id))
             continue;
         const mine = entries.filter((e) => e.kind === 'api' && e.source === src.id);
         const opt = cfg.optIn?.[src.id];

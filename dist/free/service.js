@@ -3,14 +3,14 @@
 // - poolSourcesFrom：从将要写进引擎的上游里挑出 key 来源和本机模型，交给 pool.ts 算成员。
 // - freeUpstream：在引擎里登记 free/auto、free/smart、free/fast（指到守护进程的 /combo/v1，模型名 free:<档>）。
 // - FreePool：请求时现算顺序并逐个试、失败的冷却来源、记 charges 来源的 token、探测新额度、给管理页的总览。
-import { runCombo } from '../combo.js';
+import { errorReason, runCombo } from '../combo.js';
 import { DshModelError } from '../errors.js';
 import { L, lang } from '../i18n.js';
 import { KEY_PROVIDERS, isCustomId } from '../integrations/apikeys.js';
 import { LOCAL_SERVERS } from '../integrations/local.js';
 import { activeEntries, beijingToday, loadCatalog, refreshCatalog } from './catalog.js';
 import { BALANCE_SOURCES, balanceDropped, fetchPaidBalance } from './balance.js';
-import { FREE_PREFIX, TIERS, cooldownUntil, freeProof, isQuotaFailure, loadPoolState, needsConfirm, poolCandidates, poolOrder, savePoolState } from './pool.js';
+import { FREE_PREFIX, SUSPECT_DAYS, TIERS, VERIFY_MAX_DAYS, VERIFY_WARN_DAYS, cooldownUntil, freeProof, isGoneFailure, onlyFailures, verifiedDaysAgo, isQuotaFailure, loadPoolState, needsConfirm, poolCandidates, poolOrder, savePoolState } from './pool.js';
 const KEY_IDS = new Set(KEY_PROVIDERS.map((p) => p.id));
 const LOCAL_IDS = new Set(LOCAL_SERVERS.map((s) => s.id));
 /** 上游里能进免费池的：key 来源（含手动加的）和本机模型；别名带 auto/ 的是同名切换，不算 */
@@ -109,7 +109,16 @@ export class FreePool {
             },
             onFailure: (alias, status, text) => {
                 const m = byAlias.get(alias);
-                if (!m || !isQuotaFailure(status, text))
+                if (!m)
+                    return;
+                // key 失效、要付费、余额不足：免费额度可能没了，整家先移出，等用户「再试一次」（§14.40）
+                if (isGoneFailure(status, text)) {
+                    state.suspect = { ...state.suspect, [m.source]: { reason: `HTTP ${status}：${errorReason(text).slice(0, 120)}`, at: new Date().toISOString() } };
+                    req.log?.(`free pool: ${m.source} looks gone (HTTP ${status}); out of the pool until the user retries`);
+                    void this.persist();
+                    return;
+                }
+                if (!isQuotaFailure(status, text))
                     return;
                 state.cooldown[m.source] = cooldownUntil(m.cycle).toISOString();
                 req.log?.(`free pool: ${m.source} cooling until ${state.cooldown[m.source]} (HTTP ${status})`);
@@ -119,11 +128,32 @@ export class FreePool {
     }
     /** 引擎用量记录：给用户打开了的 charges 来源记 token */
     async recordUsage(batch, optIn) {
-        if (!optIn || !Object.keys(optIn).length)
-            return;
         const state = await this.loadState();
         let changed = false;
+        // 每家每天的成功 / 失败（§14.40）：免费池、组合的外壳不算，里面真正调用的模型各记一笔
+        const health = (state.health ??= {});
         for (const r of batch) {
+            const name = r.alias || r.model || '';
+            const source = name.split('/')[0] ?? '';
+            if (!source || !name.includes('/') || source === 'free' || source === 'combo' || source === 'auto')
+                continue;
+            const day = beijingToday(r.timestamp ? new Date(r.timestamp) : new Date());
+            const h = ((health[source] ??= {})[day] ??= { ok: 0, fail: 0 });
+            if (r.failed)
+                h.fail++;
+            else
+                h.ok++;
+            changed = true;
+        }
+        // 只留最近 8 天
+        const keep = new Set(Array.from({ length: 8 }, (_, i) => beijingToday(new Date(Date.now() - i * 86_400_000))));
+        for (const days of Object.values(health))
+            for (const d of Object.keys(days))
+                if (!keep.has(d))
+                    delete days[d];
+        for (const r of batch) {
+            if (!optIn || !Object.keys(optIn).length)
+                break;
             const name = r.alias || r.model || '';
             const source = name.split('/')[0] ?? '';
             if (!optIn[source])
@@ -230,6 +260,34 @@ export class FreePool {
             await this.persist();
         return found;
     }
+    /**
+     * 连续 3 天只有失败、没有一次成功的来源（§14.40）：怀疑免费额度没了，移出免费池。返回新标记的条数。
+     */
+    async checkHealth(inp, now = new Date()) {
+        const state = await this.loadState();
+        const pooled = new Set((await this.candidates(inp)).map((m) => m.source));
+        let n = 0;
+        for (const source of pooled) {
+            if (state.suspect?.[source] || !onlyFailures(state.health?.[source], SUSPECT_DAYS, now))
+                continue;
+            state.suspect = { ...state.suspect, [source]: { reason: L(`连续 ${SUSPECT_DAYS} 天只有失败、没有一次成功`, `Only failures for ${SUSPECT_DAYS} days in a row`), at: now.toISOString() } };
+            n++;
+        }
+        if (n)
+            await this.persist();
+        return n;
+    }
+    /** 用户点「再试一次」：放回免费池，之前几天的失败不再算（重新开始看） */
+    async retrySuspect(source) {
+        const state = await this.loadState();
+        if (state.suspect?.[source]) {
+            const { [source]: _gone, ...rest } = state.suspect;
+            state.suspect = rest;
+        }
+        if (state.health?.[source])
+            state.health[source] = {};
+        await this.persist();
+    }
     /** 用户看过余额提醒：keep = 知道了、继续放在池里（以现在的余额为准重新开始看） */
     async ackSpent(source) {
         const state = await this.loadState();
@@ -268,6 +326,11 @@ export class FreePool {
                 ...(e.source ? { source: e.source } : {}),
                 ...(e.checkin ? { checkin: e.checkin } : {}),
                 ...(e.brand ? { brand: e.brand } : {}),
+                ...(() => {
+                    const d = verifiedDaysAgo(e, now);
+                    const live = e.pool === 'priced';
+                    return d === null ? {} : { verifiedDays: d, fresh: live || d < VERIFY_WARN_DAYS ? 'ok' : d < VERIFY_MAX_DAYS ? 'warn' : 'stale' };
+                })(),
             };
             if (e.kind === 'checkin')
                 return { ...base, status: inp.checkinKinds.has(e.checkin) ? 'connected' : 'missing' };
@@ -275,6 +338,11 @@ export class FreePool {
                 return { ...base, status: 'missing' };
             if (state.spent?.[e.source])
                 return { ...base, status: 'spent' };
+            if (state.suspect?.[e.source])
+                return { ...base, status: 'suspect', suspectReason: state.suspect[e.source].reason };
+            base.health = health7(state.health?.[e.source]);
+            if (!e.charges && base.fresh === 'stale')
+                return { ...base, status: 'stale' };
             // 要每天签到才有额度：今天还没签上（§14.38）
             if (e.needsCheckin && !(inp.config.checkedIn ?? []).includes(e.needsCheckin))
                 return { ...base, status: 'checkin' };
@@ -292,7 +360,7 @@ export class FreePool {
             }
             return { ...base, status: 'connected' };
         });
-        const rank = { spent: 0, confirm: 1, checkin: 2, connected: 3, cooling: 4, optin: 5, capped: 6, missing: 7 };
+        const rank = { spent: 0, suspect: 1, stale: 2, confirm: 3, checkin: 4, connected: 5, cooling: 6, optin: 7, capped: 8, missing: 9 };
         // 同一家的签到和 API 额度互相提示
         for (const v of views) {
             if (!v.brand)
@@ -366,6 +434,20 @@ export class FreePool {
             config: inp.config,
         };
     }
+}
+/** 最近 7 天（北京时间）合计 */
+function health7(days) {
+    const out = { ok: 0, fail: 0 };
+    if (!days)
+        return out;
+    for (let i = 0; i < 7; i++) {
+        const v = days[beijingToday(new Date(Date.now() - i * 86_400_000))];
+        if (v) {
+            out.ok += v.ok;
+            out.fail += v.fail;
+        }
+    }
+    return out;
 }
 /** free:<档> → 档；不是免费池返回 undefined */
 export function tierOf(id) {
