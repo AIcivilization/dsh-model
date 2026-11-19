@@ -46,6 +46,12 @@
 | 腾讯云 TokenHub | `tokenhub.tencentmaas.com` |
 | 书生 InternLM | `chat.intern-ai.org.cn` |
 | AMD Token Lab（国际版） | `api.tokenlab.amd.com` |
+| Kilo Gateway | `api.kilo.ai` |
+| ZenMux | `zenmux.ai` |
+| OrcaRouter | `api.orcarouter.ai` |
+| SambaNova Cloud | `api.sambanova.ai` |
+| Hugging Face | `router.huggingface.co` |
+| Ollama Cloud | `ollama.com` |
 | 商汤日日新 SenseNova | `token.sensenova.cn` |
 | WorkBuddy / WorkBuddy AI | `copilot.tencent.com`、`www.codebuddy.cn` 等 WorkBuddy 自己的地址 |
 | OpenCode Zen | `opencode.ai` |

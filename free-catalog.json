@@ -56,7 +56,10 @@
       "models": ":free$",
       "url": "https://openrouter.ai/keys",
       "verifiedAt": "2026-11-12",
-      "pool": "priced"
+      "pool": "priced",
+      "limits": {
+        "rpm": 20
+      }
     },
     {
       "id": "gemini-free",
@@ -256,6 +259,122 @@
       "pool": "account",
       "confirm": "我的 Mistral 账户是免费的 Experiment 档，没有升级付费档",
       "confirmEn": "My Mistral account is on the free Experiment plan, not a paid plan"
+    },
+    {
+      "id": "kilo-free",
+      "kind": "api",
+      "source": "kilo",
+      "cycle": "forever",
+      "name": "Kilo Gateway 免费模型",
+      "nameEn": "Kilo Gateway free models",
+      "amount": "平台标明价格为 0 的模型（如 kilo-auto/free、:free 系列）",
+      "amountEn": "Models the platform prices at 0 (e.g. kilo-auto/free, :free)",
+      "charges": false,
+      "pool": "priced",
+      "gates": [
+        "要能上外网"
+      ],
+      "url": "https://app.kilo.ai",
+      "verifiedAt": "2026-11-19",
+      "note": "模型列表接口每个模型带价格（prompt、completion 等）和 isFree；价格每一项都是 0 才算免费"
+    },
+    {
+      "id": "zenmux-free",
+      "kind": "api",
+      "source": "zenmux",
+      "cycle": "forever",
+      "name": "ZenMux 免费模型",
+      "nameEn": "ZenMux free models",
+      "amount": "平台在名字上标「(Free)」的模型",
+      "amountEn": "Models the platform labels \"(Free)\"",
+      "charges": false,
+      "pool": "priced",
+      "gates": [
+        "要能上外网"
+      ],
+      "url": "https://zenmux.ai",
+      "verifiedAt": "2026-11-19",
+      "note": "模型列表的展示名里平台自己标「(Free)」，如 Z.AI: GLM 4.7 Flash (Free)"
+    },
+    {
+      "id": "orcarouter-free",
+      "kind": "api",
+      "source": "orcarouter",
+      "cycle": "forever",
+      "name": "OrcaRouter 免费模型",
+      "nameEn": "OrcaRouter free models",
+      "amount": "orcarouter/free 和 -free 结尾的模型（限速）",
+      "amountEn": "orcarouter/free and the -free models (rate limited)",
+      "charges": false,
+      "pool": "pattern",
+      "models": "(^orcarouter/free$|-free$)",
+      "gates": [
+        "要能上外网"
+      ],
+      "url": "https://www.orcarouter.ai/models/orcarouter/free",
+      "verifiedAt": "2026-11-19",
+      "note": "官方模型页：orcarouter/free 只路由到价格为 0 的免费模型，-free 结尾的是免费版"
+    },
+    {
+      "id": "sambanova-free",
+      "kind": "api",
+      "source": "sambanova",
+      "cycle": "forever",
+      "name": "SambaNova 免费档",
+      "nameEn": "SambaNova free tier",
+      "amount": "没绑付款方式时为免费档（限速）；新账号送 5 美元额度，30 天有效",
+      "amountEn": "Free tier while no payment method is linked (rate limited); $5 credit for new accounts, 30 days",
+      "charges": false,
+      "pool": "account",
+      "confirm": "我的 SambaNova 账号没有绑定任何付款方式（官方：没绑付款方式就是免费档）",
+      "confirmEn": "My SambaNova account has no payment method (officially that means the free tier)",
+      "gates": [
+        "要能上外网"
+      ],
+      "url": "https://cloud.sambanova.ai/apis",
+      "verifiedAt": "2026-11-19"
+    },
+    {
+      "id": "huggingface-free",
+      "kind": "api",
+      "source": "huggingface",
+      "cycle": "monthly",
+      "name": "Hugging Face 免费用户每月额度",
+      "nameEn": "Hugging Face monthly credit for free users",
+      "amount": "每月 0.10 美元额度（官方，每月 1 日重置）",
+      "amountEn": "$0.10 a month (official, resets on the 1st)",
+      "charges": false,
+      "pool": "account",
+      "confirm": "我是 Hugging Face 免费用户（不是 PRO、没开按量付费）；官方：免费用户不能按量付费",
+      "confirmEn": "I am a free Hugging Face user (not PRO, no pay as you go); officially free users cannot pay as they go",
+      "gates": [
+        "要能上外网"
+      ],
+      "url": "https://huggingface.co/settings/tokens",
+      "verifiedAt": "2026-11-19",
+      "note": "官方价格说明：免费用户每月 0.10 美元，PRO 2 美元且可超额按量付费"
+    },
+    {
+      "id": "ollama-cloud-free",
+      "kind": "api",
+      "source": "ollama-cloud",
+      "cycle": "forever",
+      "name": "Ollama Cloud 免费计划",
+      "nameEn": "Ollama Cloud free plan",
+      "amount": "按 GPU 时间限量，每 5 小时、每周重置；同时只能跑 1 个",
+      "amountEn": "Limited by GPU time, resets every 5 hours and weekly; 1 at a time",
+      "charges": false,
+      "pool": "account",
+      "confirm": "我用的是 Ollama Cloud 免费计划，没有绑卡",
+      "confirmEn": "I am on the Ollama Cloud free plan without a card",
+      "gates": [
+        "要能上外网"
+      ],
+      "url": "https://ollama.com/settings/keys",
+      "verifiedAt": "2026-11-19",
+      "limits": {
+        "concurrent": 1
+      }
     },
     {
       "id": "amd-tokenlab",

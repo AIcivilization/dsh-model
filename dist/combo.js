@@ -69,6 +69,7 @@ export async function runCombo(run) {
         if (run.signal.aborted)
             return;
         let upstream;
+        run.onStart?.(model);
         try {
             upstream = await fetch(`http://127.0.0.1:${run.port}/v1/chat/completions`, {
                 method: 'POST',
@@ -109,7 +110,7 @@ export async function runCombo(run) {
         last = { status: upstream.status, text };
         tried.push(`${model}: HTTP ${upstream.status}`);
         attempts.push({ model, status: upstream.status, reason: errorReason(text) });
-        run.onFailure?.(model, upstream.status, text);
+        run.onFailure?.(model, upstream.status, text, upstream.headers.get('retry-after'));
         if (!shouldFallBack(upstream.status, text))
             break;
     }

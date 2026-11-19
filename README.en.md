@@ -170,6 +170,8 @@ If a source is signed in but has no usable plan (say, a Kimi account without Kim
 | Cloudflare Workers AI | Free · limited | 10,000 Neurons a day on the free plan, stops (no charge) when used up; the URL includes your account ID |
 | InternLM | Free · limited | Monthly credits during the beta |
 | AMD Token Lab (global) | Free · limited | Complimentary points with the AMD AI Developer Program, no card needed |
+| Kilo, ZenMux, OrcaRouter | Free · limited | Models the platform marks free (priced at 0 or labelled Free); others pay as you go |
+| SambaNova, Hugging Face, Ollama Cloud | Free · limited | Cannot charge without a card / on the free plan (you confirm before they join the pool) |
 | SenseTime SenseNova | Free · limited | Public beta credit pools (rolling 5-hour and weekly caps); see your account page. It does not say whether it charges once used up, so it stays out of the free pool by default. SenseTime Raccoon itself has no public API and its credits only work inside Raccoon, so dsh-model only checks in for you |
 | SCNet, Ant Ling, Tencent Cloud TokenHub | Paid | New-user / monthly credits, then your balance, so they stay out of the free pool by default |
 | DeepSeek official, any OpenAI-compatible service | Paid | Paste an API key (and a URL for other services; add several, tick "free quota" to put one in the pool) |

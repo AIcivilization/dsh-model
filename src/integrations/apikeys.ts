@@ -33,6 +33,8 @@ export interface KeyProvider {
   needsBase?: boolean
   /** 官方写明计费时先扣赠送额度（实名送的、活动送的），用完才扣充值的钱（§14.36） */
   giftFirst?: boolean
+  /** 平台自己在模型展示名上标免费的写法（如 ZenMux 的「(Free)」）：命中就算平台标明价格为 0（§14.41） */
+  freeLabel?: RegExp
   /** 填地址时的提示 */
   baseHint?: string
 }
@@ -68,6 +70,13 @@ export const KEY_PROVIDERS: KeyProvider[] = [
   { id: 'sensenova', label: '商汤日日新 SenseNova', base: 'https://token.sensenova.cn/v1', keyUrl: 'https://platform.sensenova.cn/console/keys', fallbackModels: ['sensenova-6.8-flash-lite', 'sensenova-6.8-flash', 'deepseek-flash', 'glm-5.3', 'kimi-k3'], direct: true },
   // Cloudflare：地址里带账户 ID，GET /models 不支持（实测 405），用常用模型验证 key
   { id: 'cloudflare', label: 'Cloudflare Workers AI', base: '', keyUrl: 'https://dash.cloudflare.com/profile/api-tokens', needsBase: true, baseHint: 'https://api.cloudflare.com/client/v4/accounts/<账户 ID>/ai/v1', fallbackModels: ['@cf/openai/gpt-oss-120b', '@cf/openai/gpt-oss-20b', '@cf/meta/llama-4-scout-17b-16e-instruct'], freeRe: /./ },
+  // 免费额度来源（2026-11-19 加，§14.41，参考同类项目的提供商清单后逐个核实）：不带 key 时对话接口回 401 / 403 / 404
+  { id: 'kilo', label: 'Kilo Gateway', base: 'https://api.kilo.ai/api/gateway', keyUrl: 'https://app.kilo.ai' },
+  { id: 'zenmux', label: 'ZenMux', base: 'https://zenmux.ai/api/v1', keyUrl: 'https://zenmux.ai', freeLabel: /\(free\)/i },
+  { id: 'orcarouter', label: 'OrcaRouter', base: 'https://api.orcarouter.ai/v1', keyUrl: 'https://www.orcarouter.ai' },
+  { id: 'sambanova', label: 'SambaNova Cloud', base: 'https://api.sambanova.ai/v1', keyUrl: 'https://cloud.sambanova.ai/apis' },
+  { id: 'huggingface', label: 'Hugging Face Inference Providers', base: 'https://router.huggingface.co/v1', keyUrl: 'https://huggingface.co/settings/tokens' },
+  { id: 'ollama-cloud', label: 'Ollama Cloud', base: 'https://ollama.com/v1', keyUrl: 'https://ollama.com/settings/keys' },
   // AMD Token Lab（国际版，2026-11-18 加，§14.38）：AMD AI 开发者计划送点数；不带 key 回 401（invalid_api_key）
   { id: 'amd-tokenlab', label: 'AMD Token Lab（国际版）', base: 'https://api.tokenlab.amd.com/v1', keyUrl: 'https://notebooks.amd.com/tokenlab' },
   { id: 'custom', label: '其他 OpenAI 兼容服务', base: '', keyUrl: '', needsBase: true },
@@ -138,8 +147,11 @@ export function parseModelList(providerId: string, body: unknown): KeyModel[] {
     // priced：平台接口自己标了价格为 0（可信，免费池认它）；free：可能免费（含按名字猜的，只用来「发现」）
     // 价格的每一项都必须是 0（输入、输出、按次、图片、联网……）；有一项读不懂或不是 0 就不算（§14.37）
     const priced = pricing && typeof pricing === 'object' && Object.keys(pricing).length > 0 ? Object.values(pricing as Record<string, unknown>).every((v) => v !== null && v !== '' && Number(v) === 0) : false
-    const free = priced || id.endsWith(':free') || Boolean(keyProvider(providerId)?.freeRe?.test(id))
-    out.push({ id, ...(free ? { free: true } : {}), ...(priced ? { priced: true } : {}) })
+    // 平台在展示名上自己标的免费（ZenMux 的「(Free)」）也算平台标明
+    const label = String(m.display_name ?? m.name ?? '')
+    const labelled = Boolean(keyProvider(providerId)?.freeLabel?.test(label))
+    const free = priced || labelled || id.endsWith(':free') || Boolean(keyProvider(providerId)?.freeRe?.test(id))
+    out.push({ id, ...(free ? { free: true } : {}), ...(priced || labelled ? { priced: true } : {}) })
   }
   // OpenRouter 有几百个模型：付费的照样能用，但先把免费的排前面，挑默认时就先挑它们
   return out.sort((a, b) => Number(Boolean(b.free)) - Number(Boolean(a.free)) || a.id.localeCompare(b.id))

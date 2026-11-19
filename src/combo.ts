@@ -65,7 +65,9 @@ export interface ComboRun {
   signal: AbortSignal
   log?: (message: string) => void
   /** 一个成员失败了（免费池据此冷却来源） */
-  onFailure?: (model: string, status: number, text: string) => void
+  onFailure?: (model: string, status: number, text: string, retryAfter?: string | null) => void
+  /** 开始试某个成员（免费池据此记限速） */
+  onStart?: (model: string) => void
   /** 全部失败时，报错后面再补一句该怎么办（免费池：最早几点恢复、去哪看） */
   failHint?: () => string | undefined
   /** 一次请求结束：试过哪些、谁回答的（没有就是全失败）、首字节和总耗时（设计 §14.35「看得见」） */
@@ -96,6 +98,7 @@ export async function runCombo(run: ComboRun): Promise<void> {
   for (const model of combo.models) {
     if (run.signal.aborted) return
     let upstream: Response
+    run.onStart?.(model)
     try {
       upstream = await fetch(`http://127.0.0.1:${run.port}/v1/chat/completions`, {
         method: 'POST',
@@ -132,7 +135,7 @@ export async function runCombo(run: ComboRun): Promise<void> {
     last = { status: upstream.status, text }
     tried.push(`${model}: HTTP ${upstream.status}`)
     attempts.push({ model, status: upstream.status, reason: errorReason(text) })
-    run.onFailure?.(model, upstream.status, text)
+    run.onFailure?.(model, upstream.status, text, upstream.headers.get('retry-after'))
     if (!shouldFallBack(upstream.status, text)) break
   }
   log(`combo ${combo.id}: all failed (${tried.join(' | ')})`)

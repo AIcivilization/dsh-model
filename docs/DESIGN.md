@@ -971,3 +971,24 @@ dsh-checkin-all（同作者的独立签到插件，MIT）里已经做好、我�
    - 免费池请求遇到「额度可能没了」的失败（`isGoneFailure`：401、402、非限流的 403、余额不足 / 要付费 / 免费档结束），这家马上标「可能失效了」并移出免费池。429（限流、今天次数用完）、404（单个模型没了）、5xx 只冷却或换下一个，不算。
    - 在免费池里的来源连续 3 天只有失败、没有一次成功，也标「可能失效了」（每 30 分钟和余额兜底一起检查）。
    - 卡片里写原因，按「再试一次」放回免费池，之前几天的失败清零重新看。
+
+### 14.41 补免费来源；免费池按每家限速走（0.36.0）
+
+参考同类开源项目 free-claude-code（AGPL，只借鉴提供商清单，没有拷代码）的提供商清单，逐个核实后：
+
+**加 6 家**（不带 key 时对话接口回 401 / 403 / 404，2026-11-19 实测）
+
+| 来源 | 地址 | 怎么证明免费 |
+|---|---|---|
+| Kilo Gateway | `api.kilo.ai/api/gateway` | `priced`：模型列表每个模型带价格和 isFree，价格每一项都是 0 才算 |
+| ZenMux | `zenmux.ai/api/v1` | `priced`：平台在展示名上自己标「(Free)」（`KeyProvider.freeLabel`） |
+| OrcaRouter | `api.orcarouter.ai/v1` | `pattern`：官方模型页写明 orcarouter/free 和 -free 结尾的价格为 0 |
+| SambaNova Cloud | `api.sambanova.ai/v1` | `account` + 确认：官方文档「没绑付款方式就是免费档」 |
+| Hugging Face Inference Providers | `router.huggingface.co/v1` | `account` + 确认：官方价格页「免费用户每月 0.10 美元、不能按量付费」，PRO 会超额扣钱 |
+| Ollama Cloud | `ollama.com/v1` | `account` + 确认：免费计划不用绑卡，按 GPU 时间限量 |
+
+**不加**：Cerebras（不用绑卡的免费档 2026-07 已取消，现在要绑卡）、TokenRouter（不带 key 查不到任何信息，核实不了）、LLM7（没有 0 价模型）。
+
+**免费池按每家限速走**
+- 目录可以写 `limits: { rpm, concurrent }`（每分钟请求数、同时进行数）：OpenRouter 免费模型每分钟 20 次（官方），Ollama Cloud 免费计划同时 1 个。守护进程在内存里记每家最近一分钟发了几次、正在进行几个（`RateLimiter`），满了就先跳过它试下一家；全被跳过就照原顺序，让上游自己回应。
+- 分清两种 429（`rateCooldown`）：上游给了 `Retry-After` 就照它（至少 10 秒）；报错说的是每分钟限速、又没提每天，冷却 1 分钟；今天 / 本月的额度用完才冷却到重置时间。以前一律冷却到重置时间，每天重置的免费档撞一次每分钟限速就要等到第二天。

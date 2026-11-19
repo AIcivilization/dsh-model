@@ -353,3 +353,49 @@ describe('is a free quota still alive? (§14.40)', () => {
     }
   })
 })
+
+describe('pacing the free pool (§14.41)', () => {
+  it('cools a per-minute limit for a minute, a used-up daily quota until reset, and honours Retry-After', async () => {
+    const { rateCooldown } = await import('../../src/free/pool.js')
+    const now = new Date('2026-11-19T04:00:00Z') // 北京 12:00
+    expect(rateCooldown(429, 'Rate limit exceeded: 20 requests per minute', null, 'daily', now).getTime() - now.getTime()).toBe(60_000)
+    expect(rateCooldown(429, 'Rate limit exceeded: free-models-per-day', null, 'daily', now).toISOString()).toBe('2026-11-19T16:00:00.000Z')
+    expect(rateCooldown(429, '', '30', 'daily', now).getTime() - now.getTime()).toBe(30_000)
+    expect(rateCooldown(429, '', '2', 'daily', now).getTime() - now.getTime()).toBe(10_000)
+    expect(rateCooldown(429, '今日额度已用完', null, 'daily', now).toISOString()).toBe('2026-11-19T16:00:00.000Z')
+  })
+
+  it('skips a provider whose minute budget or concurrency is full, and frees it again', async () => {
+    const { RateLimiter, limitsOf } = await import('../../src/free/pool.js')
+    const l = new RateLimiter()
+    const t0 = 1_000_000
+    for (let i = 0; i < 3; i++) {
+      expect(l.allow('or', { rpm: 3 }, t0)).toBe(true)
+      l.start('or', t0)
+      l.end('or')
+    }
+    expect(l.allow('or', { rpm: 3 }, t0 + 1000)).toBe(false)
+    expect(l.allow('or', { rpm: 3 }, t0 + 61_000)).toBe(true)
+    l.start('oc')
+    expect(l.allow('oc', { concurrent: 1 })).toBe(false)
+    l.end('oc')
+    expect(l.allow('oc', { concurrent: 1 })).toBe(true)
+    expect(l.allow('x', undefined)).toBe(true)
+    const e = [entry({ id: 'a', source: 's', cycle: 'daily', limits: { rpm: 20 } }), entry({ id: 'b', source: 's', cycle: 'once', limits: { rpm: 10, concurrent: 2 } })]
+    expect(limitsOf('s', e)).toEqual({ rpm: 10, concurrent: 2 })
+    expect(limitsOf('t', e)).toBeUndefined()
+  })
+
+  it('trusts what the platform itself marks free: Kilo prices, ZenMux "(Free)" labels', async () => {
+    const { parseModelList } = await import('../../src/integrations/apikeys.js')
+    const kilo = parseModelList('kilo', { data: [
+      { id: 'kilo-auto/free', pricing: { prompt: '0', completion: '0', request: '0', image: '0' } },
+      { id: 'liquid/lfm-3-1.7b:free', pricing: { prompt: '0', completion: '0', discount: 0 } },
+      { id: 'kilo-auto/balanced', pricing: { prompt: '-1', completion: '-1' } },
+    ] })
+    expect(kilo.filter((m) => m.priced).map((m) => m.id).sort()).toEqual(['kilo-auto/free', 'liquid/lfm-3-1.7b:free'])
+    const zen = parseModelList('zenmux', { data: [{ id: 'z-ai/glm-4.7-flash-free', display_name: 'Z.AI: GLM 4.7 Flash (Free)' }, { id: 'z-ai/glm-5.3', display_name: 'Z.AI: GLM 5.3' }] })
+    expect(zen.find((m) => m.id === 'z-ai/glm-4.7-flash-free')?.priced).toBe(true)
+    expect(zen.find((m) => m.id === 'z-ai/glm-5.3')?.priced).toBeUndefined()
+  })
+})

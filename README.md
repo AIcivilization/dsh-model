@@ -170,6 +170,8 @@ dsh-model setup
 | Cloudflare Workers AI | 免费·额度少 | 免费计划每天 1 万 Neurons，超额即停不扣钱；地址要填带账户 ID 的 |
 | 书生 InternLM | 免费·额度少 | 测试期每月送额度 |
 | AMD Token Lab（国际版） | 免费·额度少 | 加入 AMD AI 开发者计划送点数，不用绑卡；要能上外网 |
+| Kilo、ZenMux、OrcaRouter | 免费·额度少 | 平台标明免费的模型（价格为 0 或标「Free」）免费，其余按量付费；要能上外网 |
+| SambaNova、Hugging Face、Ollama Cloud | 免费·额度少 | 没绑卡或免费计划时扣不到钱（进免费池前要你确认一句）；要能上外网 |
 | 商汤日日新 SenseNova | 免费·额度少 | 公测期积分池（滚动 5 小时、每周上限），以账户页为准；没写用完会不会转付费，所以默认不进免费池。商汤小浣熊本身没有对外 API，它的积分只能在小浣熊里用，dsh-model 只替你签到 |
 | 超算互联网、蚂蚁百灵、腾讯云 TokenHub | 需付费 | 新人 / 每月送额度，用完扣余额，所以默认不进免费池 |
 | DeepSeek 官方、其他 OpenAI 兼容服务 | 需付费 | 填 API key（其他服务还要填地址；可以加多个，勾「免费额度」就进免费池） |

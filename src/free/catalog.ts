@@ -45,6 +45,8 @@ export interface CatalogEntry {
   brand?: string
   /** API 额度要每天签到 / 登录领取才有：值是签到项（checkinKind）。当天签上了才进免费池（§14.38） */
   needsCheckin?: string
+  /** 这家免费档的限速（§14.41）：每分钟请求数、同时进行的请求数。免费池自己按这个控制节奏，少撞 429 */
+  limits?: { rpm?: number; concurrent?: number }
   gates?: string[]
   /** 截止日（北京时间 YYYY-MM-DD，含当天） */
   until?: string

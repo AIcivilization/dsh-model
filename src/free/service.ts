@@ -15,7 +15,7 @@ import { LOCAL_SERVERS } from '../integrations/local.js'
 import type { CompatUpstream } from '../engine/compat.js'
 import { activeEntries, beijingToday, loadCatalog, refreshCatalog, type Catalog, type CatalogEntry } from './catalog.js'
 import { BALANCE_SOURCES, balanceDropped, fetchPaidBalance } from './balance.js'
-import { FREE_PREFIX, SUSPECT_DAYS, TIERS, VERIFY_MAX_DAYS, VERIFY_WARN_DAYS, cooldownUntil, freeProof, isGoneFailure, onlyFailures, verifiedDaysAgo, isQuotaFailure, loadPoolState, needsConfirm, poolCandidates, poolOrder, savePoolState, type Discovery, type Member, type PoolConfig, type PoolSource, type PoolState, type Tier } from './pool.js'
+import { FREE_PREFIX, RateLimiter, SUSPECT_DAYS, TIERS, VERIFY_MAX_DAYS, VERIFY_WARN_DAYS, cooldownUntil, limitsOf, rateCooldown, freeProof, isGoneFailure, onlyFailures, verifiedDaysAgo, isQuotaFailure, loadPoolState, needsConfirm, poolCandidates, poolOrder, savePoolState, type Discovery, type Member, type PoolConfig, type PoolSource, type PoolState, type Tier } from './pool.js'
 
 const KEY_IDS = new Set(KEY_PROVIDERS.map((p) => p.id))
 const LOCAL_IDS = new Set<string>(LOCAL_SERVERS.map((s) => s.id))
@@ -129,6 +129,7 @@ const localized = (e: CatalogEntry) => (lang() === 'en' ? { name: e.nameEn ?? e.
 
 export class FreePool {
   private state?: PoolState
+  private readonly limiter = new RateLimiter()
   private saving = Promise.resolve()
 
   constructor(private readonly ctx: Ctx) {}
@@ -156,7 +157,11 @@ export class FreePool {
   /** 引擎转来的 free:<档> 请求 */
   async run(tier: Tier, inp: Pick<PoolInputs, 'config' | 'upstreams' | 'secrets'>, req: { port: number; key: string; raw: string; res: ServerResponse; signal: AbortSignal; log?: (m: string) => void; onDone?: (r: RouteResult) => void }): Promise<void> {
     const state = await this.loadState()
-    const order = poolOrder(await this.candidates(inp), tier, state)
+    const entries = activeEntries(await this.catalog())
+    const full = poolOrder(await this.candidates(inp), tier, state)
+    // 按每家的限速，先跳过这一分钟发满了、或同时进行数满了的（§14.41）；全被跳过就照原顺序，让上游自己说
+    const paced = full.filter((m) => this.limiter.allow(m.source, limitsOf(m.source, entries)))
+    const order = paced.length ? paced : full
     if (!order.length) {
       const body = JSON.stringify({ error: { message: L('免费池现在没有可用的模型：可能都在冷却（额度用完会等到重置时间），或还没接入免费来源。在 dsh-model 设置页的「免费额度」里看详情', 'The free pool has no model available now: they may all be cooling down (until their quota resets), or no free source is connected yet. See "Free quota" in the dsh-model settings page'), type: 'free_pool_empty', code: 'free_pool_empty' } })
       req.res.writeHead(503, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) })
@@ -172,7 +177,15 @@ export class FreePool {
       res: req.res,
       signal: req.signal,
       ...(req.log ? { log: req.log } : {}),
-      ...(req.onDone ? { onDone: req.onDone } : {}),
+      onStart: (alias) => {
+        const m = byAlias.get(alias)
+        if (m) this.limiter.start(m.source)
+      },
+      onDone: (r) => {
+        const m = r.answered ? byAlias.get(r.answered) : undefined
+        if (m) this.limiter.end(m.source)
+        req.onDone?.(r)
+      },
       failHint: () => {
         const now = Date.now()
         const next = Object.values(state.cooldown).filter((t) => Date.parse(t) > now).sort()[0]
@@ -180,9 +193,10 @@ export class FreePool {
           ? L(`免费池里的来源都在冷却，最早 ${new Date(next).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}（北京时间）恢复。现在要用，可以换一个计费或订阅的模型；也可以在 dsh-model 设置页「免费额度」里再领一份`, `Every source in the free pool is cooling down; the first is back at ${new Date(next).toISOString()}. To continue now, pick a paid or subscription model, or claim another quota under "Free quota" in the dsh-model settings`)
           : L('在 dsh-model 设置页「免费额度」里能看到每一家的状态和失败原因', 'See each source and why it failed under "Free quota" in the dsh-model settings')
       },
-      onFailure: (alias, status, text) => {
+      onFailure: (alias, status, text, retryAfter) => {
         const m = byAlias.get(alias)
         if (!m) return
+        this.limiter.end(m.source)
         // key 失效、要付费、余额不足：免费额度可能没了，整家先移出，等用户「再试一次」（§14.40）
         if (isGoneFailure(status, text)) {
           state.suspect = { ...state.suspect, [m.source]: { reason: `HTTP ${status}：${errorReason(text).slice(0, 120)}`, at: new Date().toISOString() } }
@@ -191,7 +205,8 @@ export class FreePool {
           return
         }
         if (!isQuotaFailure(status, text)) return
-        state.cooldown[m.source] = cooldownUntil(m.cycle).toISOString()
+        // 每分钟的限速只冷却一会儿，今天 / 本月的额度用完才冷却到重置时间
+        state.cooldown[m.source] = rateCooldown(status, text, retryAfter, m.cycle).toISOString()
         req.log?.(`free pool: ${m.source} cooling until ${state.cooldown[m.source]} (HTTP ${status})`)
         void this.persist()
       },

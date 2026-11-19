@@ -266,6 +266,60 @@ export function isQuotaFailure(status: number, text: string): boolean {
   return /quota|rate.?limit|too many requests|insufficient|balance|credit|exceed|余额|额度|限流|欠费|arrears/i.test(text) && status >= 400
 }
 
+/**
+ * 一次 429 / 额度失败该冷却多久（§14.41）：
+ *   上游给了 Retry-After → 照它（至少 10 秒）；
+ *   报错说的是每分钟的限速（per minute、RPM、rate limit、too many requests），又没提每天 → 1 分钟；
+ *   其余（今天 / 本月的额度用完）→ 到这份额度的重置时间。
+ * 以前一律到重置时间：每天重置的免费档撞一次每分钟限速，就要等到第二天。
+ */
+export function rateCooldown(status: number, text: string, retryAfter: string | null | undefined, cycle: Member['cycle'], now = new Date()): Date {
+  if (retryAfter) {
+    const n = Number(retryAfter)
+    if (Number.isFinite(n) && n >= 0) return new Date(now.getTime() + Math.max(10, n) * 1000)
+    const t = Date.parse(retryAfter)
+    if (Number.isFinite(t) && t > now.getTime()) return new Date(t)
+  }
+  const perDay = /per.?day|daily|\bRPD\b|today|this month|monthly|每天|今日|当日|本月|每月/i.test(text)
+  const perMinute = /per.?min|\bRPM\b|\bTPM\b|rate.?limit|too many requests|每分钟|频率|频繁|请求过快/i.test(text)
+  if (perMinute && !perDay) return new Date(now.getTime() + 60_000)
+  return cooldownUntil(cycle, now)
+}
+
+/** 免费池自己控制节奏（§14.41）：每家最近一分钟发了几次、正在进行几个。只在内存里 */
+export class RateLimiter {
+  private starts = new Map<string, number[]>()
+  private inflight = new Map<string, number>()
+
+  /** 按限速现在能不能再发一个 */
+  allow(source: string, limits: { rpm?: number; concurrent?: number } | undefined, now = Date.now()): boolean {
+    if (!limits) return true
+    const recent = (this.starts.get(source) ?? []).filter((t) => now - t < 60_000)
+    this.starts.set(source, recent)
+    if (limits.rpm !== undefined && recent.length >= limits.rpm) return false
+    if (limits.concurrent !== undefined && (this.inflight.get(source) ?? 0) >= limits.concurrent) return false
+    return true
+  }
+
+  start(source: string, now = Date.now()): void {
+    this.starts.set(source, [...(this.starts.get(source) ?? []).filter((t) => now - t < 60_000), now])
+    this.inflight.set(source, (this.inflight.get(source) ?? 0) + 1)
+  }
+
+  end(source: string): void {
+    this.inflight.set(source, Math.max(0, (this.inflight.get(source) ?? 0) - 1))
+  }
+}
+
+/** 一家的限速：它在目录里的几份额度里取最严的 */
+export function limitsOf(source: string, entries: CatalogEntry[]): { rpm?: number; concurrent?: number } | undefined {
+  const ls = entries.filter((e) => e.kind === 'api' && e.source === source && e.limits).map((e) => e.limits!)
+  if (!ls.length) return undefined
+  const rpm = ls.map((l) => l.rpm).filter((n): n is number => typeof n === 'number' && n > 0)
+  const conc = ls.map((l) => l.concurrent).filter((n): n is number => typeof n === 'number' && n > 0)
+  return { ...(rpm.length ? { rpm: Math.min(...rpm) } : {}), ...(conc.length ? { concurrent: Math.min(...conc) } : {}) }
+}
+
 /** 冷却到什么时候：每天重置的到北京时间次日 0 点，每月的到下月 1 日，其余 1 小时 */
 export function cooldownUntil(cycle: Member['cycle'], now = new Date()): Date {
   if (cycle === 'daily' || cycle === 'monthly') {
