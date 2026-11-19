@@ -120,6 +120,9 @@ export class Daemon {
         this.timers.push(setInterval(() => void this.discoverFree().catch(() => { }), 6 * 60 * 60 * 1000));
         // 从真实请求学会哪些模型在 dsh 里用不了（§14.42）：每 5 分钟读一遍失败日志
         this.timers.push(setInterval(() => void this.learnModelHealth().catch(() => false), 5 * 60_000));
+        // 每天全面体检一次（§14.43）：启动 10 分钟后先测一次，之后每 24 小时
+        setTimeout(() => void this.sweepModels().catch(() => { }), 10 * 60_000);
+        this.timers.push(setInterval(() => void this.sweepModels().catch(() => { }), 24 * 60 * 60_000));
         setTimeout(() => void this.learnModelHealth().catch(() => false), 30_000);
         // 余额兜底（§14.34）：能查充值余额的来源每 30 分钟看一次，变少了就移出免费池并提醒
         this.timers.push(setInterval(() => void this.checkFreeBalances().catch(() => { }), 30 * 60 * 1000));
@@ -425,6 +428,8 @@ export class Daemon {
             delete h.badKeys[def.id];
             await saveModelHealth(this.ctx.paths.home, h, this.ctx.owner);
         }
+        // 填了 key 当场体检这一家（§14.43）：哪些模型在 dsh 里用不了，不用等撞上
+        setTimeout(() => void this.sweepModels(def.id).catch(() => { }), 3000);
         await this.setSourceDisabled(def.id, false);
         await this.resync();
         return r;
@@ -1196,7 +1201,7 @@ export class Daemon {
         return { started: true, log };
     }
     /** 「测一下」：经引擎发一句很短的话，看能不能用、多久回复（会用掉一点点额度） */
-    async testModel(model) {
+    async testModel(model, opts = {}) {
         if (!model || model.length > 200)
             throw new DshModelError('bad_model', L('model 不合法', 'invalid model'));
         const all = await loadAll(this.ctx);
@@ -1227,6 +1232,10 @@ export class Daemon {
             }
             // 测试只发一句短话；WorkBuddy 会拦带 dsh 内置说明的真实对话（2026-10），通过不代表在 dsh 里能用
             const note = /^workbuddy(-ai)?\//.test(model) ? L('这只是一句短测试；WorkBuddy 会拦下 dsh 里的真实对话', 'Only a short test; WorkBuddy blocks real conversations from dsh') : undefined;
+            // 按 dsh 的真实请求（带工具）测通了：记下时间（§14.43）
+            const h = await loadModelHealth(this.ctx.paths.home);
+            h.verified = { ...h.verified, [model]: new Date().toISOString() };
+            await saveModelHealth(this.ctx.paths.home, h, this.ctx.owner);
             return { ok: true, ms, reply, ...(note ? { note } : {}) };
         }
         let message = text.slice(0, 300);
@@ -1242,7 +1251,7 @@ export class Daemon {
         const c = classify({ status: res.status, ...(code ? { code } : {}), message });
         const retryAt = c.kind === 'rate' || c.kind === 'quota' ? await this.retryAtOf(model, res.headers.get('retry-after')) : undefined;
         // 测出来是「dsh 用不了」的（不支持工具、模型没了、key 不对）：马上记下，从 dsh 模型列表里去掉
-        const learned = await this.learnModelHealth([{ model, source: model.includes('/') ? model.split('/')[0] : '', status: res.status, message, at: new Date().toISOString() }]);
+        const learned = await this.learnModelHealth([{ model, source: model.includes('/') ? model.split('/')[0] : '', status: res.status, message, at: new Date().toISOString() }], { resync: !opts.sweep });
         const why = learnOne({ model, source: '', status: res.status, message, at: '' });
         const advice = why?.kind === 'no_tools'
             ? L('这个模型不支持工具调用，而 dsh 每次都要用工具，所以在 dsh 里用不了。已从 dsh 的模型列表里去掉', 'This model does not support tool calls, which dsh always uses, so it cannot work in dsh. It was taken out of the dsh model list')
@@ -1482,15 +1491,78 @@ export class Daemon {
     }
     // —— 从真实请求学会「哪些模型在 dsh 里用不了」（§14.42） ——
     /** 把一批失败并进模型健康记录；有变化就重新同步（模型列表跟着变）。返回有没有变化 */
-    async learnModelHealth(failures) {
+    async learnModelHealth(failures, opts = {}) {
         const list = failures ?? (await recentFailures(this.ctx.paths.logs, 200).catch(() => []));
         const h = await loadModelHealth(this.ctx.paths.home);
         if (!learnAll(h, list))
             return false;
         await saveModelHealth(this.ctx.paths.home, h, this.ctx.owner);
-        log_(`daemon: model health learned from failures; resyncing`);
-        void this.resync();
+        if (opts.resync !== false) {
+            log_(`daemon: model health learned from failures; resyncing`);
+            void this.resync();
+        }
         return true;
+    }
+    // —— 全面体检（§14.43）：不等用户撞上，主动按 dsh 的真实请求把已接入来源的模型测一遍 ——
+    sweepInflight;
+    sweepProgress;
+    /**
+     * 开始一次体检（已在跑就接着那次）。only：只测这一家（刚填 key 时）。
+     * 只自动测「免费」的模型（免费池、标免费的、本机模型）；收费模型不自动测，免得替用户花钱，留给用户手动「测一下」。
+     * 每家之间、每个模型之间隔开，最多 80 个，免得撞免费档的限速。测完一次性同步，不是每学到一个就同步。
+     */
+    sweepModels(only) {
+        this.sweepInflight ??= this.doSweep(only).finally(() => {
+            this.sweepInflight = undefined;
+            this.sweepProgress = undefined;
+        });
+        return this.sweepInflight;
+    }
+    async doSweep(only) {
+        const ups = await loadCompatUpstreams(this.ctx);
+        const targets = [];
+        let paidSkipped = 0;
+        for (const u of ups) {
+            if (['free', 'combo', 'opencode'].includes(u.name) || u.name.startsWith('workbuddy'))
+                continue;
+            if (only && u.name !== only)
+                continue;
+            for (const m of u.models) {
+                if (m.alias !== `${u.name}/${m.name}` || m.broken)
+                    continue;
+                if (m.cost === 'free' || m.cost === 'local')
+                    targets.push(m.alias);
+                else
+                    paidSkipped++;
+            }
+        }
+        const list = targets.slice(0, 80);
+        this.sweepProgress = { startedAt: new Date().toISOString(), ...(only ? { source: only } : {}), total: list.length, done: 0 };
+        let ok = 0;
+        let broken = 0;
+        let skipped = targets.length - list.length;
+        let last = '';
+        for (const alias of list) {
+            const src = alias.split('/')[0];
+            // 同一家连着测时多等一会儿（免费档常有每分钟次数限制）
+            await new Promise((r) => setTimeout(r, src === last ? 3000 : 500));
+            last = src;
+            this.sweepProgress.current = alias;
+            const r = await this.testModel(alias, { sweep: true }).catch(() => null);
+            this.sweepProgress.done++;
+            if (r?.ok)
+                ok++;
+            else if (r?.learned || (r && /工具|tool/.test(r.advice ?? '')))
+                broken++;
+            else
+                skipped++; // 限流、超时、上游出错：这次没测成，下次再测
+        }
+        const h = await loadModelHealth(this.ctx.paths.home);
+        h.lastSweep = { at: new Date().toISOString(), checked: list.length, ok, broken, skipped, paidSkipped };
+        await saveModelHealth(this.ctx.paths.home, h, this.ctx.owner);
+        log_(`daemon: model sweep${only ? ` (${only})` : ''}: ${list.length} checked, ${ok} ok, ${broken} not usable, ${skipped} skipped, ${paidSkipped} paid not tested`);
+        if (broken)
+            await this.resync();
     }
     /** 页面：用不了的模型、被拒的 key、学到的输出上限，以及「显示用不了的模型」开关 */
     async modelHealthView() {
@@ -1502,6 +1574,9 @@ export class Daemon {
             broken: Object.entries(h.broken).map(([model, b]) => ({ model, ...b })),
             badKeys: Object.entries(bad).map(([source, b]) => ({ source, label: keyLabel(source), ...b })),
             maxTokens: Object.keys(h.maxTokens).length,
+            verified: Object.keys(h.verified ?? {}).length,
+            ...(h.lastSweep ? { lastSweep: h.lastSweep } : {}),
+            ...(this.sweepProgress ? { sweeping: this.sweepProgress } : {}),
         };
     }
     async restoreModel(model) {
@@ -1612,6 +1687,7 @@ export class Daemon {
         const r = await setApiKey(this.ctx, id, String(b.key ?? '').trim(), String(b.baseUrl ?? ''), all.config.proxy, { label: name, free: b.free === true, cycle, ...(until ? { until } : {}) });
         await this.setSourceDisabled(id, false);
         await this.resync();
+        setTimeout(() => void this.sweepModels(id).catch(() => { }), 3000);
         return { id, ...r };
     }
     /** 管理页"复制"用：取一把未吊销 key 的完整值（只经同源、带页面 token 的插件路由转发） */
@@ -1708,6 +1784,11 @@ export class Daemon {
                 return ok(await this.modelHealthView());
             if (method === 'POST' && path === '/models/health/restore')
                 return ok(await this.restoreModel(String(b.model ?? '')).then(() => this.modelHealthView()));
+            if (method === 'POST' && path === '/models/check') {
+                void this.sweepModels(typeof b.source === 'string' && b.source ? b.source : undefined).catch(() => { });
+                await new Promise((r) => setTimeout(r, 300));
+                return ok(await this.modelHealthView());
+            }
             if (method === 'POST' && path === '/models/show-broken')
                 return ok(await this.setShowBroken(b.on === true).then(() => this.modelHealthView()));
             if (method === 'POST' && path === '/free/retry')

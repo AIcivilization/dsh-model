@@ -25,6 +25,10 @@ export interface ModelHealth {
   maxTokens: Record<string, number>
   /** 来源 → key 不对 */
   badKeys: Record<string, { message: string; at: string }>
+  /** 模型别名 → 最近一次按 dsh 的真实请求测通的时间（§14.43） */
+  verified?: Record<string, string>
+  /** 最近一次全面体检（§14.43） */
+  lastSweep?: { at: string; checked: number; ok: number; broken: number; skipped: number; paidSkipped: number }
 }
 
 export const modelHealthPath = (home: string) => join(home, 'model-health.json')

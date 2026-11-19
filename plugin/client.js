@@ -959,15 +959,26 @@ window.__ModuleLoader__.load({
       const [err, setErr] = useState('')
       const load = useCallback(() => api('GET', '/models/health').then(setData, () => {}), [])
       useEffect(() => { void load(); const t = setInterval(load, 5 * 60_000); return () => clearInterval(t) }, [load])
-      if (!data || (!data.broken.length && !data.badKeys.length)) return null
+      // 体检进行中：每 3 秒看一下进度
+      useEffect(() => { if (!data || !data.sweeping) return undefined; const t = setInterval(load, 3000); return () => clearInterval(t) }, [data, load])
+      if (!data) return null
       const act = async (method, path, body) => { try { setData(await api(method, path, body)); setErr('') } catch (e) { setErr(e.message) } }
       const why = { no_tools: L('不支持工具调用（dsh 每次都要用工具）', 'no tool calls (dsh always uses tools)'), gone: L('模型不存在或已下线', 'model missing or retired') }
       return h('div', { style: S.section },
-        h('div', { style: { ...S.card, padding: '10px 14px', borderColor: C.warn } },
+        h('div', { style: { ...S.card, padding: '10px 14px', ...(data.broken.length || data.badKeys.length ? { borderColor: C.warn } : {}) } },
           h('button', { type: 'button', 'aria-expanded': open, onClick: () => setOpen(!open), style: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', width: '100%', fontSize: 13, color: C.text } },
             `${open ? '▾' : '▸'} `,
-            h('b', null, L(`在 dsh 里用不了的：${data.broken.length} 个模型${data.badKeys.length ? `、${data.badKeys.length} 家 key 不对` : ''}`, `Not usable in dsh: ${data.broken.length} models${data.badKeys.length ? `, ${data.badKeys.length} rejected keys` : ''}`)),
-            h('span', { style: { color: C.sub, marginLeft: 8 } }, L('已自动从模型列表和免费池里去掉', 'taken out of the model list and the free pool'))),
+            h('b', null, data.broken.length || data.badKeys.length ? L(`在 dsh 里用不了的：${data.broken.length} 个模型${data.badKeys.length ? `、${data.badKeys.length} 家 key 不对` : ''}`, `Not usable in dsh: ${data.broken.length} models${data.badKeys.length ? `, ${data.badKeys.length} rejected keys` : ''}`) : L('模型体检', 'Model check')),
+            data.broken.length || data.badKeys.length ? h('span', { style: { color: C.sub, marginLeft: 8 } }, L('已自动从模型列表和免费池里去掉', 'taken out of the model list and the free pool')) : null),
+          // 全面体检（§14.43）：上次结果、进度、「现在全部检查一遍」
+          h('div', { style: { ...S.line, marginTop: 6, fontSize: 12, color: C.sub, flexWrap: 'wrap' } },
+            h('span', { style: S.grow },
+              data.sweeping
+                ? L(`正在体检：${data.sweeping.done} / ${data.sweeping.total}${data.sweeping.current ? `（${prettyModel(data.sweeping.current)}）` : ''}`, `Checking: ${data.sweeping.done} / ${data.sweeping.total}${data.sweeping.current ? ` (${prettyModel(data.sweeping.current)})` : ''}`)
+                : data.lastSweep
+                  ? L(`上次体检 ${ago(data.lastSweep.at)}：测了 ${data.lastSweep.checked} 个免费模型，${data.lastSweep.ok} 个能用、${data.lastSweep.broken} 个用不了${data.lastSweep.skipped ? `、${data.lastSweep.skipped} 个这次没测成` : ''}${data.lastSweep.paidSkipped ? `；${data.lastSweep.paidSkipped} 个收费模型没自动测（要测就手动点「测一下」）` : ''}`, `Last check ${ago(data.lastSweep.at)}: ${data.lastSweep.checked} free models, ${data.lastSweep.ok} ok, ${data.lastSweep.broken} not usable${data.lastSweep.skipped ? `, ${data.lastSweep.skipped} not reached` : ''}${data.lastSweep.paidSkipped ? `; ${data.lastSweep.paidSkipped} paid models not tested automatically` : ''}`)
+                  : L('还没做过全面体检：每天自动一次，也可以现在就测', 'No full check yet: it runs daily, or start one now')),
+            h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, disabled: Boolean(data.sweeping), onClick: () => void act('POST', '/models/check', {}) }, data.sweeping ? L('体检中…', 'Checking…') : L('现在全部检查一遍', 'Check all now'))),
           open ? h('div', { style: { marginTop: 8, fontSize: 12, lineHeight: 1.8 } },
             data.badKeys.map((k) => h('div', { key: `k-${k.source}`, style: { color: C.err } }, L(`${k.label}：key 不对（请求被拒），在上面「来源」里点「填 key」重新填一把`, `${k.label}: key rejected; enter a new one under Sources above`))),
             data.broken.map((b) => h('div', { key: b.model, style: { ...S.line, minHeight: 22 } },

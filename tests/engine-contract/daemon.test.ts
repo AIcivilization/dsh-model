@@ -326,4 +326,40 @@ describe('daemon core against a real engine', () => {
       srv.close()
     }
   }, 90_000)
+
+  it('the full check tests free models like dsh does, takes out what cannot work, and never tests paid ones (§14.43)', async () => {
+    const port3 = await findFreePort(21400 + Math.floor(Math.random() * 90))
+    const seen: string[] = []
+    const srv = createServer((req, res) => {
+      if (req.url === '/v1/models') return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: 'nt-8b', object: 'model' }, { id: 'ok-8b', object: 'model' }] }))
+      let raw = ''
+      req.on('data', (c) => (raw += c))
+      req.on('end', () => {
+        const b = JSON.parse(raw || '{}') as { model?: string; tools?: unknown[] }
+        if (b.model === 'dsh-model-key-check-no-such-model') return void res.writeHead(404, { 'content-type': 'application/json' }).end('{"error":{"message":"model not found"}}')
+        seen.push(String(b.model))
+        if (b.model === 'nt-8b' && b.tools?.length) return void res.writeHead(400, { 'content-type': 'application/json' }).end('{"error":{"message":"tool use is not supported for this model"}}')
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ id: 'x', object: 'chat.completion', created: 0, model: b.model, choices: [{ index: 0, message: { role: 'assistant', content: '好' }, finish_reason: 'stop' }] }))
+      })
+    })
+    await new Promise<void>((r) => srv.listen(port3, '127.0.0.1', () => r()))
+    try {
+      // 免费（勾了「免费额度」）的来源：自动测
+      const a = await daemon.addCustomSource({ name: 'Sweep', baseUrl: `http://127.0.0.1:${port3}/v1`, key: 'sk-test-sweep-1234', free: true, cycle: 'daily' })
+      await daemon.sweepModels(a.id)
+      const v = await daemon.modelHealthView()
+      expect(v.broken.map((b) => b.model)).toContain(`${a.id}/nt-8b`)
+      expect(v.lastSweep).toMatchObject({ checked: 2, ok: 1, broken: 1 })
+      // 收费的来源：一个都不自动测
+      const before = seen.length
+      const p = await daemon.addCustomSource({ name: 'Paid', baseUrl: `http://127.0.0.1:${port3}/v1`, key: 'sk-test-paid-1234' })
+      await daemon.sweepModels(p.id)
+      expect(seen.length).toBe(before)
+      expect((await daemon.modelHealthView()).lastSweep).toMatchObject({ checked: 0, paidSkipped: 2 })
+      await daemon.logout(a.id)
+      await daemon.logout(p.id)
+    } finally {
+      srv.close()
+    }
+  }, 120_000)
 })
