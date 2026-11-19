@@ -74,7 +74,7 @@ export async function runCombo(run) {
             upstream = await fetch(`http://127.0.0.1:${run.port}/v1/chat/completions`, {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${run.key}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...body, model }),
+                body: JSON.stringify(capTokens({ ...body, model }, run.maxTokensOf?.(model))),
                 signal: run.signal,
             });
         }
@@ -127,6 +127,16 @@ export async function runCombo(run) {
     }
     const upstreamError = detail?.error;
     reply(res, last?.status && last.status >= 400 ? last.status : 502, { error: { message, type: 'combo_failed', code: 'combo_failed', ...(upstreamError ? { last: upstreamError } : {}) } });
+}
+/** 把 max_tokens / max_completion_tokens 压到上限以内。导出给测试 */
+export function capTokens(body, cap) {
+    if (!cap)
+        return body;
+    const out = { ...body };
+    for (const k of ['max_tokens', 'max_completion_tokens'])
+        if (typeof out[k] === 'number' && out[k] > cap)
+            out[k] = cap;
+    return out;
 }
 /** 上游报错里挑出给人看的那句（error.message），挑不出就截一段原文 */
 export function errorReason(text) {

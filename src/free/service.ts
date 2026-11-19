@@ -27,7 +27,7 @@ export function poolSourcesFrom(upstreams: CompatUpstream[], secrets: Secrets): 
     const isKey = KEY_IDS.has(u.name) || isCustomId(u.name)
     const isLocal = LOCAL_IDS.has(u.name)
     if (!isKey && !isLocal) continue
-    const models = u.models.filter((m) => m.alias === `${u.name}/${m.name}`).map((m) => ({ id: m.name, ...(m.rate === 0 ? { free: true } : {}), ...(m.priced ? { priced: true } : {}) }))
+    const models = u.models.filter((m) => m.alias === `${u.name}/${m.name}` && !m.broken).map((m) => ({ id: m.name, ...(m.rate === 0 ? { free: true } : {}), ...(m.priced ? { priced: true } : {}) }))
     const s = secrets.apikeys?.[u.name]
     out.push({
       id: u.name,
@@ -169,6 +169,7 @@ export class FreePool {
       return
     }
     const byAlias = new Map(order.map((m) => [m.alias, m]))
+    const maxOf = new Map(inp.upstreams.flatMap((u) => u.models.filter((m) => m.maxTokens).map((m) => [m.alias, m.maxTokens!] as const)))
     await runCombo({
       port: req.port,
       key: req.key,
@@ -177,6 +178,7 @@ export class FreePool {
       res: req.res,
       signal: req.signal,
       ...(req.log ? { log: req.log } : {}),
+      maxTokensOf: (alias) => maxOf.get(alias),
       onStart: (alias) => {
         const m = byAlias.get(alias)
         if (m) this.limiter.start(m.source)

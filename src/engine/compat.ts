@@ -10,6 +10,7 @@ import { loadSecrets } from '../secrets.js'
 import { readJson } from '../util/fs.js'
 import { L } from '../i18n.js'
 import { checkedInKinds } from '../checkin/index.js'
+import { loadModelHealth } from '../daemon/model-health.js'
 import { LOCAL_SERVERS, loadLocalCatalog } from '../integrations/local.js'
 import { keyProvider, loadKeyCatalog } from '../integrations/apikeys.js'
 import { COMBO_PREFIX, type Combo } from '../combo.js'
@@ -39,6 +40,8 @@ export interface CompatModel {
   priced?: boolean
   /** 计费，但这家先扣赠送额度（§14.36）：名字写「计费 · 先扣赠送额度」 */
   giftFirst?: boolean
+  /** 从真实请求学到它在 dsh 里用不了（§14.42）：只在用户打开「显示用不了的模型」时才出现，且不进免费池 */
+  broken?: boolean
   /** dsh 里的分组（一个分组对应一个 provider）：workbuddy / workbuddy-ai / opencode */
   group?: string
   groupLabel?: string
@@ -88,7 +91,7 @@ export function opencodeModelsPath(ctx: Ctx): string {
 export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
   const out: CompatUpstream[] = []
   const secrets = await loadSecrets(ctx)
-  const cfg = await readJson<{ disabledSources?: string[]; combos?: Combo[]; freePool?: PoolConfig }>(join(ctx.paths.home, 'config.json'))
+  const cfg = await readJson<{ disabledSources?: string[]; combos?: Combo[]; freePool?: PoolConfig; showBrokenModels?: boolean }>(join(ctx.paths.home, 'config.json'))
   const disabled = new Set(cfg?.disabledSources ?? [])
   if (secrets.opencode?.key && !disabled.has('opencode')) {
     const list = await readJson<OpencodeModelsFile>(opencodeModelsPath(ctx))
@@ -147,10 +150,15 @@ export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
   const entries = activeEntries(await loadCatalog(ctx.paths.home))
   // 免费池的判定要知道今天签上了哪些（§14.38）
   const poolCfg = { ...(cfg?.freePool ?? {}), checkedIn: await checkedInKinds(ctx.paths.home).catch(() => []) }
+  // 从真实请求学到的（§14.42）：在 dsh 里用不了的模型、被拒的 key、各模型的输出上限
+  const health = await loadModelHealth(ctx.paths.home)
+  const showBroken = cfg?.showBrokenModels === true
   for (const [id, s] of Object.entries(secrets.apikeys ?? {})) {
     const p = keyProvider(id)
-    const models = keyCat[id]?.models ?? []
-    if (!p || !models.length || disabled.has(id)) continue
+    // key 被拒（定期复查查出来的，或真实请求报「缺少认证 / key 无效」）：这家的模型一个都不放，来源里提示重填
+    const keyBad = Boolean(keyCat[id]?.keyInvalid || health.badKeys[id])
+    const models = (keyCat[id]?.models ?? []).filter((m) => showBroken || !health.broken[`${id}/${m.id}`])
+    if (!p || !models.length || disabled.has(id) || keyBad) continue
     const label = s.label ?? p.label
     out.push({
       name: id,
@@ -165,7 +173,25 @@ export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
         // 用户在「发现」里核对后加进免费池的，也按免费（是用户自己确认的）
         const free = Boolean(s.free) || freeProof(id, m, entries, poolCfg) !== null || (cfg?.freePool?.include ?? []).includes(`${id}/${m.id}`)
         const gift = !free && Boolean(p.giftFirst)
-        return { name: m.id, alias: `${id}/${m.id}`, displayName: `${label} · ${m.id}`, dshName: `${m.id} · ${costTag(free ? 'free' : 'paid')}${gift ? ` · ${L('先扣赠送额度', 'gift credit first')}` : ''}`, ...(gift ? { giftFirst: true } : {}), ...(free ? { rate: 0 } : {}), cost: free ? ('free' as const) : ('paid' as const), ...(m.priced ? { priced: true } : {}), group: id, groupLabel: label }
+        const alias = `${id}/${m.id}`
+        const broken = health.broken[alias]
+        // 输出上限：真实请求报出来的优先（更准），其次模型列表给的
+        const maxTokens = health.maxTokens[alias] ?? m.maxTokens
+        return {
+          name: m.id,
+          alias,
+          displayName: `${label} · ${m.id}`,
+          dshName: `${m.id} · ${costTag(free ? 'free' : 'paid')}${gift ? ` · ${L('先扣赠送额度', 'gift credit first')}` : ''}${broken ? ` · ${L('用不了', 'not usable')}` : ''}`,
+          ...(gift ? { giftFirst: true } : {}),
+          ...(free ? { rate: 0 } : {}),
+          cost: free ? ('free' as const) : ('paid' as const),
+          ...(m.priced ? { priced: true } : {}),
+          ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+          ...(maxTokens ? { maxTokens } : {}),
+          ...(broken ? { broken: true } : {}),
+          group: id,
+          groupLabel: label,
+        }
       }),
     })
   }

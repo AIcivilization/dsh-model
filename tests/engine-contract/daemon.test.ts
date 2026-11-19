@@ -288,4 +288,42 @@ describe('daemon core against a real engine', () => {
       good.close()
     }
   }, 90_000)
+
+  it('"Test" catches a model dsh cannot use (no tool calls) and takes it out of the dsh list (§14.42)', async () => {
+    const port2 = await findFreePort(21300 + Math.floor(Math.random() * 90))
+    const srv = createServer((req, res) => {
+      if (req.url === '/v1/models') return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: 'notool-8b', object: 'model' }, { id: 'good-8b', object: 'model' }] }))
+      let raw = ''
+      req.on('data', (c) => (raw += c))
+      req.on('end', () => {
+        const b = JSON.parse(raw || '{}') as { model?: string; tools?: unknown[] }
+        if (b.model === 'dsh-model-key-check-no-such-model') return void res.writeHead(404, { 'content-type': 'application/json' }).end('{"error":{"message":"model not found"}}')
+        if (b.model === 'notool-8b' && b.tools?.length) return void res.writeHead(400, { 'content-type': 'application/json' }).end('{"code":20037,"message":"该模型不支持函数调用。","data":null}')
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ id: 'x', object: 'chat.completion', created: 0, model: b.model, choices: [{ index: 0, message: { role: 'assistant', content: '好' }, finish_reason: 'stop' }] }))
+      })
+    })
+    await new Promise<void>((r) => srv.listen(port2, '127.0.0.1', () => r()))
+    const waitFor = async (pred: (ids: string[]) => boolean) => {
+      for (let i = 0; i < 60; i++) {
+        if (pred((await listModels(port, dshKey).catch(() => [])).map((m) => m.id))) return true
+        await new Promise((r) => setTimeout(r, 250))
+      }
+      return false
+    }
+    try {
+      const a = await daemon.addCustomSource({ name: 'Tools', baseUrl: `http://127.0.0.1:${port2}/v1`, key: 'sk-test-tools-1234', free: true, cycle: 'daily' })
+      expect(await waitFor((ids) => ids.includes(`${a.id}/notool-8b`))).toBe(true)
+      const t = await daemon.testModel(`${a.id}/notool-8b`)
+      expect(t.ok).toBe(false)
+      expect(t.advice).toMatch(/工具|tool/)
+      expect(await waitFor((ids) => !ids.includes(`${a.id}/notool-8b`) && ids.includes(`${a.id}/good-8b`))).toBe(true)
+      expect((await daemon.modelHealthView()).broken.map((b) => b.model)).toContain(`${a.id}/notool-8b`)
+      await daemon.restoreModel(`${a.id}/notool-8b`)
+      expect(await waitFor((ids) => ids.includes(`${a.id}/notool-8b`))).toBe(true)
+      expect((await daemon.testModel(`${a.id}/good-8b`)).ok).toBe(true)
+      await daemon.logout(a.id)
+    } finally {
+      srv.close()
+    }
+  }, 90_000)
 })

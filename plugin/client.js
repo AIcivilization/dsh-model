@@ -952,6 +952,33 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', style: S.btn, onClick: () => setOpen(false) }, L('关闭', 'Close')))) : null)
     }
 
+    /** 从真实请求学到「在 dsh 里用不了」的模型和被拒的 key（§14.42）：已自动从模型列表去掉，这里说清楚、能恢复 */
+    function ModelHealthCard() {
+      const [data, setData] = useState(null)
+      const [open, setOpen] = useState(false)
+      const [err, setErr] = useState('')
+      const load = useCallback(() => api('GET', '/models/health').then(setData, () => {}), [])
+      useEffect(() => { void load(); const t = setInterval(load, 5 * 60_000); return () => clearInterval(t) }, [load])
+      if (!data || (!data.broken.length && !data.badKeys.length)) return null
+      const act = async (method, path, body) => { try { setData(await api(method, path, body)); setErr('') } catch (e) { setErr(e.message) } }
+      const why = { no_tools: L('不支持工具调用（dsh 每次都要用工具）', 'no tool calls (dsh always uses tools)'), gone: L('模型不存在或已下线', 'model missing or retired') }
+      return h('div', { style: S.section },
+        h('div', { style: { ...S.card, padding: '10px 14px', borderColor: C.warn } },
+          h('button', { type: 'button', 'aria-expanded': open, onClick: () => setOpen(!open), style: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', width: '100%', fontSize: 13, color: C.text } },
+            `${open ? '▾' : '▸'} `,
+            h('b', null, L(`在 dsh 里用不了的：${data.broken.length} 个模型${data.badKeys.length ? `、${data.badKeys.length} 家 key 不对` : ''}`, `Not usable in dsh: ${data.broken.length} models${data.badKeys.length ? `, ${data.badKeys.length} rejected keys` : ''}`)),
+            h('span', { style: { color: C.sub, marginLeft: 8 } }, L('已自动从模型列表和免费池里去掉', 'taken out of the model list and the free pool'))),
+          open ? h('div', { style: { marginTop: 8, fontSize: 12, lineHeight: 1.8 } },
+            data.badKeys.map((k) => h('div', { key: `k-${k.source}`, style: { color: C.err } }, L(`${k.label}：key 不对（请求被拒），在上面「来源」里点「填 key」重新填一把`, `${k.label}: key rejected; enter a new one under Sources above`))),
+            data.broken.map((b) => h('div', { key: b.model, style: { ...S.line, minHeight: 22 } },
+              h('span', { style: S.grow }, h('span', { style: S.mono }, prettyModel(b.model)), h('span', { style: { color: C.sub, marginLeft: 8 } }, why[b.reason] || b.reason)),
+              h('button', { type: 'button', style: { ...S.btn, padding: '1px 6px' }, title: b.message, onClick: () => void act('POST', '/models/health/restore', { model: b.model }) }, L('恢复', 'Restore')))),
+            h('label', { style: { ...S.line, gap: 6, marginTop: 6, cursor: 'pointer', color: C.sub } },
+              h('input', { type: 'checkbox', checked: Boolean(data.showBroken), onChange: (e) => void act('POST', '/models/show-broken', { on: e.target.checked }) }),
+              L('也在 dsh 的模型列表里显示它们（名字后面标「用不了」；免费池照样不用它们）', 'Also show them in the dsh model list (marked "not usable"; the free pool still skips them)')),
+            err ? h('div', { style: { color: C.err } }, err) : null) : null))
+    }
+
     /** 免费池规则，公开写出来（§14.38）：什么算免费、什么永远不进、怎么排、怎么兜底、记了什么 */
     function PoolRules() {
       const [open, setOpen] = useState(false)
@@ -1898,6 +1925,7 @@ window.__ModuleLoader__.load({
         err ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 12 } }, err) : null,
         h(EndpointCard, { endpoints: data.endpoints }),
         h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: (s) => setKeyDialog(s || true) }),
+        h(ModelHealthCard, null),
         h(CombosCard, null),
         h(KeysCard, { keys: data.keys, reload: () => load(false) }),
         h(ModelsCard, { stats: data.stats }),

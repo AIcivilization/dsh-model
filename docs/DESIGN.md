@@ -992,3 +992,19 @@ dsh-checkin-all（同作者的独立签到插件，MIT）里已经做好、我�
 **免费池按每家限速走**
 - 目录可以写 `limits: { rpm, concurrent }`（每分钟请求数、同时进行数）：OpenRouter 免费模型每分钟 20 次（官方），Ollama Cloud 免费计划同时 1 个。守护进程在内存里记每家最近一分钟发了几次、正在进行几个（`RateLimiter`），满了就先跳过它试下一家；全被跳过就照原顺序，让上游自己回应。
 - 分清两种 429（`rateCooldown`）：上游给了 `Retry-After` 就照它（至少 10 秒）；报错说的是每分钟限速、又没提每天，冷却 1 分钟；今天 / 本月的额度用完才冷却到重置时间。以前一律冷却到重置时间，每天重置的免费档撞一次每分钟限速就要等到第二天。
+
+### 14.42 「测一下」能通、dsh 里却用不了：查原因、自动去掉（0.37.0）
+
+用户在 VPS 上实测：Groq、OpenRouter、硅基流动的几个模型「测一下」又通又快，在 dsh 里对话却失败；免费池（会自动换下一个）能用。三个原因：
+
+| 报错 | 原因 | 修法 |
+|---|---|---|
+| Groq 400「max_tokens 必须 ≤ 16384」 | 我们没把每个模型的最大输出告诉 dsh，dsh 按默认发了更大的 max_tokens | 模型列表里读 `context_window` / `context_length`、`max_completion_tokens` / `top_provider.max_completion_tokens` / `max_output_tokens`，作为 `contextWindow`、`maxTokens` 交给 dsh；真实请求报出来的上限优先；免费池和组合转发时按成员上限压 `max_tokens`（`capTokens`） |
+| OpenRouter 401「Missing Authentication header」 | 存的 key 填错了（不是 sk-or- 开头）；我们验 key 只拉模型列表，而 OpenRouter 的列表谁都能拉，所以没拦住（**我们的 bug**，魔搭、ZenMux、Kilo、OrcaRouter 等同理） | 拉完列表再用这把 key 请求一个不存在的模型（`authProbe`）：key 对回 400 / 404，key 错回 401 / 403，不花额度。魔搭先校验模型名，改用列表里一个真实（免费）模型、1 个 token（`probeRealModel`）。每 30 分钟复查已存的 key，被拒就记 `keyInvalid` |
+| 硅基流动 DeepSeek-R1-0528-Qwen3-8B 400「该模型不支持函数调用」 | 模型本身不支持工具调用，而 dsh 每次都带工具 | 记成用不了，从 dsh 模型列表和免费池去掉 |
+
+**自动学会哪些模型在 dsh 里用不了**（`src/daemon/model-health.ts`，`<home>/model-health.json`）
+- 守护进程每 5 分钟读一遍引擎失败日志（启动 30 秒后先读一次），认出：不支持工具调用、模型不存在 / 下线 → `broken`；报出输出上限 → `maxTokens`；key 不对 → `badKeys`。限流、5xx 这类会自己好的不学；免费池、组合、同名切换这些外壳不学。
+- 引擎配置里：`broken` 的模型不放（用户打开「也显示用不了的模型」时放，名字后标「用不了」，免费池照样不用）；`badKeys` / `keyInvalid` 的来源整家不放，来源一行写「这把 key 不对……重新填一把」。重新填 key 验过就清掉。
+- 页面「在 dsh 里用不了的：N 个模型、M 家 key 不对」：每个写原因，可以「恢复」；开关「也在 dsh 的模型列表里显示它们」。
+- **「测一下」和 dsh 的真实请求一样带一个工具**：不支持工具的模型当场测出来、记下并去掉；测出 key 不对、输出上限，也当场记下，并说清楚怎么办。

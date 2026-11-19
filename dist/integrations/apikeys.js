@@ -3,7 +3,7 @@
 // 和 OpenCode 一样：key 存 dsh-model 自己的 secrets.json（0600），由引擎作为 openai-compatibility 上游持有；
 // 模型目录取自各家的 GET /models（带 key，能拉到就说明 key 可用，不花 token）。请求走 curl：它认代理，key 经 stdin 传、不进进程参数。
 import { join } from 'node:path';
-import { DshModelError } from '../errors.js';
+import { DshModelError, isDshModelError } from '../errors.js';
 import { L } from '../i18n.js';
 import { loadSecrets, saveSecrets } from '../secrets.js';
 import { run } from '../util/exec.js';
@@ -22,7 +22,7 @@ export const KEY_PROVIDERS = [
     { id: 'minimax', label: 'MiniMax 开放平台', base: 'https://api.minimaxi.com/v1', keyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key', fallbackModels: ['MiniMax-M2', 'MiniMax-M1', 'MiniMax-Text-01'], direct: true },
     { id: 'modelarts', label: '华为云 ModelArts', base: 'https://api.modelarts-maas.com/v1', keyUrl: 'https://console.huaweicloud.com/modelarts/?region=cn-southwest-2#/model-studio/authmanage', fallbackModels: ['DeepSeek-V3', 'DeepSeek-R1', 'qwen3-235b-a22b'], direct: true },
     // 更多官方来源（2026-11-05 加，见设计 §14.23）：地址都实测过（不带 key 返回 401 / 列表），免费档按各家公开说明
-    { id: 'modelscope', label: '魔搭 ModelScope', base: 'https://api-inference.modelscope.cn/v1', keyUrl: 'https://modelscope.cn/my/myaccesstoken', freeRe: /./, direct: true },
+    { id: 'modelscope', label: '魔搭 ModelScope', base: 'https://api-inference.modelscope.cn/v1', keyUrl: 'https://modelscope.cn/my/myaccesstoken', freeRe: /./, direct: true, probeRealModel: true },
     { id: 'hunyuan', label: '腾讯混元', base: 'https://api.hunyuan.cloud.tencent.com/v1', keyUrl: 'https://console.cloud.tencent.com/hunyuan/start', fallbackModels: ['hunyuan-lite', 'hunyuan-turbos-latest'], freeRe: /^hunyuan-lite$/i, direct: true },
     { id: 'dashscope', label: '阿里云百炼', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', keyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key', fallbackModels: ['qwen-turbo', 'qwen-plus', 'qwen-max'], direct: true },
     { id: 'moonshot', label: 'Moonshot（Kimi 开放平台）', base: 'https://api.moonshot.cn/v1', keyUrl: 'https://platform.moonshot.cn/console/api-keys', direct: true },
@@ -73,6 +73,14 @@ export function customId(name, taken) {
             return id;
     }
 }
+/** 模型列表里各家写法不一：context_window / context_length / max_context_length；max_completion_tokens / max_tokens / max_output_tokens */
+function limitsOfModel(m) {
+    const n = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : typeof v === 'string' && /^\d+$/.test(v) && Number(v) > 0 ? Number(v) : undefined);
+    const top = (m.top_provider ?? {});
+    const ctx = n(m.context_window) ?? n(m.context_length) ?? n(m.max_context_length) ?? n(top.context_length);
+    const out = n(m.max_completion_tokens) ?? n(top.max_completion_tokens) ?? n(m.max_output_tokens) ?? n(m.max_tokens);
+    return { ...(ctx ? { contextWindow: ctx } : {}), ...(out && (!ctx || out <= ctx) ? { maxTokens: out } : {}) };
+}
 export const keyCatalogPath = (home) => join(home, 'apikey-models.json');
 export async function loadKeyCatalog(home) {
     return (await readJson(keyCatalogPath(home))) ?? {};
@@ -100,7 +108,7 @@ export function parseModelList(providerId, body) {
         const label = String(m.display_name ?? m.name ?? '');
         const labelled = Boolean(keyProvider(providerId)?.freeLabel?.test(label));
         const free = priced || labelled || id.endsWith(':free') || Boolean(keyProvider(providerId)?.freeRe?.test(id));
-        out.push({ id, ...(free ? { free: true } : {}), ...(priced || labelled ? { priced: true } : {}) });
+        out.push({ id, ...(free ? { free: true } : {}), ...(priced || labelled ? { priced: true } : {}), ...limitsOfModel(m) });
     }
     // OpenRouter 有几百个模型：付费的照样能用，但先把免费的排前面，挑默认时就先挑它们
     return out.sort((a, b) => Number(Boolean(b.free)) - Number(Boolean(a.free)) || a.id.localeCompare(b.id));
@@ -171,7 +179,44 @@ export async function fetchKeyModels(provider, key, base, proxy) {
         return verifyByChat(provider, key, base, proxy);
     if (!models.length)
         throw new DshModelError('key_no_models', L(`${provider.label} 没有返回任何模型`, `${provider.label} returned no models`));
+    // 很多家的模型列表不带 key 也拉得到（OpenRouter、魔搭、ZenMux、Kilo…），拉到了不代表 key 对（§14.42）。
+    // 再用这把 key 请求一个不存在的模型：key 对的话回 400 / 404（模型不存在），key 错的话回 401 / 403。不花额度
+    if ((await authProbe(provider, key, base, proxy, provider.probeRealModel ? models[0].id : undefined)) === 'rejected') {
+        throw new DshModelError('key_rejected', L(`${provider.label} 不认这把 key（模型列表谁都能拉，换了一次真正要认证的请求才查出来）`, `${provider.label} rejected the key (its model list is public; an authenticated request caught it)`), provider.keyUrl ? L(`到 ${provider.keyUrl} 重新创建一把`, `Create a new one at ${provider.keyUrl}`) : undefined);
+    }
     return models;
+}
+/** 用一个不存在的模型发一次对话请求，只看 key 认不认：401 / 403 = 不认（不花额度）。导出给测试 */
+export async function authProbe(provider, key, base, proxy, model = 'dsh-model-key-check-no-such-model') {
+    const { writeFile, rm, mkdtemp } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-model-auth-'));
+    const file = join(dir, 'body.json');
+    await writeFile(file, JSON.stringify({ model, messages: [{ role: 'user', content: 'ok' }], max_tokens: 1, stream: false }), { mode: 0o600 });
+    try {
+        const viaProxy = proxy && !provider.direct;
+        const r = await run('curl', ['-s', '-m', '25', '-w', '\n%{http_code}', '-K', '-', ...(viaProxy ? ['-x', proxy] : provider.direct ? ['--noproxy', '*'] : []), '-X', 'POST', '--data-binary', `@${file}`, `${base}/chat/completions`], {
+            input: `header = "Authorization: Bearer ${key.replace(/"/g, '')}"\nheader = "Content-Type: application/json"\n`,
+            timeoutMs: 40_000,
+        });
+        const lines = r.stdout.trimEnd().split('\n');
+        const status = Number(lines.pop()) || null;
+        const text = lines.join('\n');
+        if (!status)
+            return 'unknown';
+        // 401 / 403 且说的是认证（不是「这个模型你没权限」）才算 key 不对
+        if ((status === 401 || status === 403) && !/model|模型/i.test(text.replace(/no[-_ ]such[-_ ]model|key-check/gi, '')))
+            return 'rejected';
+        if (status === 401)
+            return 'rejected';
+        return 'ok';
+    }
+    catch {
+        return 'unknown';
+    }
+    finally {
+        await rm(dir, { recursive: true, force: true });
+    }
 }
 /** 实测并保存 key、写模型目录 */
 export async function setApiKey(ctx, id, key, baseUrl, proxy, custom = {}) {
@@ -225,13 +270,17 @@ export async function refreshKeyCatalogs(ctx, proxy) {
             continue;
         try {
             const models = await fetchKeyModels(provider, s.key, s.base ?? provider.base, proxy);
-            if (JSON.stringify(models) !== JSON.stringify(cat[id]?.models)) {
+            if (JSON.stringify(models) !== JSON.stringify(cat[id]?.models) || cat[id]?.keyInvalid) {
                 cat[id] = { updatedAt: new Date().toISOString(), models };
                 changed = true;
             }
         }
-        catch {
-            // 网络 / 限流：留着上次的目录
+        catch (error) {
+            // key 被拒：记下来，这家的模型先不放进引擎，来源里提示重填（§14.42）；网络 / 限流：留着上次的目录
+            if (isDshModelError(error) && error.code === 'key_rejected' && cat[id] && cat[id].keyInvalid !== error.message) {
+                cat[id] = { ...cat[id], keyInvalid: error.message };
+                changed = true;
+            }
         }
     }
     if (changed)

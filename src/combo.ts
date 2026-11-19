@@ -68,6 +68,8 @@ export interface ComboRun {
   onFailure?: (model: string, status: number, text: string, retryAfter?: string | null) => void
   /** 开始试某个成员（免费池据此记限速） */
   onStart?: (model: string) => void
+  /** 这个成员的输出上限（§14.42）：客户端要的 max_tokens 比它大就压到它，免得 400「max_tokens 必须 ≤ N」 */
+  maxTokensOf?: (model: string) => number | undefined
   /** 全部失败时，报错后面再补一句该怎么办（免费池：最早几点恢复、去哪看） */
   failHint?: () => string | undefined
   /** 一次请求结束：试过哪些、谁回答的（没有就是全失败）、首字节和总耗时（设计 §14.35「看得见」） */
@@ -103,7 +105,7 @@ export async function runCombo(run: ComboRun): Promise<void> {
       upstream = await fetch(`http://127.0.0.1:${run.port}/v1/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${run.key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...body, model }),
+        body: JSON.stringify(capTokens({ ...body, model }, run.maxTokensOf?.(model))),
         signal: run.signal,
       })
     } catch (error) {
@@ -150,6 +152,14 @@ export async function runCombo(run: ComboRun): Promise<void> {
   }
   const upstreamError = (detail as { error?: unknown } | undefined)?.error
   reply(res, last?.status && last.status >= 400 ? last.status : 502, { error: { message, type: 'combo_failed', code: 'combo_failed', ...(upstreamError ? { last: upstreamError } : {}) } })
+}
+
+/** 把 max_tokens / max_completion_tokens 压到上限以内。导出给测试 */
+export function capTokens(body: Record<string, unknown>, cap: number | undefined): Record<string, unknown> {
+  if (!cap) return body
+  const out = { ...body }
+  for (const k of ['max_tokens', 'max_completion_tokens']) if (typeof out[k] === 'number' && (out[k] as number) > cap) out[k] = cap
+  return out
 }
 
 /** 上游报错里挑出给人看的那句（error.message），挑不出就截一段原文 */

@@ -621,6 +621,25 @@ describe('settings page', () => {
     expect(posted).toEqual([{ on: true, model: 'siliconflow/deepseek-ai/DeepSeek-V4.1-Flash' }])
   })
 
+  it('models dsh cannot use: listed with the reason, restorable, rejected keys called out', async () => {
+    window.localStorage.setItem('dsh-model.guideDone', '1')
+    const posts: { path: string; body: unknown }[] = []
+    const view = { showBroken: false, broken: [{ model: 'siliconflow/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B', reason: 'no_tools', message: '该模型不支持函数调用', at: 'x' }], badKeys: [{ source: 'openrouter', label: 'OpenRouter', message: 'Missing Authentication header', at: 'x' }], maxTokens: 1 }
+    handler = normal((c) => {
+      if (c.path === '/models/health' && c.method === 'GET') return [200, view]
+      if (c.method === 'POST' && c.path.startsWith('/models/')) { posts.push({ path: c.path, body: c.body }); return [200, { ...view, broken: [] }] }
+      return [404, {}]
+    })
+    await render()
+    await waitText('在 dsh 里用不了的：1 个模型、1 家 key 不对')
+    const head = [...container.querySelectorAll('button')].find((x) => x.textContent?.startsWith('▸ 在 dsh 里用不了的'))!
+    await act(async () => head.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(container.textContent).toContain('不支持工具调用（dsh 每次都要用工具）')
+    expect(container.textContent).toContain('OpenRouter：key 不对（请求被拒）')
+    await click('恢复')
+    expect(posts.at(-1)).toEqual({ path: '/models/health/restore', body: { model: 'siliconflow/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B' } })
+  })
+
   it('usage: expiring credits are called out; a used-up plan gets a badge with the time back', async () => {
     window.localStorage.setItem('dsh-model.guideDone', '1')
     const soon = new Date(Date.now() + (5 * 60 + 2) * 60000).toISOString()

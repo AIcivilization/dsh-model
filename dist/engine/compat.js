@@ -8,6 +8,7 @@ import { loadSecrets } from '../secrets.js';
 import { readJson } from '../util/fs.js';
 import { L } from '../i18n.js';
 import { checkedInKinds } from '../checkin/index.js';
+import { loadModelHealth } from '../daemon/model-health.js';
 import { LOCAL_SERVERS, loadLocalCatalog } from '../integrations/local.js';
 import { keyProvider, loadKeyCatalog } from '../integrations/apikeys.js';
 import { COMBO_PREFIX } from '../combo.js';
@@ -99,10 +100,15 @@ export async function loadCompatUpstreams(ctx) {
     const entries = activeEntries(await loadCatalog(ctx.paths.home));
     // 免费池的判定要知道今天签上了哪些（§14.38）
     const poolCfg = { ...(cfg?.freePool ?? {}), checkedIn: await checkedInKinds(ctx.paths.home).catch(() => []) };
+    // 从真实请求学到的（§14.42）：在 dsh 里用不了的模型、被拒的 key、各模型的输出上限
+    const health = await loadModelHealth(ctx.paths.home);
+    const showBroken = cfg?.showBrokenModels === true;
     for (const [id, s] of Object.entries(secrets.apikeys ?? {})) {
         const p = keyProvider(id);
-        const models = keyCat[id]?.models ?? [];
-        if (!p || !models.length || disabled.has(id))
+        // key 被拒（定期复查查出来的，或真实请求报「缺少认证 / key 无效」）：这家的模型一个都不放，来源里提示重填
+        const keyBad = Boolean(keyCat[id]?.keyInvalid || health.badKeys[id]);
+        const models = (keyCat[id]?.models ?? []).filter((m) => showBroken || !health.broken[`${id}/${m.id}`]);
+        if (!p || !models.length || disabled.has(id) || keyBad)
             continue;
         const label = s.label ?? p.label;
         out.push({
@@ -118,7 +124,25 @@ export async function loadCompatUpstreams(ctx) {
                 // 用户在「发现」里核对后加进免费池的，也按免费（是用户自己确认的）
                 const free = Boolean(s.free) || freeProof(id, m, entries, poolCfg) !== null || (cfg?.freePool?.include ?? []).includes(`${id}/${m.id}`);
                 const gift = !free && Boolean(p.giftFirst);
-                return { name: m.id, alias: `${id}/${m.id}`, displayName: `${label} · ${m.id}`, dshName: `${m.id} · ${costTag(free ? 'free' : 'paid')}${gift ? ` · ${L('先扣赠送额度', 'gift credit first')}` : ''}`, ...(gift ? { giftFirst: true } : {}), ...(free ? { rate: 0 } : {}), cost: free ? 'free' : 'paid', ...(m.priced ? { priced: true } : {}), group: id, groupLabel: label };
+                const alias = `${id}/${m.id}`;
+                const broken = health.broken[alias];
+                // 输出上限：真实请求报出来的优先（更准），其次模型列表给的
+                const maxTokens = health.maxTokens[alias] ?? m.maxTokens;
+                return {
+                    name: m.id,
+                    alias,
+                    displayName: `${label} · ${m.id}`,
+                    dshName: `${m.id} · ${costTag(free ? 'free' : 'paid')}${gift ? ` · ${L('先扣赠送额度', 'gift credit first')}` : ''}${broken ? ` · ${L('用不了', 'not usable')}` : ''}`,
+                    ...(gift ? { giftFirst: true } : {}),
+                    ...(free ? { rate: 0 } : {}),
+                    cost: free ? 'free' : 'paid',
+                    ...(m.priced ? { priced: true } : {}),
+                    ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+                    ...(maxTokens ? { maxTokens } : {}),
+                    ...(broken ? { broken: true } : {}),
+                    group: id,
+                    groupLabel: label,
+                };
             }),
         });
     }

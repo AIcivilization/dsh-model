@@ -58,6 +58,7 @@ import type { ServerResponse } from 'node:http'
 import { comboId, normalizeCombo, runCombo, type Combo, type RouteResult } from '../combo.js'
 import { compatModelIndex, type Cost } from '../engine/compat.js'
 import { FreePool, parseCap, tierOf } from '../free/service.js'
+import { learnAll, learnOne, loadModelHealth, saveModelHealth } from './model-health.js'
 import { loadCompatUpstreams } from '../engine/compat.js'
 import { customId, isCustomId, keyProvider, type CustomOpts } from '../integrations/apikeys.js'
 import { customSourceDef } from '../sources.js'
@@ -163,6 +164,9 @@ export class Daemon {
     setTimeout(() => void this.refreshUsage(), 3000)
     // 探测新额度（设计 §14.27）：每 6 小时看一眼，距上次拉远程目录超过一天才拉
     this.timers.push(setInterval(() => void this.discoverFree().catch(() => {}), 6 * 60 * 60 * 1000))
+    // 从真实请求学会哪些模型在 dsh 里用不了（§14.42）：每 5 分钟读一遍失败日志
+    this.timers.push(setInterval(() => void this.learnModelHealth().catch(() => false), 5 * 60_000))
+    setTimeout(() => void this.learnModelHealth().catch(() => false), 30_000)
     // 余额兜底（§14.34）：能查充值余额的来源每 30 分钟看一次，变少了就移出免费池并提醒
     this.timers.push(setInterval(() => void this.checkFreeBalances().catch(() => {}), 30 * 60 * 1000))
     setTimeout(() => void this.checkFreeBalances().catch(() => {}), 2 * 60_000)
@@ -287,6 +291,7 @@ export class Daemon {
     const secrets = await loadSecrets(this.ctx)
     const local = await loadLocalCatalog(this.ctx.paths.home)
     const keyCat = await loadKeyCatalog(this.ctx.paths.home)
+    const badKeys = (await loadModelHealth(this.ctx.paths.home)).badKeys
     // 订阅来源能服务的模型数：管理接口按凭据列模型（只数没停用的）
     const engineModels = new Map<string, number>()
     try {
@@ -341,6 +346,8 @@ export class Daemon {
           enabled: has && !disabled.has(def.id),
           ...(has ? { account: def.id === 'custom' || isCustomId(def.id) ? (secrets.apikeys?.[def.id]?.base ?? '') : redactKey(secrets.apikeys![def.id]!.key) } : {}),
           ...(has && free ? { detail: L(`其中 ${free} 个免费`, `${free} of them free`) } : {}),
+          // key 被拒（§14.42）：说清楚，模型已先去掉
+          ...(has && (keyCat[def.id]?.keyInvalid || badKeys[def.id]) ? { detail: L('这把 key 不对（请求被拒），它的模型已从 dsh 里去掉：点「填 key」重新填一把', 'This key was rejected; its models were taken out of dsh. Enter a new key') } : {}),
           models: has ? models.length : 0,
         }
       }
@@ -447,6 +454,12 @@ export class Daemon {
     if (def.kind !== 'apikey') throw new DshModelError('not_key_source', L(`${def.label} 不用 API key`, `${def.label} does not take an API key`))
     const all = await loadAll(this.ctx)
     const r = await setApiKey(this.ctx, def.id, key.trim(), baseUrl, all.config.proxy)
+    // 新 key 验过了：之前记的「key 不对」作废
+    const h = await loadModelHealth(this.ctx.paths.home)
+    if (h.badKeys[def.id]) {
+      delete h.badKeys[def.id]
+      await saveModelHealth(this.ctx.paths.home, h, this.ctx.owner)
+    }
     await this.setSourceDisabled(def.id, false)
     await this.resync()
     return r
@@ -1193,7 +1206,7 @@ export class Daemon {
   }
 
   /** 「测一下」：经引擎发一句很短的话，看能不能用、多久回复（会用掉一点点额度） */
-  async testModel(model: string): Promise<{ ok: boolean; ms: number; reply?: string; note?: string; status?: number; advice?: string; message?: string; retryAt?: string }> {
+  async testModel(model: string): Promise<{ ok: boolean; ms: number; reply?: string; note?: string; status?: number; advice?: string; message?: string; retryAt?: string; learned?: boolean }> {
     if (!model || model.length > 200) throw new DshModelError('bad_model', L('model 不合法', 'invalid model'))
     const all = await loadAll(this.ctx)
     const started = Date.now()
@@ -1202,7 +1215,8 @@ export class Daemon {
       res = await fetch(`http://127.0.0.1:${all.config.port}/v1/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${dshKey(all.keys)}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, max_tokens: 256, stream: false, messages: [{ role: 'user', content: L('只回复一个字：好', 'Reply with one word: ok') }] }),
+        // 和 dsh 的真实请求一样带一个工具（§14.42）：dsh 每次都带工具，不支持工具调用的模型在 dsh 里用不了，测试要能测出来
+        body: JSON.stringify({ model, max_tokens: 256, stream: false, messages: [{ role: 'user', content: L('只回复一个字：好', 'Reply with one word: ok') }], tools: [{ type: 'function', function: { name: 'noop', description: 'Does nothing. Do not call it.', parameters: { type: 'object', properties: {} } } }] }),
         signal: AbortSignal.timeout(90_000),
       })
     } catch (error) {
@@ -1233,7 +1247,15 @@ export class Daemon {
     }
     const c = classify({ status: res.status, ...(code ? { code } : {}), message })
     const retryAt = c.kind === 'rate' || c.kind === 'quota' ? await this.retryAtOf(model, res.headers.get('retry-after')) : undefined
-    return { ok: false, ms, status: res.status, advice: c.advice, message, ...(retryAt ? { retryAt } : {}) }
+    // 测出来是「dsh 用不了」的（不支持工具、模型没了、key 不对）：马上记下，从 dsh 模型列表里去掉
+    const learned = await this.learnModelHealth([{ model, source: model.includes('/') ? model.split('/')[0]! : '', status: res.status, message, at: new Date().toISOString() }])
+    const why = learnOne({ model, source: '', status: res.status, message, at: '' })
+    const advice = why?.kind === 'no_tools'
+      ? L('这个模型不支持工具调用，而 dsh 每次都要用工具，所以在 dsh 里用不了。已从 dsh 的模型列表里去掉', 'This model does not support tool calls, which dsh always uses, so it cannot work in dsh. It was taken out of the dsh model list')
+      : why?.kind === 'bad_key' ? L('这家的 key 不对：在「来源」里重新填一把。它的模型已先从 dsh 的模型列表里去掉', 'This provider rejected the key: enter a new one under Sources. Its models were taken out of the dsh model list for now')
+      : why?.kind === 'max_tokens' ? L(`这个模型最多输出 ${why.maxTokens} token，已记下并告诉 dsh，再试一次就好`, `This model outputs at most ${why.maxTokens} tokens; dsh now knows, try again`)
+      : c.advice
+    return { ok: false, ms, status: res.status, advice, message, ...(retryAt ? { retryAt } : {}), ...(learned ? { learned: true } : {}) }
   }
 
   /**
@@ -1346,7 +1368,8 @@ export class Daemon {
     }
     const combo = all.config.combos?.find((c) => c.id === id)
     if (!combo) return false
-    await runCombo({ port: all.config.port, key: dshKey(all.keys), combo, raw, res, signal, ...(log ? { log } : {}), onDone })
+    const meta = compatModelIndex(await loadCompatUpstreams(this.ctx))
+    await runCombo({ port: all.config.port, key: dshKey(all.keys), combo, raw, res, signal, ...(log ? { log } : {}), onDone, maxTokensOf: (m) => meta.get(m)?.maxTokens })
     return true
   }
 
@@ -1470,6 +1493,48 @@ export class Daemon {
     if (m) log_(`daemon: free pool: ${m} source(s) had only failures for days; taken out until the user retries`)
     if (n || m) await this.resync()
     return n + m
+  }
+
+  // —— 从真实请求学会「哪些模型在 dsh 里用不了」（§14.42） ——
+
+  /** 把一批失败并进模型健康记录；有变化就重新同步（模型列表跟着变）。返回有没有变化 */
+  async learnModelHealth(failures?: Parameters<typeof learnAll>[1]): Promise<boolean> {
+    const list = failures ?? (await recentFailures(this.ctx.paths.logs, 200).catch(() => []))
+    const h = await loadModelHealth(this.ctx.paths.home)
+    if (!learnAll(h, list)) return false
+    await saveModelHealth(this.ctx.paths.home, h, this.ctx.owner)
+    log_(`daemon: model health learned from failures; resyncing`)
+    void this.resync()
+    return true
+  }
+
+  /** 页面：用不了的模型、被拒的 key、学到的输出上限，以及「显示用不了的模型」开关 */
+  async modelHealthView(): Promise<{ showBroken: boolean; broken: { model: string; reason: string; message: string; at: string }[]; badKeys: { source: string; label: string; message: string; at: string }[]; maxTokens: number }> {
+    const h = await loadModelHealth(this.ctx.paths.home)
+    const cat = await loadKeyCatalog(this.ctx.paths.home)
+    const bad = { ...Object.fromEntries(Object.entries(cat).filter(([, c]) => c.keyInvalid).map(([id, c]) => [id, { message: c.keyInvalid!, at: c.updatedAt }])), ...h.badKeys }
+    return {
+      showBroken: (await loadAll(this.ctx)).config.showBrokenModels === true,
+      broken: Object.entries(h.broken).map(([model, b]) => ({ model, ...b })),
+      badKeys: Object.entries(bad).map(([source, b]) => ({ source, label: keyLabel(source), ...b })),
+      maxTokens: Object.keys(h.maxTokens).length,
+    }
+  }
+
+  async restoreModel(model: string): Promise<void> {
+    const h = await loadModelHealth(this.ctx.paths.home)
+    delete h.broken[model]
+    await saveModelHealth(this.ctx.paths.home, h, this.ctx.owner)
+    await this.resync()
+  }
+
+  async setShowBroken(on: boolean): Promise<void> {
+    await withLock(this.ctx, async () => {
+      const all = await loadAll(this.ctx)
+      all.config.showBrokenModels = on || undefined
+      await saveAll(this.ctx, all)
+    })
+    await this.resync()
   }
 
   /** 用户点「再试一次」：把怀疑没了的额度放回免费池 */
@@ -1648,6 +1713,9 @@ export class Daemon {
       if (method === 'POST' && path === '/free/confirm') return ok(await this.freeConfirm(String(b.source ?? ''), b.on !== false).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/spent') return ok(await this.freeSpent(String(b.source ?? ''), b.action === 'exclude' ? 'exclude' : 'keep').then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/source') return ok(await this.freeExcludeSource(String(b.source ?? ''), b.exclude === true).then(() => this.freeOverview()))
+      if (method === 'GET' && path === '/models/health') return ok(await this.modelHealthView())
+      if (method === 'POST' && path === '/models/health/restore') return ok(await this.restoreModel(String(b.model ?? '')).then(() => this.modelHealthView()))
+      if (method === 'POST' && path === '/models/show-broken') return ok(await this.setShowBroken(b.on === true).then(() => this.modelHealthView()))
       if (method === 'POST' && path === '/free/retry') return ok(await this.freeRetry(String(b.source ?? '')).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/cooldown/clear') return ok(await this.free.clearCooldown(String(b.source ?? '')).then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/discovery') return ok(await this.freeDiscovery(String(b.id ?? ''), b.accept === true).then(() => this.freeOverview()))
