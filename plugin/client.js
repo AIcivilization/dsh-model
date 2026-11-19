@@ -1877,6 +1877,20 @@ window.__ModuleLoader__.load({
             h('div', { style: S.meta }, L('在 dsh 的模型列表里，选来源分组下的任意模型就能开始对话。其他软件用下面的「访问地址」和 API key。', 'In dsh\'s model list, pick any model under a source group. Other tools use the endpoint and an API key below.')))))
     }
 
+    // —— 点星（设计 §14.44）——
+    // 只是打开 GitHub 仓库页：点星要用户自己的 GitHub 登录，插件不碰也不代点。不请求 GitHub 接口、不显示星数。
+    const REPO_URL = 'https://github.com/AIcivilization/dsh-model'
+    function StarButton() {
+      return h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginBottom: 8 } },
+        h('button', { type: 'button', style: { ...S.btn, fontSize: 12 }, title: L('打开 GitHub 仓库页，右上角点 Star', 'Opens the GitHub repo; click Star at the top right'),
+          onClick: () => window.open(REPO_URL, '_blank', 'noopener,noreferrer') },
+          h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } },
+            // GitHub 的 Star 图标（Octicons star-16，MIT）
+            h('svg', { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'currentColor', 'aria-hidden': 'true' },
+              h('path', { d: 'M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Zm0 2.445L6.615 5.5a.75.75 0 0 1-.564.41l-3.097.45 2.24 2.184a.75.75 0 0 1 .216.664l-.528 3.084 2.769-1.456a.75.75 0 0 1 .698 0l2.77 1.456-.53-3.084a.75.75 0 0 1 .216-.664l2.24-2.183-3.096-.45a.75.75 0 0 1-.564-.41L8 2.694Z' })),
+            L('觉得好用？去 GitHub 点个 Star', 'Like it? Star it on GitHub'))))
+    }
+
     // —— 整页 ——
     function SettingsSection() {
       const [data, setData] = useState(null)
@@ -1929,6 +1943,7 @@ window.__ModuleLoader__.load({
         }
       }
       return h('div', { style: { color: C.text, maxWidth: 820 } },
+        h(StarButton, null),
         banner,
         h(Guide, { sources: data.sources, onConnect: (s) => void connect(s) }),
         h(CheckinCard, null),
