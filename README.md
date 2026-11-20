@@ -28,7 +28,7 @@
 | 能用在哪 | 一个地址给 dsh、编辑器、脚本、别的电脑一起用 | 多数只能在 dsh 里选 |
 | 来源 | **36 个**：免费的、订阅的、本机的、按量付费的，还能自己加 | 十几个账号渠道 |
 | 免费额度 | **免费池** `free/auto`：各家官方免费额度合起来用，快过期的先用，**会扣钱的默认不进** | — |
-| 签到 | Trae、Qoder、WorkBuddy、豆包、OfficeAce、MiniMax Code、WPS 灵犀、DuMate、AStudio、华为 CodeArts、商汤小浣熊，外加**自定义签到服务**；**多账号**，可放 VPS 天天签不漏 | 部分有 |
+| 签到 | Trae、Qoder、WorkBuddy、豆包、OfficeAce、MiniMax Code、WPS 灵犀、DuMate、AStudio、华为 CodeArts、商汤小浣熊、中国电信 TeleAgent，外加**自定义签到服务**；**多账号**，可放 VPS 天天签不漏 | 部分有 |
 | 安装 | 插件市场装上就**自动装好**，国内不用连 GitHub | 装完要重启 dsh |
 | 透明 | 没有自己的服务器、没有遥测，连哪些地址见[出网清单](docs/EGRESS.md) | — |
 
@@ -49,6 +49,7 @@
 | **AStudio** | 本机装了并登录过，自动识别 | 每日登录积分 |
 | **华为 CodeArts** | 点「+ 登录华为 CodeArts」在浏览器里登录（浏览器要在这台电脑上）；VPS 上填 AK/SK | 签到积分 |
 | **商汤小浣熊** | 填一次浏览器里的登录（Cookie 里的 `raccoon_refresh_token`），之后自己续期 | 每天 300 积分；当天登录过，有效期从当天延长到 7 天 |
+| **中国电信 TeleAgent** | 填一次浏览器里的登录（agent.teleai.com.cn Cookie 里的 `x-token`）；网页上退出登录后要重新复制 | 领积分福利社的「每日 100 积分」；积分只能在 TeleAgent 里用 |
 | **你自己加的** | 「+ 自定义签到服务」：复制提示词让 dsh 的 AI 查好接口，粘回它给的 JSON，再填 Cookie / token | 看那家 |
 
 - **自动签到默认打开**：北京时间零点后随机延后 5–55 分钟签好；失败的一小时后重试；电脑关机错过了，开机一分钟内补签。
@@ -56,7 +57,7 @@
 - **这台还能签哪些**：卡片里列出支持、但这台还没设置的，旁边就是「+ 添加」。
 - **放到 VPS 上签，不会漏**：「复制签到账号到另一台机器」导出一段加密文本和提取码，到 VPS 的页面里「导入」即可（Qoder、豆包；WorkBuddy、OfficeAce 在 VPS 上各自登录，Trae 留在装了 Trae 的电脑上签）。
 - **多账号**：一家可以签几个账号。在签到卡片的「详情」里「+ 添加 WorkBuddy 账号」（打开链接授权）、「+ 再加一个 Qoder 账号」；本机装了几个 Trae 会自动按账号各签一次。
-- **手动填凭据，VPS 也能签**：灵犀、DuMate、AStudio、CodeArts、小浣熊和自定义的服务，都能在「+ 手动填签到凭据」里贴 Cookie / token（每家可以加几个账号），不再依赖本机装了那个 App。
+- **手动填凭据，VPS 也能签**：灵犀、DuMate、AStudio、CodeArts、小浣熊、TeleAgent 和自定义的服务，都能在「+ 手动填签到凭据」里贴 Cookie / token（每家可以加几个账号），不再依赖本机装了那个 App。
 - **只签到，不碰积分**：积分留在你的账号里，照常在各家官方软件里用。命令行：`dsh-model checkin`。
 
 ## 🆓 免费池：一把 key，用上各家官方的免费额度
@@ -174,6 +175,7 @@ dsh-model setup
 | SambaNova、Hugging Face、Ollama Cloud | 免费·额度少 | 没绑卡或免费计划时扣不到钱（进免费池前要你确认一句）；要能上外网 |
 | 商汤日日新 SenseNova | 免费·额度少 | 公测期积分池（滚动 5 小时、每周上限），以账户页为准；没写用完会不会转付费，所以默认不进免费池。商汤小浣熊本身没有对外 API，它的积分只能在小浣熊里用，dsh-model 只替你签到 |
 | 超算互联网、蚂蚁百灵、腾讯云 TokenHub | 需付费 | 新人 / 每月送额度，用完扣余额，所以默认不进免费池 |
+| 中国电信星辰 TeleAI | 需付费 | 星辰大模型开放平台的 API key（Token 套餐 / 按量）；和 TeleAgent 智能体的积分是两回事 |
 | DeepSeek 官方、其他 OpenAI 兼容服务 | 需付费 | 填 API key（其他服务还要填地址；可以加多个，勾「免费额度」就进免费池） |
 | Codex | 需付费 | ChatGPT Plus / Pro |
 | Kimi | 需付费 | Kimi Code 套餐 |

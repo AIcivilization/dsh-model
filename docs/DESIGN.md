@@ -1027,3 +1027,25 @@ dsh-checkin-all（同作者的独立签到插件，MIT）里已经做好、我�
 - **只是打开仓库页**（`https://github.com/AIcivilization/dsh-model`），用户在 GitHub 上自己点 Star。点星要用户自己的 GitHub 登录，插件不拿、不代点。
 - **不加出网请求**：不调 GitHub 接口，也不显示星数，所以 EGRESS.md 不用改。
 - **位置**：页面最上面、横幅之前，小号次要按钮，不挡别的内容；每次打开设置都看得到。
+
+### 14.45 中国电信星辰：TeleAI 模型来源 + TeleAgent 签到（未发布）
+
+用户要求：加上 agent.teleai.com.cn/teleagent 的模型选择和签到。查下来是两样东西：
+
+- **TeleAgent（星辰超级智能体）**是网页版和桌面版的智能体产品，用自己的积分（套餐按月发，积分福利社每天可领 100）。积分只能在 TeleAgent 里用，没有对外 API。让 dsh 用它的模型就要走它的私有接口，和 Qoder、Trae、小浣熊一样**只签到**（§1.2）。
+- **TeleAI 开放平台**（天翼 AI，console.teleai.com.cn）是同一家的官方 API，用 API key。这就是 dsh 里的「模型选择」。
+
+**模型来源 `teleai`**（`src/integrations/apikeys.ts`、`src/sources.ts`）：
+- 地址 `https://api-maas.teleai.com.cn/v1`，国内直连。官方文档只写了 Responses 协议（`/v1/responses`）；实测 `/v1/chat/completions` 和 `/v1/models` 也在（不带有效 key 回 401「协议入口 API Key 无效」），所以照常走引擎的 OpenAI 兼容接入。
+- 内置模型 `Xing4.0-29B-A4B`（列表拉不到时用它验证 key）。
+- 没找到免费额度，只有付费 Token 套餐，所以算「需付费」，不进免费池。
+- `model-health` 的 key 不对识别多认一种中文写法「Key 无效」。
+
+**签到 `teleagent`**（`src/checkin/ext/providers/teleagent.js`，§14.30 的手动凭据，多账号）：
+- 接口是网页自己用的，前缀 `https://agent.teleai.com.cn/superCowork/sapi`，认证请求头 `x-token`（网页 Cookie 里 x-token 的值，不用带 Cookie）。
+- `GET /user/portal/companyStore/v3/checkDayTask` 列福利社活动；每日积分那项 `action_type=api`、`jump_url` 是 `checkTask?type=daily_login`，`action_status` 为 incomplete / not_joined 能领，completed 今天已领。
+- 领取就是对 `jump_url` 发 GET（网页的「领取」按钮也是这样）；已领过再发也只回 200、data 为空，所以领完再查一次活动状态来确认。
+- 余额读 `GET /user/portal/companyStore/userCenter` 的 `current_points_balance`。
+- 401 或 code 4001 = 登录失效，按「要重新登录」报，不按故障重试。没有续期接口，网页上退出登录或过期后要重新复制 x-token。
+- 领取地址是服务端给的，只认本站的相对路径，免得把 x-token 发到别的网站。
+- 桌面版（com.teleai.superagent）在本机的数据目录没找到登录信息，所以不做「从本机读取」。

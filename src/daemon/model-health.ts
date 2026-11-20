@@ -44,7 +44,7 @@ export async function saveModelHealth(home: string, h: ModelHealth, owner?: Owne
 
 const NO_TOOLS = /(function|tool)s?[ _-]?(call(ing)?|use)?\s*(is |are )?not (supported|available)|does(n't| not) support (tools|function|tool)|not support(ed)? (tools|function)|不支持(函数|工具)调用|不支持工具|"code"\s*:\s*20037/i
 const GONE = /model[_ ]not[_ ]found|does not exist|no such model|unknown model|模型不存在|model is not available|has been (deprecated|removed)/i
-const BAD_KEY = /missing authentication|invalid (api[_ ]?)?key|incorrect api key|invalid_api_key|unauthorized|api key not valid|authentication (failed|required)|鉴权失败|无效的.{0,4}(key|令牌)/i
+const BAD_KEY = /missing authentication|invalid (api[_ ]?)?key|incorrect api key|invalid_api_key|unauthorized|api key not valid|authentication (failed|required)|鉴权失败|无效的.{0,4}(key|令牌)|key\s*无效/i
 /** 「max_tokens 必须 ≤ 16384」「max_tokens must be less than or equal to 16384」 */
 const MAX_TOKENS = /max_tokens`?\s*(?:must be|必须|should be|cannot exceed|不能超过)?\s*(?:less than or equal to|小于或等于|<=|≤|at most|不超过)?\s*`?(\d{3,7})`?/i
 

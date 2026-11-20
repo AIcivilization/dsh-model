@@ -48,6 +48,8 @@ export const KEY_PROVIDERS = [
     { id: 'ollama-cloud', label: 'Ollama Cloud', base: 'https://ollama.com/v1', keyUrl: 'https://ollama.com/settings/keys' },
     // AMD Token Lab（国际版，2026-11-18 加，§14.38）：AMD AI 开发者计划送点数；不带 key 回 401（invalid_api_key）
     { id: 'amd-tokenlab', label: 'AMD Token Lab（国际版）', base: 'https://api.tokenlab.amd.com/v1', keyUrl: 'https://notebooks.amd.com/tokenlab' },
+    // 中国电信星辰 TeleAI（2026-11-19 加，§14.45）：官方文档写的是 Responses 协议，实测 /v1/chat/completions 也在（不带有效 key 回 401「协议入口 API Key 无效」）
+    { id: 'teleai', label: '中国电信星辰 TeleAI', base: 'https://api-maas.teleai.com.cn/v1', keyUrl: 'https://console.teleai.com.cn/model-service-web/system-management/api-key', fallbackModels: ['Xing4.0-29B-A4B'], direct: true },
     { id: 'custom', label: '其他 OpenAI 兼容服务', base: '', keyUrl: '', needsBase: true },
 ];
 /** 用户手动加的来源：custom-<短名>，可以有很多个（设计 §14.26） */
