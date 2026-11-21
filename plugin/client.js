@@ -1788,11 +1788,18 @@ window.__ModuleLoader__.load({
         wbLogin ? h(LoginDialog, { source: { id: 'workbuddy-checkin', label: L('WorkBuddy 签到账号', 'WorkBuddy check-in account'), login: 'link' }, session: wbLogin, onDone: () => { setWbLogin(null); setOpen(true); setTimeout(() => void refresh(), 3000) }, onClose: () => { setWbLogin(null); void refresh() } }) : null)
     }
 
-    /** 签完在 dsh 右下角提示一次（成功或失败），一天一次 */
+    /**
+     * 签完在 dsh 右下角提示（成功或失败），一天只弹一次（设计 §14.47）：
+     * 当天第一次有签到结果时弹出，一弹出就记下日期；之后再打开 dsh、或者当天又有一家签好 / 重试成功，都不再弹。
+     * 当天后面的变化在设置页「每日签到」卡片里看。
+     */
     const CHECKIN_SEEN = 'dsh-model.checkinSeen'
     function CheckinNotice() {
       const [st, setSt] = useState(null)
-      const [seen, setSeen] = useState(() => { try { return window.localStorage.getItem(CHECKIN_SEEN) || '' } catch { return '' } })
+      const [seen] = useState(() => { try { return window.localStorage.getItem(CHECKIN_SEEN) || '' } catch { return '' } })
+      // 这次打开要弹的那一天（弹出后就固定，不跟着后面的结果变）
+      const [showing, setShowing] = useState('')
+      const [closed, setClosed] = useState(false)
       useEffect(() => {
         let stop = false
         const tick = () => api('GET', '/checkin').then((r) => { if (!stop) setSt(r) }, () => {})
@@ -1800,13 +1807,20 @@ window.__ModuleLoader__.load({
         const t = setInterval(tick, 15 * 60 * 1000)
         return () => { stop = true; clearInterval(t) }
       }, [])
-      // 等开放的不进提示：到点签好后再提示一次
+      // 等开放的不进提示
       const shown = st ? st.results.filter((r) => r.state !== 'waiting') : []
-      if (!shown.length) return null
-      const key = `${st.date}:${shown.map((r) => `${r.id}=${r.state}`).join(',')}`
-      if (seen === key) return null
+      const date = st && st.date
+      // 旧版本存的是「日期:各家状态」，取冒号前的日期比
+      const seenDate = String(seen).split(':')[0]
+      const due = Boolean(shown.length && date && seenDate !== date && !showing)
+      useEffect(() => {
+        if (!due) return
+        setShowing(date)
+        try { window.localStorage.setItem(CHECKIN_SEEN, date) } catch { /* 无痕模式：只在本次生效 */ }
+      }, [due, date])
+      if (!showing || closed || !shown.length) return null
       const failed = st.results.filter((r) => r.state === 'failed')
-      const hide = () => { setSeen(key); try { window.localStorage.setItem(CHECKIN_SEEN, key) } catch { /* 无痕模式 */ } }
+      const hide = () => setClosed(true)
       return h('div', { role: 'status', style: { position: 'fixed', right: 16, bottom: 120, zIndex: 900, maxWidth: 360, background: C.base, color: C.text, border: `1px solid ${failed.length ? C.err : C.ok}`, borderRadius: 10, padding: '10px 12px', boxShadow: 'var(--dsw-elevation-soft, 0 8px 30px rgba(0,0,0,.2))', fontSize: 13 } },
         h('div', { style: { fontWeight: 600, marginBottom: 4, color: failed.length ? C.err : C.ok } }, failed.length ? L('dsh-model：有签到没成功', 'dsh-model: a check-in failed') : L('dsh-model：今日签到完成', 'dsh-model: checked in for today')),
         shown.map((r) => h('div', { key: r.id, style: { lineHeight: 1.6 } }, `${r.label}：${CHECKIN_TEXT(r)}`)),

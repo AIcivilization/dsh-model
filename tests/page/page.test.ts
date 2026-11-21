@@ -381,6 +381,28 @@ describe('settings page', () => {
     expect(container.textContent).toBe('')
   })
 
+  it('check-in notice: once a day, even when the results change later that day (§14.47)', async () => {
+    window.localStorage.clear()
+    const today = (results: unknown[]) => ({ auto: true, date: '2026-11-21', results, available: [], qoder: { configured: true } })
+    handler = (c) => (c.path === '/checkin' ? [200, today([{ id: 'workbuddy', label: 'WorkBuddy', state: 'signed', at: 'x' }])] : [404, {}])
+    await render(CheckinOverlay)
+    await waitText('dsh-model：今日签到完成')
+    // 一弹出就记下了：没点「知道了」也算
+    expect(window.localStorage.getItem('dsh-model.checkinSeen')).toBe('2026-11-21')
+    await act(async () => root?.unmount())
+    // 当天再打开、又有一家签好：不再弹
+    handler = (c) => (c.path === '/checkin' ? [200, today([{ id: 'workbuddy', label: 'WorkBuddy', state: 'signed', at: 'x' }, { id: 'qoder', label: 'Qoder', state: 'signed', at: 'x' }])] : [404, {}])
+    await render(CheckinOverlay)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(container.textContent).toBe('')
+    await act(async () => root?.unmount())
+    // 旧版本存的「日期:各家状态」也按日期认
+    window.localStorage.setItem('dsh-model.checkinSeen', '2026-11-21:workbuddy=signed')
+    await render(CheckinOverlay)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(container.textContent).toBe('')
+  })
+
   it('Qoder dialog links to the token page of the chosen edition', async () => {
     window.localStorage.setItem('dsh-model.guideDone', '1')
     handler = normal((c) => (c.path === '/checkin' ? [200, { auto: true, date: '2026-10-14', results: [], available: [{ id: 'workbuddy', label: 'WorkBuddy' }], qoder: { configured: false } }] : [404, {}]))
