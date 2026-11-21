@@ -9,6 +9,20 @@ const ok = (id: 'workbuddy' | 'qoder', credit?: number): Checker => ({ id, label
 const bad = (id: 'workbuddy' | 'qoder', msg: string): Checker => ({ id, label: id, run: async () => { throw new Error(msg) } })
 
 describe('daily check-in', () => {
+  it('a product with no check-in today is recorded as "none": not a failure, not retried (§14.48)', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-model-checkin-'))
+    const now = new Date('2026-11-21T04:00:00Z') // 北京 12:00
+    await writeFile(checkinPath(home), JSON.stringify({ results: [], jitter: { date: '2026-11-21', minutes: 5 } }))
+    let calls = 0
+    const doubao: Checker = { id: 'doubao', label: '豆包', run: async () => { calls++; return { state: 'none', message: '没有每日签到' } } }
+    const r = await runCheckin(home, [doubao], { now })
+    expect(r).toEqual([expect.objectContaining({ id: 'doubao', state: 'none', message: '没有每日签到' })])
+    // 两小时后也不再试
+    expect(autoDue(await loadCheckin(home), [doubao], new Date('2026-11-21T06:00:00Z'))).toBe(false)
+    await runCheckin(home, [doubao], { now: new Date('2026-11-21T06:00:00Z') })
+    expect(calls).toBe(1)
+  })
+
   it('waits for a product\'s daily window (Qoder 10:00) instead of failing, then checks in after it', async () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-model-checkin-'))
     let calls = 0

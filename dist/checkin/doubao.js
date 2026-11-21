@@ -94,8 +94,10 @@ export async function doubaoStatus(cookie, seed) {
 /** 签到：先看今天签没签，没签才领 */
 export async function doubaoCheckin(cookie, seed) {
     const st = await doubaoStatus(cookie, seed);
+    // 2026-11-21 实测：个人账号的任务面板里也没有 daily_signin 了，只剩「每日完成一项工作任务」这类要真做任务的（§14.48）。
+    // 这不是登录或网络问题，重试也没用：记成「没有签到活动」，当天不再试、不算失败、不弹红字
     if (st.checkedIn === null)
-        throw new Error('这个豆包账号的任务面板里没有「每日签到」（飞书企业账号、或豆包没给这个账号开签到时都是这样）');
+        return { state: 'none', message: '豆包现在的任务面板里没有「每日签到」（只剩要完成工作任务才给的奖励），今天不用签' };
     if (st.checkedIn)
         return { state: 'already' };
     const body = await post(apiUrl(CHECKIN_URL, seed), cookie, { scene: CAMPAIGN_GROUP });

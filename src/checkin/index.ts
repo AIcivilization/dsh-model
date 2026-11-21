@@ -14,8 +14,11 @@ export type CheckinId = string
 export interface CheckinItem {
   id: CheckinId
   label: string
-  /** waiting：这家的每日活动还没开放（见 CHECKIN_WINDOWS），到点自动签，不算失败 */
-  state: 'signed' | 'already' | 'failed' | 'waiting'
+  /**
+   * waiting：这家的每日活动还没开放（见 CHECKIN_WINDOWS），到点自动签，不算失败
+   * none：这个账号现在没有签到活动（豆包把「每日签到」从任务面板拿掉了，§14.48），当天不再试，不算失败
+   */
+  state: 'signed' | 'already' | 'failed' | 'waiting' | 'none'
   /** 这次签到送的积分 */
   credit?: number
   message?: string
@@ -36,7 +39,7 @@ export interface CheckinFile {
 export interface Checker {
   id: CheckinId
   label: string
-  run(): Promise<{ state: 'signed' | 'already'; credit?: number }>
+  run(): Promise<{ state: 'signed' | 'already' | 'none'; credit?: number; message?: string }>
 }
 
 export const checkinPath = (home: string) => join(home, 'checkin.json')
@@ -111,7 +114,7 @@ export async function runCheckin(home: string, checkers: Checker[], opts: { forc
     }
     try {
       const r = await c.run()
-      results.set(c.id, { id: c.id, label: c.label, state: r.state, ...(r.credit !== undefined ? { credit: r.credit } : {}), at })
+      results.set(c.id, { id: c.id, label: c.label, state: r.state, ...(r.credit !== undefined ? { credit: r.credit } : {}), ...(r.message ? { message: r.message.slice(0, 200) } : {}), at })
     } catch (error) {
       const message = String((error as Error).message ?? error).slice(0, 200)
       results.set(c.id, { id: c.id, label: c.label, state: 'failed', message, at })

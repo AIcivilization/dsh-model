@@ -79,7 +79,7 @@ export async function runCheckin(home, checkers, opts = {}) {
         }
         try {
             const r = await c.run();
-            results.set(c.id, { id: c.id, label: c.label, state: r.state, ...(r.credit !== undefined ? { credit: r.credit } : {}), at });
+            results.set(c.id, { id: c.id, label: c.label, state: r.state, ...(r.credit !== undefined ? { credit: r.credit } : {}), ...(r.message ? { message: r.message.slice(0, 200) } : {}), at });
         }
         catch (error) {
             const message = String(error.message ?? error).slice(0, 200);

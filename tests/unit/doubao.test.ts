@@ -52,7 +52,8 @@ describe('Doubao check-in', () => {
   it('reports an expired cookie and an account without the task', async () => {
     mockFetch({ '/v3/detail/': { code: 710012001, msg: 'login expired' } })
     await expect(doubaoStatus('a=1', 's')).rejects.toBeInstanceOf(DoubaoAuthError)
+    // 任务面板里没有每日签到（2026-11 起豆包拿掉了，§14.48）：不算失败，当天不再试
     mockFetch({ '/v3/detail/': detail(null) })
-    await expect(doubaoCheckin('a=1', 's')).rejects.toThrow(/每日签到/)
+    expect(await doubaoCheckin('a=1', 's')).toMatchObject({ state: 'none', message: expect.stringContaining('每日签到') })
   })
 })
