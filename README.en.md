@@ -48,7 +48,7 @@ English · [中文](README.md)
 | **Baidu DuMate** | Detected automatically if installed and signed in | Check-in credits |
 | **AStudio** | Detected automatically if installed and signed in | Daily sign-in credits |
 | **Huawei CodeArts** | Click "+ Sign in to Huawei CodeArts" and sign in in the browser (the browser must be on this computer); paste AK/SK on a VPS | Check-in points |
-| **SenseTime Raccoon** | Paste the browser sign-in once (the `raccoon_refresh_token` cookie); it renews itself after that | 300 credits a day; signing in that day keeps them for 7 days instead of 1 |
+| **SenseTime Raccoon** | Paste the browser sign-in (the `xhx_token` cookie, valid 30 days; you are reminded to copy it again before it expires) | 300 credits a day; signing in that day keeps them for 7 days instead of 1 |
 | **China Telecom TeleAgent** | Paste the browser sign-in once (the `x-token` cookie on agent.teleai.com.cn); copy it again after signing out there | Claims the daily 100 points in the points club; they only work inside TeleAgent |
 | **Your own** | "+ Custom check-in service": copy the prompt so the dsh AI looks up the API, paste back its JSON, then paste the Cookie / token | Depends on the service |
 

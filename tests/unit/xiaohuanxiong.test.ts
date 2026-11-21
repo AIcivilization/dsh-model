@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { todayGrant, xiaohuanxiongRunOne } from '../../src/checkin/ext/providers/xiaohuanxiong.js'
+import { accessTokenOf, isJwt, jwtExpiry, todayGrant, xiaohuanxiongRunOne } from '../../src/checkin/ext/providers/xiaohuanxiong.js'
 import { mapExtResult, MANUAL_FIELDS, extMissing } from '../../src/checkin/ext.js'
 import { findSource } from '../../src/sources.js'
 import { keyProvider } from '../../src/integrations/apikeys.js'
@@ -62,8 +62,37 @@ describe('SenseTime Raccoon check-in', () => {
     await expect(xiaohuanxiongRunOne('rt', { fetchImpl: dead.impl, now: () => NOW })).rejects.toMatchObject({ code: 'XHX_AUTH' })
   })
 
+  // 现在网页 Cookie 里只有 xhx_token（30 天的 access token，§14.46）
+  const jwt = (expSec: number) => `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ exp: expSec })).toString('base64url')}.sig`
+  const exp30 = Math.floor(Date.parse('2026-12-14T10:00:00+08:00') / 1000)
+
+  it('treats xhx_token as an access token, even when pasted into the old refresh field', () => {
+    expect(isJwt(jwt(exp30))).toBe(true)
+    expect(isJwt('opaque-refresh-token')).toBe(false)
+    expect(jwtExpiry(jwt(exp30))).toBe(exp30 * 1000)
+    expect(accessTokenOf({ xhx_token: ' tok ' })).toBe('tok')
+    expect(accessTokenOf({ refresh_token: jwt(exp30) })).toBe(jwt(exp30))
+    expect(accessTokenOf({ refresh_token: 'opaque' })).toBeNull()
+  })
+
+  it('signs in with xhx_token without calling refresh', async () => {
+    const f = fake([[grant('2026-11-14T23:59:59+08:00')], [grant('2026-11-21T23:59:59+08:00')]])
+    const tok = jwt(exp30)
+    const r = await xiaohuanxiongRunOne('', { accessToken: tok, fetchImpl: f.impl, now: () => NOW })
+    expect(r.outcome).toBe('claimed')
+    expect(f.calls.some((c) => c.path === '/auth/v1/refresh')).toBe(false)
+    expect(f.calls.every((c) => c.auth === `Bearer ${tok}`)).toBe(true)
+  })
+
+  it('says when xhx_token has expired or is about to', async () => {
+    const f = fake([[grant('2026-11-21T23:59:59+08:00')]])
+    await expect(xiaohuanxiongRunOne('', { accessToken: jwt(Math.floor(NOW.getTime() / 1000) - 60), fetchImpl: f.impl, now: () => NOW })).rejects.toMatchObject({ code: 'XHX_AUTH' })
+    const soon = await xiaohuanxiongRunOne('', { accessToken: jwt(Math.floor(NOW.getTime() / 1000) + 2 * 86400), fetchImpl: f.impl, now: () => NOW })
+    expect(soon.message).toContain('重新复制')
+  })
+
   it('is listed for manual credentials and as a missing check-in with an add button', () => {
-    expect(MANUAL_FIELDS.xiaohuanxiong!.fields.map((f) => f.key)).toEqual(['refresh_token'])
+    expect(MANUAL_FIELDS.xiaohuanxiong!.fields.map((f) => f.key)).toEqual(['xhx_token'])
     expect(extMissing(new Set()).find((m) => m.id === 'xiaohuanxiong')).toMatchObject({ action: 'manual' })
   })
 })

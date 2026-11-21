@@ -81,7 +81,7 @@
 | WPS 灵犀 | `lingxi.wps.cn` |
 | 百度 DuMate | `console.bce.baidu.com` |
 | AStudio | `agent.xfyun.cn` |
-| 商汤小浣熊 | `xiaohuanxiong.com`（用你填的 refresh token 续期、取用户信息和积分明细） |
+| 商汤小浣熊 | `xiaohuanxiong.com`（用你填的 xhx_token 取用户信息和积分明细；老的 refresh token 会先续期） |
 | 中国电信 TeleAgent | `agent.teleai.com.cn`（用你填的 x-token 看积分福利社、领每日积分、读余额） |
 | OfficeAce（华为云） | `auth.huaweicloud.com`（你在浏览器里登录）、`agentarts.cn-southwest-2.myhuaweicloud.com`（取回登录）、`sts.cn-north-4.myhuaweicloud.com`（换临时密钥）、`officeace.cn-southwest-2.huaweicloud-agentarts.com`（领积分） |
 | 华为 CodeArts | `auth.huaweicloud.com`、`devcloud.cn-north-4.huaweicloud.com`（你在浏览器里登录，回调到本机 `127.0.0.1:8791`）、`snap-access.cn-north-4.myhuaweicloud.com`（换临时密钥、查积分、签到） |

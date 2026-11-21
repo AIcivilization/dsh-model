@@ -44,7 +44,7 @@ export function checkinAdvice(itemId, message) {
         if (id === 'teleagent')
             return L('TeleAgent 的登录失效（网页上退出登录、或过期了）：浏览器里重新登录 agent.teleai.com.cn，复制新的 x-token，在签到卡片里删掉旧的再填', 'The TeleAgent sign-in expired (signed out on the web, or it timed out): sign in at agent.teleai.com.cn again, copy the new x-token, then remove the old one in the check-in card and add it');
         if (id === 'xiaohuanxiong')
-            return L('商汤小浣熊的登录失效（在别处退出登录、或太久没用）：浏览器里重新登录 xiaohuanxiong.com，复制新的 raccoon_refresh_token，在签到卡片里删掉旧的再填', 'The SenseTime Raccoon sign-in expired (signed out elsewhere, or unused too long): sign in at xiaohuanxiong.com again, copy the new raccoon_refresh_token, then remove the old one in the check-in card and add it');
+            return L('商汤小浣熊的登录失效（在别处退出登录、或太久没用）：浏览器里重新登录 xiaohuanxiong.com，复制新的 xhx_token（30 天有效），在签到卡片里删掉旧的再填', 'The SenseTime Raccoon sign-in expired (signed out elsewhere, or past its 30 days): sign in at xiaohuanxiong.com again, copy the new xhx_token, then remove the old one in the check-in card and add it');
         if (id === 'minimax' || id === 'lingxi' || id === 'dumate' || id === 'astudio') {
             const app = { minimax: 'MiniMax Code', lingxi: L('WPS 灵犀', 'WPS Lingxi'), dumate: 'DuMate', astudio: 'AStudio' }[id];
             return L(`${app} 登录过期：打开 ${app} 重新登录一次，下次签到会自动用上`, `${app} sign-in expired: open ${app} and sign in again; the next check-in picks it up`);

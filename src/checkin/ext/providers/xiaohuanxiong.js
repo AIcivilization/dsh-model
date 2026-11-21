@@ -11,7 +11,10 @@
 //   GET  /points/v2/bills        积分明细：biz_type=daily_grant 的那条有 grant_at、expire_at
 // 认证：Authorization: Bearer <access token>。
 //
-// 凭据：用户从浏览器复制的 raccoon_refresh_token（Cookie 里），多账号。
+// 凭据（多账号），两种都认（§14.46）：
+//   xhx_token：现在网页 Cookie 里只有它（2026-11-20 实测）。是 access token（JWT，签发起 30 天有效），直接当 Bearer 用，没有续期；
+//              到期前要用户重新复制。以前把它填进 refresh_token 栏的账号也按它处理（看是不是 JWT）。
+//   raccoon_refresh_token：老的登录方式，每次签到换一对新的。
 // 判断：今天那条 daily_grant 的 expire_at 晚于北京时间今天 24:00 = 已经续期（今天已签）。
 
 import { listAccounts, saveAccounts } from '../checkin-secrets.js'
@@ -103,19 +106,49 @@ function balanceOf(j) {
   return null
 }
 
+/** 是不是 JWT（xhx_token 就是）：三段 base64url，第一段以 eyJ 开头 */
+export const isJwt = (s) => /^eyJ[\w-]+\.[\w-]+\.[\w-]+$/.test(String(s || '').trim())
+
+/** JWT 的到期时间（毫秒）；读不出返回 null。导出给测试 */
+export function jwtExpiry(token) {
+  try {
+    const p = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf8'))
+    return Number.isFinite(Number(p.exp)) ? Number(p.exp) * 1000 : null
+  } catch {
+    return null
+  }
+}
+
+/** 账号里能直接用的 access token（xhx_token，或误填进 refresh_token 栏的 xhx_token） */
+export function accessTokenOf(account) {
+  if (account && account.xhx_token) return String(account.xhx_token).trim()
+  if (account && isJwt(account.refresh_token)) return String(account.refresh_token).trim()
+  return null
+}
+
 /**
  * 一个账号签一次：续期 → 看账单 → 取用户信息（算当天登录）→ 再看账单。
  * onTokens：拿到新的 refresh token 时回调（要马上写回，旧的已经作废）。
  */
-export async function xiaohuanxiongRunOne(refreshToken, { onTokens = async () => {}, fetchImpl = fetch, now = () => new Date(), label = '' } = {}) {
-  const t = await refreshTokens(refreshToken, fetchImpl)
-  if (t.refreshToken !== refreshToken) await onTokens(t)
+export async function xiaohuanxiongRunOne(refreshToken, { onTokens = async () => {}, fetchImpl = fetch, now = () => new Date(), label = '', accessToken = null } = {}) {
+  let t
+  let expiryNote = ''
+  if (accessToken) {
+    // xhx_token：直接用，不续期；过期了就要重新复制
+    const exp = jwtExpiry(accessToken)
+    if (exp !== null && exp <= now().getTime()) throw new XiaohuanxiongAuthError('小浣熊的 xhx_token 已到期（签发起 30 天有效）')
+    if (exp !== null && exp - now().getTime() < 5 * 86_400_000) expiryNote = `；xhx_token ${beijingDayKey(new Date(exp))} 到期，记得重新复制`
+    t = { accessToken, refreshToken: '' }
+  } else {
+    t = await refreshTokens(refreshToken, fetchImpl)
+    if (t.refreshToken !== refreshToken) await onTokens(t)
+  }
   const before = todayGrant(await bills(t.accessToken, fetchImpl).catch(() => []), now())
   const user = await call('/auth/v1/user_info', { token: t.accessToken, fetchImpl })
   const after = todayGrant(await bills(t.accessToken, fetchImpl).catch(() => []), now())
   const balance = balanceOf(await call('/points/v1/balance', { token: t.accessToken, fetchImpl }).catch(() => null))
   const who = label || (user.data && (user.data.user_name || user.data.nickname || user.data.name)) || ''
-  const tail = balance !== null ? `，余额 ${balance} 积分` : ''
+  const tail = (balance !== null ? `，余额 ${balance} 积分` : '') + expiryNote
   const head = who ? `${who}：` : ''
   if (!after.granted) {
     // 今天没有每日积分（付费版按月发、或今天的还没出账）：登录照样记上了
@@ -154,7 +187,7 @@ export function createXiaohuanxiongProvider({ log = () => {}, env = process.env 
 
     async account() {
       const list = await accountsOf()
-      if (!list.length) return { loggedIn: false, label: '未登录', detail: '还没填 refresh token' }
+      if (!list.length) return { loggedIn: false, label: '未登录', detail: '还没填 xhx_token' }
       return { loggedIn: true, label: list.length > 1 ? `已登录 ${list.length} 个账号` : '已登录', detail: list.map((a) => a.name || `#${a.id}`).join('、') }
     },
 
@@ -167,8 +200,9 @@ export function createXiaohuanxiongProvider({ log = () => {}, env = process.env 
       const results = []
       for (const a of list) {
         const label = a.name || (list.length > 1 ? `#${a.id}` : '')
-        if (!a.refresh_token) {
-          results.push({ ok: false, label, error: '这个账号没填 refresh_token' })
+        const access = accessTokenOf(a)
+        if (!access && !a.refresh_token) {
+          results.push({ ok: false, label, error: '这个账号没填 xhx_token' })
           continue
         }
         if (dryRun) {
@@ -176,7 +210,7 @@ export function createXiaohuanxiongProvider({ log = () => {}, env = process.env 
           continue
         }
         try {
-          const r = await xiaohuanxiongRunOne(String(a.refresh_token), { label, onTokens: (t) => writeBack(a.id, t) })
+          const r = await xiaohuanxiongRunOne(access ? '' : String(a.refresh_token), { label, accessToken: access, onTokens: (t) => writeBack(a.id, t) })
           log(`dsh-model checkin: [小浣熊] ${r.message}`)
           results.push({ ok: true, label, result: r })
         } catch (error) {
@@ -193,7 +227,7 @@ export function createXiaohuanxiongProvider({ log = () => {}, env = process.env 
     },
 
     async loginStart() {
-      throw Object.assign(new Error('小浣熊要手动填 refresh token：在浏览器登录 xiaohuanxiong.com 后，从 Cookie 里复制 raccoon_refresh_token'), { code: 'XHX_MANUAL_LOGIN' })
+      throw Object.assign(new Error('小浣熊要手动填 xhx_token：在浏览器登录 xiaohuanxiong.com 后，从 Cookie 里复制 xhx_token'), { code: 'XHX_MANUAL_LOGIN' })
     },
   }
 }

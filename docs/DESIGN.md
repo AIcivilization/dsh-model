@@ -1049,3 +1049,14 @@ dsh-checkin-all（同作者的独立签到插件，MIT）里已经做好、我�
 - 401 或 code 4001 = 登录失效，按「要重新登录」报，不按故障重试。没有续期接口，网页上退出登录或过期后要重新复制 x-token。
 - 领取地址是服务端给的，只认本站的相对路径，免得把 x-token 发到别的网站。
 - 桌面版（com.teleai.superagent）在本机的数据目录没找到登录信息，所以不做「从本机读取」。
+
+### 14.46 小浣熊改用 xhx_token（0.38.1）
+
+用户反馈（2026-11-20）：浏览器 Cookie 里找不到 `raccoon_refresh_token`，只有 `xhx_token`，填进去签到失败。
+
+在用户自己登录的网页里看：小浣熊现在走 IAM 登录，Cookie 里只有 `xhx_token`。它是 access token（JWT，签发起 30 天有效），`Authorization: Bearer <xhx_token>` 直接能调 `/auth/v1/user_info`、`/points/v1/balance`、`/points/v2/bills`，账单里 `daily_grant` 的写法没变。页面上看不到 refresh token，也就没法续期。旧代码把它当 refresh token 去调 `/auth/v1/refresh`，所以失败。
+
+- **凭据栏改成 `xhx_token`**（必填）。直接当 Bearer 用，不调续期接口。
+- **兼容**：以前存的 `refresh_token` 账号照旧续期；如果 `refresh_token` 栏里填的其实是 JWT（就是这次用户填进去的 xhx_token），按 xhx_token 处理，不用重填。
+- **到期**：读 JWT 的 `exp`。已经过期就按「要重新登录」报（不按故障重试）；剩不到 5 天时，签到结果后面加一句「xhx_token 某天到期，记得重新复制」。
+- 代码在 `src/checkin/ext/providers/xiaohuanxiong.js`（`accessTokenOf`、`isJwt`、`jwtExpiry`）。
