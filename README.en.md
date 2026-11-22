@@ -2,13 +2,14 @@
 
 # dsh-model
 
-**📅 Daily check-in credits claimed for you (11 products, plus your own) · 🆓 a free pool: one key for every provider's official free quota · 🔁 one address that relays every model · 🧩 37 sources**
+**📅 Daily check-in credits claimed for you (12 products, plus your own) · 🆓 a free pool: one key for every provider's official free quota · 🔁 one address that relays every model · 🧩 37 sources**
 
 Install once and all of this is taken care of. dsh gets a management page; without dsh, the command line does everything.
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/AIcivilization/dsh-model" alt="MIT license"></a>
   <a href="https://www.npmjs.com/package/dsh-model"><img src="https://img.shields.io/npm/v/dsh-model?color=cb3837&logo=npm" alt="npm version"></a>
+  <a href="https://github.com/AIcivilization/dsh-pick"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/AIcivilization/dsh-pick/catalog/badge/dsh-model.json" alt="dsh-pick rank"></a>
   <img src="https://img.shields.io/badge/DeepSeek%20Harness-%E2%89%A5%200.2.0--rc.2-4176E6" alt="DeepSeek Harness ≥ 0.2.0-rc.2">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Platform: Windows / macOS / Linux">
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-339933?logo=node.js&logoColor=white" alt="Node ≥ 20">

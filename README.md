@@ -2,13 +2,14 @@
 
 # dsh-model
 
-**📅 每天自动签到领积分（11 家，还能自定义）· 🆓 免费池：一把 key 用上各家官方免费额度 · 🔁 一个地址中转所有模型 · 🧩 37 个来源**
+**📅 每天自动签到领积分（12 家，还能自定义）· 🆓 免费池：一把 key 用上各家官方免费额度 · 🔁 一个地址中转所有模型 · 🧩 37 个来源**
 
 装一次，这几件事都替你做好。dsh 里有图形管理页，没有 dsh 也能用命令行。
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/AIcivilization/dsh-model" alt="MIT license"></a>
   <a href="https://www.npmjs.com/package/dsh-model"><img src="https://img.shields.io/npm/v/dsh-model?color=cb3837&logo=npm" alt="npm version"></a>
+  <a href="https://github.com/AIcivilization/dsh-pick"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/AIcivilization/dsh-pick/catalog/badge/dsh-model.json" alt="dsh-pick rank"></a>
   <img src="https://img.shields.io/badge/DeepSeek%20Harness-%E2%89%A5%200.2.0--rc.2-4176E6" alt="DeepSeek Harness ≥ 0.2.0-rc.2">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Platform: Windows / macOS / Linux">
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-339933?logo=node.js&logoColor=white" alt="Node ≥ 20">
