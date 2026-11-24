@@ -79,8 +79,10 @@ export async function runCombo(run) {
             });
         }
         catch (error) {
-            if (run.signal.aborted)
+            if (run.signal.aborted) {
+                run.onAbort?.(model);
                 return;
+            }
             last = { status: 502, text: String(error.message ?? error) };
             tried.push(`${model}: ${last.text.slice(0, 120)}`);
             attempts.push({ model, status: last.status, reason: last.text.slice(0, 160) });

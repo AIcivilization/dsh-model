@@ -111,6 +111,12 @@ export class FreePool {
                 if (m)
                     this.limiter.start(m.source);
             },
+            // 客户端中途取消：这一家的同时进行数要还回去，不然越积越多，这家会一直被当成「满了」跳过（§14.49）
+            onAbort: (alias) => {
+                const m = byAlias.get(alias);
+                if (m)
+                    this.limiter.end(m.source);
+            },
             onDone: (r) => {
                 const m = r.answered ? byAlias.get(r.answered) : undefined;
                 if (m)

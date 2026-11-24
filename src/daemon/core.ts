@@ -6,9 +6,7 @@
 // CLI 与 dsh 插件都只通过 /control/* 调这里，逻辑只有一份。
 
 import { spawn } from 'node:child_process'
-import { closeSync, openSync } from 'node:fs'
 import { readFile, rename, rm } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { latestVersion, selfJobLog } from '../commands/self.js'
 import { LOCAL_SERVERS, loadLocalCatalog, refreshLocalCatalog } from '../integrations/local.js'
@@ -45,7 +43,7 @@ import { blockedNotice as workbuddyBlockedNotice, riskNotice as workbuddyRiskNot
 import { DSH_KEY_NAME, addKey, findActive, loadKeys, revokeKey, rotateKey, saveKeys } from '../keys.js'
 import { applyKeyChange, dshCandidates, dshKey, loadAll, saveAll, syncAll } from '../ops.js'
 import { isPaidCost, safePick } from '../dsh/pick.js'
-import { loadSecrets, saveSecrets } from '../secrets.js'
+import { loadSecrets } from '../secrets.js'
 import { SOURCES, credsFor, findSource, paymentRequired, type SourceDef } from '../sources.js'
 import { withLock } from '../state.js'
 import { riskNotice as upstreamRiskNotice } from '../upstreams.js'
@@ -938,7 +936,8 @@ export class Daemon {
 
   /** 一键签到（force：今天已成功的也再确认一遍） */
   async checkinNow(force = true): Promise<Awaited<ReturnType<Daemon['checkinStatus']>>> {
-    this.checkinInflight ??= runCheckin(this.ctx.paths.home, await this.checkers(), { force, ...(this.ctx.owner ? { owner: this.ctx.owner } : {}) }).finally(() => (this.checkinInflight = undefined))
+    // 先占位再 await：以前先 await checkers() 再赋值，自动签到和手动点同时来会跑两遍签到（§14.49）
+    this.checkinInflight ??= (async () => runCheckin(this.ctx.paths.home, await this.checkers(), { force, ...(this.ctx.owner ? { owner: this.ctx.owner } : {}) }))().finally(() => (this.checkinInflight = undefined))
     await this.checkinInflight
     // 有的免费额度要当天签上才算（§14.38）：签完重新同步，免费池和模型名跟着变
     void this.resync()

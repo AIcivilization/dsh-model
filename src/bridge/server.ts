@@ -207,8 +207,8 @@ export function createBridge(options: BridgeOptions): { server: Server; ready: P
     })
     body.on('error', (error: unknown) => {
       log(`bridge: ${variant.label} stream failed mid-flight: ${String(error)}`)
-      // 上游中途断开：补发 [DONE]，让客户端正常收尾而不是挂住
-      if (!sawDone && res.writable) res.end('data: [DONE]\n\n')
+      // 上游中途断开：补发 [DONE]，让客户端正常收尾而不是挂住；已经有 [DONE] 的也要把连接关上
+      if (res.writable) res.end(sawDone ? undefined : 'data: [DONE]\n\n')
     })
     body.pipe(res)
   }

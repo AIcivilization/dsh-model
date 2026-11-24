@@ -10,6 +10,7 @@ import { randomBytes } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { fileKey, serialized } from '../../util/serial.js'
 
 /** dsh-model 的数据目录（守护进程启动时一定带着 DSH_MODEL_HOME） */
 export function pluginHome(env = process.env) {
@@ -34,12 +35,26 @@ async function writeAtomicPrivate(file, text) {
 }
 
 async function loadSecrets(env) {
+  let text
   try {
-    const doc = JSON.parse(await readFile(secretsPath(env), 'utf8'))
-    return doc && typeof doc === 'object' ? doc : {}
-  } catch {
-    return {}
+    text = await readFile(secretsPath(env), 'utf8')
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return {}
+    throw error
   }
+  // 读不懂就报错，不当成空的：否则下一次写会把整份 secrets.json（各家 key）盖成只剩签到凭据（§14.49）
+  const doc = JSON.parse(text)
+  return doc && typeof doc === 'object' ? doc : {}
+}
+
+/** 读 → 改 → 写排队，和 TS 那边的 updateSecrets 用同一条队（同一个文件） */
+function editSecrets(env, fn) {
+  return serialized(fileKey(secretsPath(env)), async () => {
+    const secrets = await loadSecrets(env)
+    const r = fn(secrets)
+    await saveSecrets(secrets, env)
+    return r
+  })
 }
 
 async function saveSecrets(secrets, env) {
@@ -54,7 +69,10 @@ export async function getManual(provider, env = process.env) {
 
 /** 写某个服务的手动凭据（传 null 删除） */
 export async function setManual(provider, entry, env = process.env) {
-  const secrets = await loadSecrets(env)
+  return editSecrets(env, (secrets) => setManualIn(secrets, provider, entry))
+}
+
+function setManualIn(secrets, provider, entry) {
   const checkin = { ...(secrets.checkin || {}) }
   const manual = { ...(checkin.manual || {}) }
   if (entry === null) delete manual[provider]
@@ -63,7 +81,6 @@ export async function setManual(provider, entry, env = process.env) {
   else delete checkin.manual
   if (Object.keys(checkin).length) secrets.checkin = checkin
   else delete secrets.checkin
-  await saveSecrets(secrets, env)
   return manual[provider] ?? null
 }
 
@@ -100,11 +117,11 @@ export async function saveAccounts(provider, accounts, env = process.env) {
     await setManual(provider, null, env)
     return []
   }
-  const secrets = await loadSecrets(env)
-  const checkin = { ...(secrets.checkin || {}) }
-  checkin.manual = { ...(checkin.manual || {}), [provider]: { accounts: list } }
-  secrets.checkin = checkin
-  await saveSecrets(secrets, env)
+  await editSecrets(env, (secrets) => {
+    const checkin = { ...(secrets.checkin || {}) }
+    checkin.manual = { ...(checkin.manual || {}), [provider]: { accounts: list } }
+    secrets.checkin = checkin
+  })
   return list
 }
 

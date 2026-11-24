@@ -922,7 +922,8 @@ export class Daemon {
     checkinInflight;
     /** 一键签到（force：今天已成功的也再确认一遍） */
     async checkinNow(force = true) {
-        this.checkinInflight ??= runCheckin(this.ctx.paths.home, await this.checkers(), { force, ...(this.ctx.owner ? { owner: this.ctx.owner } : {}) }).finally(() => (this.checkinInflight = undefined));
+        // 先占位再 await：以前先 await checkers() 再赋值，自动签到和手动点同时来会跑两遍签到（§14.49）
+        this.checkinInflight ??= (async () => runCheckin(this.ctx.paths.home, await this.checkers(), { force, ...(this.ctx.owner ? { owner: this.ctx.owner } : {}) }))().finally(() => (this.checkinInflight = undefined));
         await this.checkinInflight;
         // 有的免费额度要当天签上才算（§14.38）：签完重新同步，免费池和模型名跟着变
         void this.resync();

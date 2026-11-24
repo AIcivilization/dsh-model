@@ -4,6 +4,7 @@
 import { join } from 'node:path'
 import type { Ctx } from './context.js'
 import { readJson, writeJson } from './util/fs.js'
+import { fileKey, serialized } from './util/serial.js'
 
 export interface Secrets {
   opencode?: { key: string; verifiedAt?: string; verifiedModel?: string }
@@ -32,4 +33,17 @@ export async function loadSecrets(ctx: Ctx): Promise<Secrets> {
 
 export async function saveSecrets(ctx: Ctx, secrets: Secrets): Promise<void> {
   await writeJson(secretsPath(ctx), secrets, { owner: ctx.owner })
+}
+
+/**
+ * 读 → 改 → 写 secrets.json，整段排队（§14.49）：fn 里改传进来的对象，返回值原样带出。
+ * fn 里不要再调 updateSecrets（会等自己）。
+ */
+export function updateSecrets<R>(ctx: Ctx, fn: (secrets: Secrets) => R | Promise<R>): Promise<R> {
+  return serialized(fileKey(secretsPath(ctx)), async () => {
+    const secrets = await loadSecrets(ctx)
+    const r = await fn(secrets)
+    await saveSecrets(ctx, secrets)
+    return r
+  })
 }

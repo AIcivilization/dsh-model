@@ -86,7 +86,9 @@ export async function runCheckin(home, checkers, opts = {}) {
             results.set(c.id, { id: c.id, label: c.label, state: 'failed', message, at });
         }
     }
-    const next = { ...file, date, results: [...results.values()] };
+    // 签到要一阵子，这期间用户可能开关了自动签到、或定了今天的随机延后：以最新的文件为底，只换结果（§14.49）
+    const latest = await loadCheckin(home);
+    const next = { ...latest, date, results: [...results.values()] };
     await writeJson(checkinPath(home), next, { owner: opts.owner });
     return next.results;
 }

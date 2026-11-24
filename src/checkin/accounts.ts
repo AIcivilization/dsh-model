@@ -16,7 +16,7 @@ import { atRestKeyProviderFor } from '../bridge/workbuddy/desktop-credential-pro
 import { WorkBuddyUpstreamClient } from '../bridge/workbuddy/upstream.js'
 import { CN_VARIANT } from '../bridge/workbuddy/variants.js'
 import type { Ctx } from '../context.js'
-import { loadSecrets, saveSecrets } from '../secrets.js'
+import { loadSecrets, updateSecrets, type Secrets } from '../secrets.js'
 import { readJson } from '../util/fs.js'
 import { randomBytes } from 'node:crypto'
 import type { QoderRegion } from './qoder.js'
@@ -88,46 +88,63 @@ export interface QoderEntry {
 
 /** 读全部 Qoder 令牌；旧版只存了一个（secrets.checkin.qoder），读出来当第一个 */
 export async function loadQoders(ctx: Ctx): Promise<QoderEntry[]> {
-  const c = (await loadSecrets(ctx)).checkin
+  return qodersOf((await loadSecrets(ctx)).checkin)
+}
+
+function qodersOf(c: Secrets['checkin']): QoderEntry[] {
   if (c?.qoders?.length) return c.qoders
   return c?.qoder?.pat ? [{ id: '1', pat: c.qoder.pat, region: c.qoder.region, ...(c.qoder.savedAt ? { savedAt: c.qoder.savedAt } : {}) }] : []
 }
 
-export async function saveQoders(ctx: Ctx, list: QoderEntry[]): Promise<void> {
-  const secrets = await loadSecrets(ctx)
-  const checkin = { ...secrets.checkin }
-  delete checkin.qoder
-  if (list.length) checkin.qoders = list
-  else delete checkin.qoders
-  secrets.checkin = Object.keys(checkin).length ? checkin : undefined
-  await saveSecrets(ctx, secrets)
+type CheckinSecrets = NonNullable<Secrets['checkin']>
+type ListKey = 'qoders' | 'doubaos' | 'officeaces'
+
+/**
+ * 改 secrets.checkin 里的一组账号：读 → 改 → 写整段排队（§14.49），
+ * 免得签到时写回续期令牌和用户在页面上加账号 / 填 key 同时发生，后写的把先写的盖掉。
+ */
+function editList<K extends ListKey, R>(ctx: Ctx, key: K, fn: (list: NonNullable<CheckinSecrets[K]>) => R): Promise<R> {
+  return updateSecrets(ctx, (secrets) => {
+    const checkin: CheckinSecrets = { ...secrets.checkin }
+    const list = (key === 'qoders' ? [...qodersOf(checkin)] : [...(checkin[key] ?? [])]) as NonNullable<CheckinSecrets[K]>
+    const r = fn(list)
+    if (key === 'qoders') delete checkin.qoder
+    if (list.length) checkin[key] = list
+    else delete checkin[key]
+    secrets.checkin = Object.keys(checkin).length ? checkin : undefined
+    return r
+  })
+}
+
+const nextId = (list: { id: string }[]): string => {
+  const used = new Set(list.map((x) => x.id))
+  let n = list.length + 1
+  while (used.has(String(n))) n++
+  return String(n)
 }
 
 /** 加一个令牌：同一个令牌再加就是改名字 / 区域；返回它的 id */
 export async function addQoder(ctx: Ctx, entry: { pat: string; region: QoderRegion; name?: string }): Promise<string> {
-  const list = await loadQoders(ctx)
-  const same = list.find((q) => q.pat === entry.pat)
   const name = entry.name?.trim().slice(0, 20)
-  if (same) {
-    same.region = entry.region
-    if (name) same.name = name
-    await saveQoders(ctx, list)
-    return same.id
-  }
-  const used = new Set(list.map((q) => q.id))
-  let n = list.length + 1
-  while (used.has(String(n))) n++
-  const id = String(n)
-  list.push({ id, pat: entry.pat, region: entry.region, ...(name ? { name } : {}), savedAt: new Date().toISOString() })
-  await saveQoders(ctx, list)
-  return id
+  return editList(ctx, 'qoders', (list) => {
+    const same = list.find((q) => q.pat === entry.pat)
+    if (same) {
+      same.region = entry.region
+      if (name) same.name = name
+      return same.id
+    }
+    const id = nextId(list)
+    list.push({ id, pat: entry.pat, region: entry.region, ...(name ? { name } : {}), savedAt: new Date().toISOString() })
+    return id
+  })
 }
 
 export async function removeQoder(ctx: Ctx, id?: string): Promise<void> {
-  const list = await loadQoders(ctx)
-  // 不给 id：删第一个（旧版页面的"删除 Qoder 令牌"）
-  const target = id ?? list[0]?.id
-  await saveQoders(ctx, list.filter((q) => q.id !== target))
+  await editList(ctx, 'qoders', (list) => {
+    // 不给 id：删第一个（旧版页面的"删除 Qoder 令牌"）
+    const i = id === undefined ? 0 : list.findIndex((q) => q.id === id)
+    if (i >= 0 && i < list.length) list.splice(i, 1)
+  })
 }
 
 // —— 豆包 Cookie ——
@@ -161,42 +178,30 @@ export async function loadDoubaos(ctx: Ctx): Promise<DoubaoEntry[]> {
   return (await loadSecrets(ctx)).checkin?.doubaos ?? []
 }
 
-async function saveDoubaos(ctx: Ctx, list: DoubaoEntry[]): Promise<void> {
-  const secrets = await loadSecrets(ctx)
-  const checkin = { ...secrets.checkin }
-  if (list.length) checkin.doubaos = list
-  else delete checkin.doubaos
-  secrets.checkin = Object.keys(checkin).length ? checkin : undefined
-  await saveSecrets(ctx, secrets)
-}
-
 /** 加一个豆包账号；同一个账号再加 = 换成新的 Cookie（和名字）。返回 id */
 export async function addDoubao(ctx: Ctx, entry: { cookie: string; name?: string; seed?: string; from?: string }): Promise<string> {
-  const list = await loadDoubaos(ctx)
   const name = entry.name?.trim().slice(0, 20)
-  const same = list.find((d) => sameDoubaoAccount(d.cookie, entry.cookie))
-  if (same) {
-    same.cookie = entry.cookie
-    if (name) same.name = name
-    if (entry.from) same.from = entry.from
-    await saveDoubaos(ctx, list)
-    return same.id
-  }
-  const used = new Set(list.map((d) => d.id))
-  let n = list.length + 1
-  while (used.has(String(n))) n++
-  const id = String(n)
-  list.push({ id, cookie: entry.cookie, seed: entry.seed ?? randomBytes(16).toString('hex'), ...(name ? { name } : {}), ...(entry.from ? { from: entry.from } : {}), savedAt: new Date().toISOString() })
-  await saveDoubaos(ctx, list)
-  return id
+  return editList(ctx, 'doubaos', (list) => {
+    const same = list.find((d) => sameDoubaoAccount(d.cookie, entry.cookie))
+    if (same) {
+      same.cookie = entry.cookie
+      if (name) same.name = name
+      if (entry.from) same.from = entry.from
+      return same.id
+    }
+    const id = nextId(list)
+    list.push({ id, cookie: entry.cookie, seed: entry.seed ?? randomBytes(16).toString('hex'), ...(name ? { name } : {}), ...(entry.from ? { from: entry.from } : {}), savedAt: new Date().toISOString() })
+    return id
+  })
 }
 
 export async function removeDoubao(ctx: Ctx, id: string): Promise<boolean> {
-  const list = await loadDoubaos(ctx)
-  const next = list.filter((d) => d.id !== id)
-  if (next.length === list.length) return false
-  await saveDoubaos(ctx, next)
-  return true
+  return editList(ctx, 'doubaos', (list) => {
+    const i = list.findIndex((d) => d.id === id)
+    if (i < 0) return false
+    list.splice(i, 1)
+    return true
+  })
 }
 
 // —— OfficeAce（华为云）——
@@ -212,49 +217,36 @@ export async function loadOfficeAces(ctx: Ctx): Promise<OfficeAceEntry[]> {
   return (await loadSecrets(ctx)).checkin?.officeaces ?? []
 }
 
-async function saveOfficeAces(ctx: Ctx, list: OfficeAceEntry[]): Promise<void> {
-  const secrets = await loadSecrets(ctx)
-  const checkin = { ...secrets.checkin }
-  if (list.length) checkin.officeaces = list
-  else delete checkin.officeaces
-  secrets.checkin = Object.keys(checkin).length ? checkin : undefined
-  await saveSecrets(ctx, secrets)
-}
-
 /** 加一个 OfficeAce 账号；同一个华为云项目（projectId）再登录 = 换成新的登录。返回 id */
 export async function addOfficeAce(ctx: Ctx, cred: OfficeAceCredential, name?: string): Promise<string> {
-  const list = await loadOfficeAces(ctx)
-  const same = cred.projectId ? list.find((o) => o.cred.projectId === cred.projectId) : undefined
   const n = name?.trim().slice(0, 20)
-  if (same) {
-    same.cred = cred
-    if (n) same.name = n
-    same.savedAt = new Date().toISOString()
-    await saveOfficeAces(ctx, list)
-    return same.id
-  }
-  const used = new Set(list.map((o) => o.id))
-  let i = list.length + 1
-  while (used.has(String(i))) i++
-  const id = String(i)
-  list.push({ id, ...(n ? { name: n } : {}), savedAt: new Date().toISOString(), cred })
-  await saveOfficeAces(ctx, list)
-  return id
+  return editList(ctx, 'officeaces', (list) => {
+    const same = cred.projectId ? list.find((o) => o.cred.projectId === cred.projectId) : undefined
+    if (same) {
+      same.cred = cred
+      if (n) same.name = n
+      same.savedAt = new Date().toISOString()
+      return same.id
+    }
+    const id = nextId(list)
+    list.push({ id, ...(n ? { name: n } : {}), savedAt: new Date().toISOString(), cred })
+    return id
+  })
 }
 
 /** 续期后写回（refresh token 只能用一次，新的必须马上存） */
 export async function updateOfficeAce(ctx: Ctx, id: string, cred: OfficeAceCredential): Promise<void> {
-  const list = await loadOfficeAces(ctx)
-  const e = list.find((o) => o.id === id)
-  if (!e) return
-  e.cred = cred
-  await saveOfficeAces(ctx, list)
+  await editList(ctx, 'officeaces', (list) => {
+    const e = list.find((o) => o.id === id)
+    if (e) e.cred = cred
+  })
 }
 
 export async function removeOfficeAce(ctx: Ctx, id: string): Promise<boolean> {
-  const list = await loadOfficeAces(ctx)
-  const next = list.filter((o) => o.id !== id)
-  if (next.length === list.length) return false
-  await saveOfficeAces(ctx, next)
-  return true
+  return editList(ctx, 'officeaces', (list) => {
+    const i = list.findIndex((o) => o.id === id)
+    if (i < 0) return false
+    list.splice(i, 1)
+    return true
+  })
 }

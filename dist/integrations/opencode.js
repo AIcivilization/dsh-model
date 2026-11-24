@@ -8,7 +8,7 @@ import { readRef } from '../dsh/credentials.js';
 import { DshModelError } from '../errors.js';
 import { opencodeModelsPath } from '../engine/compat.js';
 import { L } from '../i18n.js';
-import { loadSecrets, saveSecrets } from '../secrets.js';
+import { loadSecrets, updateSecrets } from '../secrets.js';
 import { run } from '../util/exec.js';
 import { readText, writeJson } from '../util/fs.js';
 export const OPENCODE_PROVIDER = 'opencode';
@@ -76,17 +76,17 @@ export async function opencodeConfigured(ctx) {
     return Boolean((await loadSecrets(ctx)).opencode?.key);
 }
 export async function saveOpencodeKey(ctx, key, verifiedModel) {
-    const secrets = await loadSecrets(ctx);
-    secrets.opencode = { key, verifiedAt: new Date().toISOString(), ...(verifiedModel ? { verifiedModel } : {}) };
-    await saveSecrets(ctx, secrets);
+    await updateSecrets(ctx, (secrets) => {
+        secrets.opencode = { key, verifiedAt: new Date().toISOString(), ...(verifiedModel ? { verifiedModel } : {}) };
+    });
 }
 export async function removeOpencodeKey(ctx) {
-    const secrets = await loadSecrets(ctx);
-    if (!secrets.opencode)
-        return false;
-    delete secrets.opencode;
-    await saveSecrets(ctx, secrets);
-    return true;
+    return updateSecrets(ctx, (secrets) => {
+        if (!secrets.opencode)
+            return false;
+        delete secrets.opencode;
+        return true;
+    });
 }
 /** v0.2.0 → 统一端点：把 dsh-model 写进 dsh 的 OPENCODE_API_KEY 收回 secrets.json，并移除 dsh 里的 opencode 路由 */
 export async function migrateDshOpencode(ctx, all) {

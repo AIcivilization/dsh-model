@@ -2,11 +2,13 @@
 //
 // state.json 是卸载与 repair 的唯一依据：dsh-model 写到 home 之外的每个文件都登记在这里。
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { open, readFile, rm } from 'node:fs/promises'
 import type { Ctx } from './context.js'
 import { DshModelError } from './errors.js'
 import { L } from './i18n.js'
 import { ensureDir, readJson, writeJson } from './util/fs.js'
+import { serialized } from './util/serial.js'
 
 export const DEFAULT_PORT = 8317
 export const PROVIDER_ID = 'dsh-model'
@@ -136,7 +138,19 @@ export async function ensureHome(ctx: Ctx): Promise<void> {
 /**
  * 命令互斥：两个 setup 同时跑会互相踩配置。锁文件记 pid，持锁进程已不在就当过期锁清掉。
  */
+/** 本进程（这条异步调用链）已经拿着锁：嵌套调用直接跑，不再等自己 */
+const holding = new AsyncLocalStorage<string>()
+
+/**
+ * 改配置时的锁。跨进程靠锁文件（CLI 和守护进程互斥）；同一进程里的几处（守护进程里同时有页面操作和定时同步）
+ * 排队一个一个来（§14.49）。以前同进程的第二处会把锁文件当成「自己留下的过期锁」删掉直接进去，两边同时读改写 config 会丢改动。
+ */
 export async function withLock<T>(ctx: Ctx, fn: () => Promise<T>): Promise<T> {
+  if (holding.getStore() === ctx.paths.lock) return fn()
+  return serialized(`lock:${ctx.paths.lock}`, () => holding.run(ctx.paths.lock, () => lockFile(ctx, fn)))
+}
+
+async function lockFile<T>(ctx: Ctx, fn: () => Promise<T>): Promise<T> {
   await ensureHome(ctx)
   const acquire = async () => {
     const handle = await open(ctx.paths.lock, 'wx', 0o600)

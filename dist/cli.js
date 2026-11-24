@@ -20,7 +20,6 @@ import { checkin, enableInteractive, failures, source, sources, stats } from './
 import { createContext } from './context.js';
 import { isDshModelError } from './errors.js';
 import { L, initLang } from './i18n.js';
-import { UPSTREAMS } from './upstreams.js';
 import { dim, fail, isJsonMode, printJson, setJsonMode } from './util/output.js';
 import { pkgVersion } from './util/pkg.js';
 const OPTIONS = {
@@ -54,7 +53,6 @@ const OPTIONS = {
     'remove-plugin': { type: 'boolean' },
 };
 function help() {
-    const ups = UPSTREAMS.map((u) => u.id).join('|');
     return L(`dsh-model ${pkgVersion()} — 把你自己的 CLI 订阅接进 dsh（本机 OpenAI 兼容端点，默认鉴权，可干净卸载）
 
 用法：dsh-model <命令> [选项]

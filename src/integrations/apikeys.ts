@@ -7,7 +7,8 @@ import { join } from 'node:path'
 import type { Ctx } from '../context.js'
 import { DshModelError, isDshModelError } from '../errors.js'
 import { L } from '../i18n.js'
-import { loadSecrets, saveSecrets } from '../secrets.js'
+import { loadSecrets, updateSecrets } from '../secrets.js'
+import { fileKey, serialized } from '../util/serial.js'
 import { run } from '../util/exec.js'
 import { readJson, writeJson } from '../util/fs.js'
 
@@ -280,56 +281,70 @@ export async function setApiKey(ctx: Ctx, id: string, key: string, baseUrl: stri
   if (provider.needsBase && !baseUrl?.trim()) throw new DshModelError('invalid_base_url', L(`${provider.label} 要填地址${provider.baseHint ? `（${provider.baseHint}）` : ''}`, `${provider.label} needs a URL${provider.baseHint ? ` (${provider.baseHint})` : ''}`))
   const base = normalizeBase(provider.needsBase ? (baseUrl ?? '') : provider.base)
   const models = await fetchKeyModels(provider, key, base, proxy)
-  const secrets = await loadSecrets(ctx)
-  // 换 key 时没给的设置沿用原来的（名字、免费额度）
-  const prev = secrets.apikeys?.[id]
-  if (isCustomId(id) && prev && custom.label === undefined) custom = { label: prev.label, free: prev.free, cycle: prev.cycle, until: prev.until }
-  const extra = isCustomId(id)
-    ? { ...(custom.label ? { label: custom.label.slice(0, 30) } : {}), ...(custom.free ? { free: true, cycle: custom.cycle ?? 'forever', ...(custom.until ? { until: custom.until } : {}) } : {}) }
-    : {}
-  secrets.apikeys = { ...secrets.apikeys, [id]: { key, ...(provider.needsBase ? { base } : {}), ...extra, verifiedAt: new Date().toISOString() } }
-  await saveSecrets(ctx, secrets)
-  const cat = await loadKeyCatalog(ctx.paths.home)
-  cat[id] = { updatedAt: new Date().toISOString(), models }
-  await writeJson(keyCatalogPath(ctx.paths.home), cat, { owner: ctx.owner })
+  await updateSecrets(ctx, (secrets) => {
+    // 换 key 时没给的设置沿用原来的（名字、免费额度）
+    const prev = secrets.apikeys?.[id]
+    if (isCustomId(id) && prev && custom.label === undefined) custom = { label: prev.label, free: prev.free, cycle: prev.cycle, until: prev.until }
+    const extra = isCustomId(id)
+      ? { ...(custom.label ? { label: custom.label.slice(0, 30) } : {}), ...(custom.free ? { free: true, cycle: custom.cycle ?? 'forever', ...(custom.until ? { until: custom.until } : {}) } : {}) }
+      : {}
+    secrets.apikeys = { ...secrets.apikeys, [id]: { key, ...(provider.needsBase ? { base } : {}), ...extra, verifiedAt: new Date().toISOString() } }
+  })
+  await editKeyCatalog(ctx, (cat) => {
+    cat[id] = { updatedAt: new Date().toISOString(), models }
+  })
   return { models: models.length, free: models.filter((m) => m.free).length }
 }
 
 export async function removeApiKey(ctx: Ctx, id: string): Promise<void> {
-  const secrets = await loadSecrets(ctx)
-  if (secrets.apikeys?.[id]) {
-    delete secrets.apikeys[id]
-    await saveSecrets(ctx, secrets)
-  }
-  const cat = await loadKeyCatalog(ctx.paths.home)
-  if (cat[id]) {
+  await updateSecrets(ctx, (secrets) => {
+    if (secrets.apikeys?.[id]) delete secrets.apikeys[id]
+  })
+  await editKeyCatalog(ctx, (cat) => {
     delete cat[id]
-    await writeJson(keyCatalogPath(ctx.paths.home), cat, { owner: ctx.owner })
-  }
+  })
+}
+
+/** 读 → 改 → 写模型目录，整段排队（§14.49） */
+function editKeyCatalog(ctx: Ctx, fn: (cat: KeyCatalog) => void): Promise<void> {
+  const file = keyCatalogPath(ctx.paths.home)
+  return serialized(fileKey(file), async () => {
+    const cat = await loadKeyCatalog(ctx.paths.home)
+    fn(cat)
+    await writeJson(file, cat, { owner: ctx.owner })
+  })
 }
 
 /** 定期刷新已配置来源的模型目录（模型上新 / 下线）；失败的保留上次的。返回是否有变化 */
 export async function refreshKeyCatalogs(ctx: Ctx, proxy: string | null | undefined): Promise<boolean> {
   const secrets = await loadSecrets(ctx)
   const cat = await loadKeyCatalog(ctx.paths.home)
-  let changed = false
+  // 逐家拉目录要一阵子：这期间用户可能新填 / 换 / 删了 key。只把结果记下来，最后按「用的还是同一把 key」合进最新的目录（§14.49）
+  const updates = new Map<string, { key: string; entry: KeyCatalog[string] }>()
   for (const [id, s] of Object.entries(secrets.apikeys ?? {})) {
     const provider = keyProvider(id)
     if (!provider) continue
     try {
       const models = await fetchKeyModels(provider, s.key, s.base ?? provider.base, proxy)
       if (JSON.stringify(models) !== JSON.stringify(cat[id]?.models) || cat[id]?.keyInvalid) {
-        cat[id] = { updatedAt: new Date().toISOString(), models }
-        changed = true
+        updates.set(id, { key: s.key, entry: { updatedAt: new Date().toISOString(), models } })
       }
     } catch (error) {
       // key 被拒：记下来，这家的模型先不放进引擎，来源里提示重填（§14.42）；网络 / 限流：留着上次的目录
       if (isDshModelError(error) && error.code === 'key_rejected' && cat[id] && cat[id]!.keyInvalid !== error.message) {
-        cat[id] = { ...cat[id]!, keyInvalid: error.message }
-        changed = true
+        updates.set(id, { key: s.key, entry: { ...cat[id]!, keyInvalid: error.message } })
       }
     }
   }
-  if (changed) await writeJson(keyCatalogPath(ctx.paths.home), cat, { owner: ctx.owner })
+  if (!updates.size) return false
+  const now = (await loadSecrets(ctx)).apikeys ?? {}
+  let changed = false
+  await editKeyCatalog(ctx, (latest) => {
+    for (const [id, u] of updates) {
+      if (now[id]?.key !== u.key) continue
+      latest[id] = u.entry
+      changed = true
+    }
+  })
   return changed
 }

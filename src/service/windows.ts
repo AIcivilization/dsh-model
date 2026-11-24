@@ -33,9 +33,6 @@ const paths = (spec: ServiceSpec) => {
   return { json: spec.file, vbs: `${base}.vbs`, pid: `${base}.pid` }
 }
 
-/** VBScript 字符串里的双引号要写两遍 */
-const vbq = (s: string) => `"${s.replace(/"/g, '""')}"`
-
 /** 隐藏窗口启动 supervise 的小脚本。存成 UTF-16LE（带 BOM），路径里有中文也不乱码 */
 export function renderVbs(spec: ServiceSpec, node = process.execPath, electron = Boolean(process.versions.electron)): string {
   const cmd = [node, join(PKG_ROOT, 'bin', 'dsh-model.js'), 'service', 'supervise', spec.file].map((a) => `""${a.replace(/"/g, '""""')}""`).join(' ')

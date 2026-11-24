@@ -68,6 +68,8 @@ export interface ComboRun {
   onFailure?: (model: string, status: number, text: string, retryAfter?: string | null) => void
   /** 开始试某个成员（免费池据此记限速） */
   onStart?: (model: string) => void
+  /** 开始试了、但客户端中途取消了（没有成败）：免费池据此把同时进行数还回去 */
+  onAbort?: (model: string) => void
   /** 这个成员的输出上限（§14.42）：客户端要的 max_tokens 比它大就压到它，免得 400「max_tokens 必须 ≤ N」 */
   maxTokensOf?: (model: string) => number | undefined
   /** 全部失败时，报错后面再补一句该怎么办（免费池：最早几点恢复、去哪看） */
@@ -109,7 +111,10 @@ export async function runCombo(run: ComboRun): Promise<void> {
         signal: run.signal,
       })
     } catch (error) {
-      if (run.signal.aborted) return
+      if (run.signal.aborted) {
+        run.onAbort?.(model)
+        return
+      }
       last = { status: 502, text: String((error as Error).message ?? error) }
       tried.push(`${model}: ${last.text.slice(0, 120)}`)
       attempts.push({ model, status: last.status, reason: last.text.slice(0, 160) })

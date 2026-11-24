@@ -15,7 +15,7 @@ import { LOCAL_SERVERS } from '../integrations/local.js'
 import type { CompatUpstream } from '../engine/compat.js'
 import { activeEntries, beijingToday, loadCatalog, refreshCatalog, type Catalog, type CatalogEntry } from './catalog.js'
 import { BALANCE_SOURCES, balanceDropped, fetchPaidBalance } from './balance.js'
-import { FREE_PREFIX, RateLimiter, SUSPECT_DAYS, TIERS, VERIFY_MAX_DAYS, VERIFY_WARN_DAYS, cooldownUntil, limitsOf, rateCooldown, freeProof, isGoneFailure, onlyFailures, verifiedDaysAgo, isQuotaFailure, loadPoolState, needsConfirm, poolCandidates, poolOrder, savePoolState, type Discovery, type Member, type PoolConfig, type PoolSource, type PoolState, type Tier } from './pool.js'
+import { FREE_PREFIX, RateLimiter, SUSPECT_DAYS, TIERS, VERIFY_MAX_DAYS, VERIFY_WARN_DAYS, limitsOf, rateCooldown, freeProof, isGoneFailure, onlyFailures, verifiedDaysAgo, isQuotaFailure, loadPoolState, needsConfirm, poolCandidates, poolOrder, savePoolState, type Discovery, type Member, type PoolConfig, type PoolSource, type PoolState, type Tier } from './pool.js'
 
 const KEY_IDS = new Set(KEY_PROVIDERS.map((p) => p.id))
 const LOCAL_IDS = new Set<string>(LOCAL_SERVERS.map((s) => s.id))
@@ -182,6 +182,11 @@ export class FreePool {
       onStart: (alias) => {
         const m = byAlias.get(alias)
         if (m) this.limiter.start(m.source)
+      },
+      // 客户端中途取消：这一家的同时进行数要还回去，不然越积越多，这家会一直被当成「满了」跳过（§14.49）
+      onAbort: (alias) => {
+        const m = byAlias.get(alias)
+        if (m) this.limiter.end(m.source)
       },
       onDone: (r) => {
         const m = r.answered ? byAlias.get(r.answered) : undefined

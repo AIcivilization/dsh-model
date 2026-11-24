@@ -29,7 +29,7 @@ import {
 } from './desktop-credential-protection.js'
 import type { DesktopAuthClassification, DesktopAuthFormat } from './desktop-credential-protection.js'
 import type { WorkBuddySignedOutReasonCode } from './status-paths.js'
-import { CN_VARIANT, electronProfileFor, type WorkBuddyVariant } from './variants.js'
+import { electronProfileFor, type WorkBuddyVariant } from './variants.js'
 import type { WorkBuddyRefreshOutcome } from './upstream.js'
 
 /** Normalized WorkBuddy credential, timestamps in epoch milliseconds. */

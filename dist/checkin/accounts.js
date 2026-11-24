@@ -14,7 +14,7 @@ import { WorkBuddyCredentialStore } from '../bridge/workbuddy/auth.js';
 import { atRestKeyProviderFor } from '../bridge/workbuddy/desktop-credential-protection.js';
 import { WorkBuddyUpstreamClient } from '../bridge/workbuddy/upstream.js';
 import { CN_VARIANT } from '../bridge/workbuddy/variants.js';
-import { loadSecrets, saveSecrets } from '../secrets.js';
+import { loadSecrets, updateSecrets } from '../secrets.js';
 import { readJson } from '../util/fs.js';
 import { randomBytes } from 'node:crypto';
 /** 一个签到项属于哪一家：workbuddy:123 → workbuddy */
@@ -62,48 +62,62 @@ export async function removeWorkbuddyAccount(home, uid) {
 export const accountTag = (nickname, uid) => nickname || `…${uid.slice(-4)}`;
 /** 读全部 Qoder 令牌；旧版只存了一个（secrets.checkin.qoder），读出来当第一个 */
 export async function loadQoders(ctx) {
-    const c = (await loadSecrets(ctx)).checkin;
+    return qodersOf((await loadSecrets(ctx)).checkin);
+}
+function qodersOf(c) {
     if (c?.qoders?.length)
         return c.qoders;
     return c?.qoder?.pat ? [{ id: '1', pat: c.qoder.pat, region: c.qoder.region, ...(c.qoder.savedAt ? { savedAt: c.qoder.savedAt } : {}) }] : [];
 }
-export async function saveQoders(ctx, list) {
-    const secrets = await loadSecrets(ctx);
-    const checkin = { ...secrets.checkin };
-    delete checkin.qoder;
-    if (list.length)
-        checkin.qoders = list;
-    else
-        delete checkin.qoders;
-    secrets.checkin = Object.keys(checkin).length ? checkin : undefined;
-    await saveSecrets(ctx, secrets);
+/**
+ * 改 secrets.checkin 里的一组账号：读 → 改 → 写整段排队（§14.49），
+ * 免得签到时写回续期令牌和用户在页面上加账号 / 填 key 同时发生，后写的把先写的盖掉。
+ */
+function editList(ctx, key, fn) {
+    return updateSecrets(ctx, (secrets) => {
+        const checkin = { ...secrets.checkin };
+        const list = (key === 'qoders' ? [...qodersOf(checkin)] : [...(checkin[key] ?? [])]);
+        const r = fn(list);
+        if (key === 'qoders')
+            delete checkin.qoder;
+        if (list.length)
+            checkin[key] = list;
+        else
+            delete checkin[key];
+        secrets.checkin = Object.keys(checkin).length ? checkin : undefined;
+        return r;
+    });
 }
-/** 加一个令牌：同一个令牌再加就是改名字 / 区域；返回它的 id */
-export async function addQoder(ctx, entry) {
-    const list = await loadQoders(ctx);
-    const same = list.find((q) => q.pat === entry.pat);
-    const name = entry.name?.trim().slice(0, 20);
-    if (same) {
-        same.region = entry.region;
-        if (name)
-            same.name = name;
-        await saveQoders(ctx, list);
-        return same.id;
-    }
-    const used = new Set(list.map((q) => q.id));
+const nextId = (list) => {
+    const used = new Set(list.map((x) => x.id));
     let n = list.length + 1;
     while (used.has(String(n)))
         n++;
-    const id = String(n);
-    list.push({ id, pat: entry.pat, region: entry.region, ...(name ? { name } : {}), savedAt: new Date().toISOString() });
-    await saveQoders(ctx, list);
-    return id;
+    return String(n);
+};
+/** 加一个令牌：同一个令牌再加就是改名字 / 区域；返回它的 id */
+export async function addQoder(ctx, entry) {
+    const name = entry.name?.trim().slice(0, 20);
+    return editList(ctx, 'qoders', (list) => {
+        const same = list.find((q) => q.pat === entry.pat);
+        if (same) {
+            same.region = entry.region;
+            if (name)
+                same.name = name;
+            return same.id;
+        }
+        const id = nextId(list);
+        list.push({ id, pat: entry.pat, region: entry.region, ...(name ? { name } : {}), savedAt: new Date().toISOString() });
+        return id;
+    });
 }
 export async function removeQoder(ctx, id) {
-    const list = await loadQoders(ctx);
-    // 不给 id：删第一个（旧版页面的"删除 Qoder 令牌"）
-    const target = id ?? list[0]?.id;
-    await saveQoders(ctx, list.filter((q) => q.id !== target));
+    await editList(ctx, 'qoders', (list) => {
+        // 不给 id：删第一个（旧版页面的"删除 Qoder 令牌"）
+        const i = id === undefined ? 0 : list.findIndex((q) => q.id === id);
+        if (i >= 0 && i < list.length)
+            list.splice(i, 1);
+    });
 }
 /** Cookie 串里某一项的值 */
 export function cookieValue(cookie, name) {
@@ -122,96 +136,67 @@ const sameDoubaoAccount = (a, b) => {
 export async function loadDoubaos(ctx) {
     return (await loadSecrets(ctx)).checkin?.doubaos ?? [];
 }
-async function saveDoubaos(ctx, list) {
-    const secrets = await loadSecrets(ctx);
-    const checkin = { ...secrets.checkin };
-    if (list.length)
-        checkin.doubaos = list;
-    else
-        delete checkin.doubaos;
-    secrets.checkin = Object.keys(checkin).length ? checkin : undefined;
-    await saveSecrets(ctx, secrets);
-}
 /** 加一个豆包账号；同一个账号再加 = 换成新的 Cookie（和名字）。返回 id */
 export async function addDoubao(ctx, entry) {
-    const list = await loadDoubaos(ctx);
     const name = entry.name?.trim().slice(0, 20);
-    const same = list.find((d) => sameDoubaoAccount(d.cookie, entry.cookie));
-    if (same) {
-        same.cookie = entry.cookie;
-        if (name)
-            same.name = name;
-        if (entry.from)
-            same.from = entry.from;
-        await saveDoubaos(ctx, list);
-        return same.id;
-    }
-    const used = new Set(list.map((d) => d.id));
-    let n = list.length + 1;
-    while (used.has(String(n)))
-        n++;
-    const id = String(n);
-    list.push({ id, cookie: entry.cookie, seed: entry.seed ?? randomBytes(16).toString('hex'), ...(name ? { name } : {}), ...(entry.from ? { from: entry.from } : {}), savedAt: new Date().toISOString() });
-    await saveDoubaos(ctx, list);
-    return id;
+    return editList(ctx, 'doubaos', (list) => {
+        const same = list.find((d) => sameDoubaoAccount(d.cookie, entry.cookie));
+        if (same) {
+            same.cookie = entry.cookie;
+            if (name)
+                same.name = name;
+            if (entry.from)
+                same.from = entry.from;
+            return same.id;
+        }
+        const id = nextId(list);
+        list.push({ id, cookie: entry.cookie, seed: entry.seed ?? randomBytes(16).toString('hex'), ...(name ? { name } : {}), ...(entry.from ? { from: entry.from } : {}), savedAt: new Date().toISOString() });
+        return id;
+    });
 }
 export async function removeDoubao(ctx, id) {
-    const list = await loadDoubaos(ctx);
-    const next = list.filter((d) => d.id !== id);
-    if (next.length === list.length)
-        return false;
-    await saveDoubaos(ctx, next);
-    return true;
+    return editList(ctx, 'doubaos', (list) => {
+        const i = list.findIndex((d) => d.id === id);
+        if (i < 0)
+            return false;
+        list.splice(i, 1);
+        return true;
+    });
 }
 export async function loadOfficeAces(ctx) {
     return (await loadSecrets(ctx)).checkin?.officeaces ?? [];
 }
-async function saveOfficeAces(ctx, list) {
-    const secrets = await loadSecrets(ctx);
-    const checkin = { ...secrets.checkin };
-    if (list.length)
-        checkin.officeaces = list;
-    else
-        delete checkin.officeaces;
-    secrets.checkin = Object.keys(checkin).length ? checkin : undefined;
-    await saveSecrets(ctx, secrets);
-}
 /** 加一个 OfficeAce 账号；同一个华为云项目（projectId）再登录 = 换成新的登录。返回 id */
 export async function addOfficeAce(ctx, cred, name) {
-    const list = await loadOfficeAces(ctx);
-    const same = cred.projectId ? list.find((o) => o.cred.projectId === cred.projectId) : undefined;
     const n = name?.trim().slice(0, 20);
-    if (same) {
-        same.cred = cred;
-        if (n)
-            same.name = n;
-        same.savedAt = new Date().toISOString();
-        await saveOfficeAces(ctx, list);
-        return same.id;
-    }
-    const used = new Set(list.map((o) => o.id));
-    let i = list.length + 1;
-    while (used.has(String(i)))
-        i++;
-    const id = String(i);
-    list.push({ id, ...(n ? { name: n } : {}), savedAt: new Date().toISOString(), cred });
-    await saveOfficeAces(ctx, list);
-    return id;
+    return editList(ctx, 'officeaces', (list) => {
+        const same = cred.projectId ? list.find((o) => o.cred.projectId === cred.projectId) : undefined;
+        if (same) {
+            same.cred = cred;
+            if (n)
+                same.name = n;
+            same.savedAt = new Date().toISOString();
+            return same.id;
+        }
+        const id = nextId(list);
+        list.push({ id, ...(n ? { name: n } : {}), savedAt: new Date().toISOString(), cred });
+        return id;
+    });
 }
 /** 续期后写回（refresh token 只能用一次，新的必须马上存） */
 export async function updateOfficeAce(ctx, id, cred) {
-    const list = await loadOfficeAces(ctx);
-    const e = list.find((o) => o.id === id);
-    if (!e)
-        return;
-    e.cred = cred;
-    await saveOfficeAces(ctx, list);
+    await editList(ctx, 'officeaces', (list) => {
+        const e = list.find((o) => o.id === id);
+        if (e)
+            e.cred = cred;
+    });
 }
 export async function removeOfficeAce(ctx, id) {
-    const list = await loadOfficeAces(ctx);
-    const next = list.filter((o) => o.id !== id);
-    if (next.length === list.length)
-        return false;
-    await saveOfficeAces(ctx, next);
-    return true;
+    return editList(ctx, 'officeaces', (list) => {
+        const i = list.findIndex((o) => o.id === id);
+        if (i < 0)
+            return false;
+        list.splice(i, 1);
+        return true;
+    });
 }
