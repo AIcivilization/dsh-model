@@ -19,6 +19,7 @@ import { spawnDetached } from '../util/detach.js'
 import { classify, recentFailures } from './failures.js'
 import { autoDue, beijingNow, checkedInKinds, checkinAdvice, ensureJitter, loadCheckin, runCheckin, setAuto, todayResults, type CheckinId, type CheckinItem, type Checker } from '../checkin/index.js'
 import { QODER_REGIONS, exchangePat, qoderCheckin } from '../checkin/qoder.js'
+import { loadProductMetrics, productMetricsSummary, recordBalanceDropAlerts, recordCheckinAttempts, recordDshRequests, recordFreeRequest } from './product-metrics.js'
 import { findTraeCredentials, traeCheckin } from '../checkin/trae.js'
 import { DoubaoAuthError, doubaoCheckin, doubaoStatus, normalizeCookie } from '../checkin/doubao.js'
 import { CookieAccessDenied, findDoubaoLogins, readDoubaoCookie } from '../checkin/browser-cookies.js'
@@ -79,6 +80,9 @@ export interface SourceState {
   riskAck: boolean
   /** 高风险来源：界面默认隐藏 */
   risky: boolean
+  stage: 'stable' | 'experimental'
+  requests24h: number
+  lastVerifiedAt?: string
   subscribeUrl?: string
   pricing: SourceDef['pricing']
   loggedIn: boolean
@@ -251,7 +255,9 @@ export class Daemon {
     try {
       const batch = await (await this.mgmt()).usageQueue(1000)
       if (batch.length) {
-        this.stats.add(batch, (k) => (k ? (this.keyNames.get(k) ?? 'unknown') : 'unknown'))
+        const names = (k: string | undefined) => (k ? (this.keyNames.get(k) ?? 'unknown') : 'unknown')
+        void recordDshRequests(this.ctx.paths.home, batch.filter((r) => names(r.api_key) === 'dsh').map((r) => ({ failed: Boolean(r.failed), at: r.timestamp })), this.ctx.owner).catch(() => {})
+        this.stats.add(batch, names)
         const optIn = (await loadAll(this.ctx)).config.freePool?.optIn
         await this.free.recordUsage(batch as Parameters<FreePool['recordUsage']>[0], optIn)
       }
@@ -315,7 +321,7 @@ export class Daemon {
       .filter(([id]) => isCustomId(id))
       .map(([id, v]) => customSourceDef(id, v.label, v.free))
     return [...SOURCES, ...customDefs].map((def): SourceState => {
-      const base = { id: def.id, label: def.label, kind: def.kind, login: def.login, riskAck: Boolean(def.riskAck), risky: Boolean(def.risky), pricing: def.pricing, ...(def.subscribeUrl ? { subscribeUrl: def.subscribeUrl } : {}) }
+      const base = { id: def.id, label: def.label, kind: def.kind, login: def.login, riskAck: Boolean(def.riskAck), risky: Boolean(def.risky), stage: def.stage ?? 'stable', requests24h: snap.bySource[def.id]?.d1.requests ?? 0, pricing: def.pricing, ...(def.subscribeUrl ? { subscribeUrl: def.subscribeUrl } : {}) }
       if (def.kind === 'engine') {
         const mine = credsFor(creds, def)
         const active = mine.filter((c) => !c.disabled)
@@ -335,6 +341,7 @@ export class Daemon {
         return {
           ...base,
           loggedIn: Boolean(c?.signedIn),
+          ...(c?.signedIn && c.updatedAt ? { lastVerifiedAt: c.updatedAt } : {}),
           enabled: Boolean(c?.signedIn) && !disabled.has(def.id),
           ...(c?.nickname ? { account: c.nickname } : {}),
           ...(c?.error && !c.signedIn ? { detail: c.error } : {}),
@@ -348,6 +355,7 @@ export class Daemon {
         return {
           ...base,
           loggedIn: has,
+          ...(secrets.apikeys?.[def.id]?.verifiedAt ? { lastVerifiedAt: secrets.apikeys[def.id]!.verifiedAt } : keyCat[def.id]?.updatedAt ? { lastVerifiedAt: keyCat[def.id]!.updatedAt } : {}),
           enabled: has && !disabled.has(def.id),
           ...(has ? { account: def.id === 'custom' || isCustomId(def.id) ? (secrets.apikeys?.[def.id]?.base ?? '') : redactKey(secrets.apikeys![def.id]!.key) } : {}),
           ...(has && free ? { detail: L(`其中 ${free} 个免费`, `${free} of them free`) } : {}),
@@ -366,6 +374,7 @@ export class Daemon {
           base: srv.base,
           customBase: srv.custom,
           loggedIn: up,
+          ...(up && st?.updatedAt ? { lastVerifiedAt: st.updatedAt } : {}),
           enabled: up && (st?.models.length ?? 0) > 0 && !disabled.has(def.id),
           ...(up ? { account: srv.base.replace(/\/v1$/, '') } : { detail: L(`没检测到 ${srv.label} 在运行（${srv.base.replace(/\/v1$/, '')}）`, `${srv.label} is not running (${srv.base.replace(/\/v1$/, '')})`) }),
           ...(up && !st?.models.length ? { detail: L('在运行，但还没有模型', 'Running, but has no models yet') } : {}),
@@ -373,7 +382,7 @@ export class Daemon {
         }
       }
       const has = Boolean(secrets.opencode?.key)
-      return { ...base, loggedIn: has, enabled: has && !disabled.has('opencode'), models: has ? modelCount('opencode') : 0 }
+      return { ...base, ...(secrets.opencode?.verifiedAt ? { lastVerifiedAt: secrets.opencode.verifiedAt } : {}), loggedIn: has, enabled: has && !disabled.has('opencode'), models: has ? modelCount('opencode') : 0 }
     })
   }
 
@@ -970,7 +979,12 @@ export class Daemon {
   /** 一键签到（force：今天已成功的也再确认一遍） */
   async checkinNow(force = true): Promise<Awaited<ReturnType<Daemon['checkinStatus']>>> {
     // 先占位再 await：以前先 await checkers() 再赋值，自动签到和手动点同时来会跑两遍签到（§14.49）
-    this.checkinInflight ??= (async () => runCheckin(this.ctx.paths.home, await this.checkers(), { force, ...(this.ctx.owner ? { owner: this.ctx.owner } : {}) }))().finally(() => (this.checkinInflight = undefined))
+    this.checkinInflight ??= (async () => {
+      const startedAt = Date.now()
+      const result = await runCheckin(this.ctx.paths.home, await this.checkers(), { force, ...(this.ctx.owner ? { owner: this.ctx.owner } : {}) })
+      void recordCheckinAttempts(this.ctx.paths.home, result.filter((r) => Date.parse(r.at) >= startedAt && (r.state === 'signed' || r.state === 'already' || r.state === 'failed')).map((r) => ({ state: r.state as 'signed' | 'already' | 'failed', at: r.at })), this.ctx.owner).catch(() => {})
+      return result
+    })().finally(() => (this.checkinInflight = undefined))
     await this.checkinInflight
     // 有的免费额度要当天签上才算（§14.38）：签完重新同步，免费池和模型名跟着变
     void this.resync()
@@ -1418,6 +1432,7 @@ export class Daemon {
 
   private recordRoute(route: string, r: RouteResult): void {
     this.routes.push({ at: new Date().toISOString(), route, ...r })
+    if (route.startsWith('free/')) void recordFreeRequest(this.ctx.paths.home, Boolean(r.answered), this.ctx.owner).catch(() => {})
     if (this.routes.length > 200) this.routes = this.routes.slice(-200)
   }
 
@@ -1528,7 +1543,7 @@ export class Daemon {
   async checkFreeBalances(): Promise<number> {
     const inp = await this.poolInputs()
     const n = await this.free.checkBalances(inp)
-    if (n) log_(`daemon: free pool: paid balance dropped on ${n} source(s); taken out of the pool until the user confirms`)
+    if (n) { void recordBalanceDropAlerts(this.ctx.paths.home, n, this.ctx.owner).catch(() => {}); log_(`daemon: free pool: paid balance dropped on ${n} source(s); taken out of the pool until the user confirms`) }
     // 连续几天只有失败的来源：怀疑免费额度没了（§14.40）
     const m = await this.free.checkHealth(inp)
     if (m) log_(`daemon: free pool: ${m} source(s) had only failures for days; taken out until the user retries`)
@@ -1608,12 +1623,13 @@ export class Daemon {
   }
 
   /** 页面：用不了的模型、被拒的 key、学到的输出上限，以及「显示用不了的模型」开关 */
-  async modelHealthView(): Promise<{ showBroken: boolean; broken: { model: string; reason: string; message: string; at: string }[]; badKeys: { source: string; label: string; message: string; at: string }[]; maxTokens: number; verified: number; lastSweep?: NonNullable<Awaited<ReturnType<typeof loadModelHealth>>['lastSweep']>; sweeping?: NonNullable<Daemon['sweepProgress']> }> {
+  async modelHealthView(): Promise<{ proof: ReturnType<Stats['modelProofs']>; showBroken: boolean; broken: { model: string; reason: string; message: string; at: string }[]; badKeys: { source: string; label: string; message: string; at: string }[]; maxTokens: number; verified: number; lastSweep?: NonNullable<Awaited<ReturnType<typeof loadModelHealth>>['lastSweep']>; sweeping?: NonNullable<Daemon['sweepProgress']> }> {
     const h = await loadModelHealth(this.ctx.paths.home)
     const cat = await loadKeyCatalog(this.ctx.paths.home)
     const bad = { ...Object.fromEntries(Object.entries(cat).filter(([, c]) => c.keyInvalid).map(([id, c]) => [id, { message: c.keyInvalid!, at: c.updatedAt }])), ...h.badKeys }
     return {
       showBroken: (await loadAll(this.ctx)).config.showBrokenModels === true,
+      proof: this.stats.modelProofs('dsh'),
       broken: Object.entries(h.broken).map(([model, b]) => ({ model, ...b })),
       badKeys: Object.entries(bad).map(([source, b]) => ({ source, label: keyLabel(source), ...b })),
       maxTokens: Object.keys(h.maxTokens).length,
@@ -1817,6 +1833,7 @@ export class Daemon {
       if (method === 'POST' && path === '/free/spent') return ok(await this.freeSpent(String(b.source ?? ''), b.action === 'exclude' ? 'exclude' : 'keep').then(() => this.freeOverview()))
       if (method === 'POST' && path === '/free/source') return ok(await this.freeExcludeSource(String(b.source ?? ''), b.exclude === true).then(() => this.freeOverview()))
       if (method === 'GET' && path === '/models/health') return ok(await this.modelHealthView())
+      if (method === 'GET' && path === '/product/metrics') return ok(productMetricsSummary(await loadProductMetrics(this.ctx.paths.home)))
       if (method === 'POST' && path === '/models/health/restore') return ok(await this.restoreModel(String(b.model ?? '')).then(() => this.modelHealthView()))
       if (method === 'POST' && path === '/models/check') {
         void this.sweepModels(typeof b.source === 'string' && b.source ? b.source : undefined).catch(() => {})

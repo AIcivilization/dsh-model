@@ -193,6 +193,23 @@ export class Stats {
     return { updatedAt: new Date(now).toISOString(), total: win(this.recs), byKey, bySource, byModel }
   }
 
+  /** dsh API key 的真实请求证据，按模型汇总；不返回 key 或对话内容。 */
+  modelProofs(keyName = 'dsh'): Record<string, { requests: number; failures: number; lastSuccessAt: string | null; lastFailureAt: string | null }> {
+    this.prune()
+    const grouped = new Map<string, Rec[]>()
+    for (const r of this.recs) {
+      if (r.k !== keyName) continue
+      const rows = grouped.get(r.m) ?? []
+      rows.push(r)
+      grouped.set(r.m, rows)
+    }
+    return Object.fromEntries([...grouped].map(([model, rows]) => {
+      const successes = rows.filter((r) => r.f === 0)
+      const failures = rows.filter((r) => r.f === 1)
+      return [model, { requests: rows.length, failures: failures.length, lastSuccessAt: successes.length ? new Date(Math.max(...successes.map((r) => r.t))).toISOString() : null, lastFailureAt: failures.length ? new Date(Math.max(...failures.map((r) => r.t))).toISOString() : null }]
+    }))
+  }
+
   /** 最近的请求，新的在前 */
   recent(limit = 100): RequestRow[] {
     this.prune()

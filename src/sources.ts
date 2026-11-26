@@ -30,6 +30,8 @@ export interface SourceDef {
   probeModel?: string
   /** 费用：免费 / 免费但额度很少 / 要付费订阅或充值（2026-10 核实，见设计 §14.7） */
   pricing: Pricing
+  /** 来源成熟度；未标记时视为 stable。 */
+  stage?: 'stable' | 'experimental'
 }
 
 export interface Pricing {
@@ -39,8 +41,8 @@ export interface Pricing {
 }
 
 export const SOURCES: SourceDef[] = [
-  { id: 'workbuddy', label: 'WorkBuddy', kind: 'workbuddy', login: 'link', variant: 'workbuddy', pricing: { tier: 'free', zh: '账号自带免费积分（剩余见用量）', en: 'Free credits on the account (see usage)' } },
-  { id: 'workbuddy-ai', label: 'WorkBuddy AI', kind: 'workbuddy', login: 'link', variant: 'workbuddy-ai', pricing: { tier: 'free', zh: '账号自带免费积分（剩余见用量）', en: 'Free credits on the account (see usage)' } },
+  { id: 'workbuddy', label: 'WorkBuddy', kind: 'workbuddy', login: 'link', variant: 'workbuddy', stage: 'experimental', pricing: { tier: 'free', zh: '账号自带免费积分（剩余见用量）', en: 'Free credits on the account (see usage)' } },
+  { id: 'workbuddy-ai', label: 'WorkBuddy AI', kind: 'workbuddy', login: 'link', variant: 'workbuddy-ai', stage: 'experimental', pricing: { tier: 'free', zh: '账号自带免费积分（剩余见用量）', en: 'Free credits on the account (see usage)' } },
   { id: 'codex', label: 'Codex (ChatGPT)', kind: 'engine', login: 'device', deviceCliFlag: '-codex-device-login', engineProvider: 'codex', filePrefix: 'codex-', subscribeUrl: 'https://chatgpt.com/pricing', pricing: { tier: 'paid', zh: '需要 ChatGPT Plus / Pro 订阅', en: 'Needs a ChatGPT Plus / Pro subscription' } },
   { id: 'claude', label: 'Claude', kind: 'engine', login: 'paste', engineProvider: 'claude', filePrefix: 'claude-', riskAck: true, risky: true, subscribeUrl: 'https://claude.com/pricing', pricing: { tier: 'paid', zh: '需要 Claude Pro / Max 订阅', en: 'Needs a Claude Pro / Max subscription' } },
   { id: 'kimi', label: 'Kimi', kind: 'engine', login: 'device', engineProvider: 'kimi', filePrefix: 'kimi-', subscribeUrl: 'https://www.kimi.com/code/#pricing', pricing: { tier: 'paid', zh: '需要 Kimi Code 套餐（普通 Kimi 账号调用会被拒）', en: 'Needs a Kimi Code plan (a regular Kimi account is refused)' } },

@@ -480,8 +480,9 @@ window.__ModuleLoader__.load({
       }
       // 已登录的照常列出；没登录的收进一个可折叠的列表（默认收起；一个都没登录时默认展开）
       // 顶部只放正在用的（已登录且打开）；没登录的、关掉的都收进折叠列表
-      const signedIn = visible.filter((s) => s.loggedIn && s.enabled)
-      const rest = visible.filter((s) => !(s.loggedIn && s.enabled))
+      const byActivity = (a, b) => (b.requests24h || 0) - (a.requests24h || 0)
+      const signedIn = visible.filter((s) => s.loggedIn && s.enabled).sort(byActivity)
+      const rest = visible.filter((s) => !(s.loggedIn && s.enabled)).sort((a, b) => Number(a.stage === 'experimental') - Number(b.stage === 'experimental') || byActivity(a, b))
       const [restPref, setRestPref] = useState(readShowRest)
       const openRest = restPref ?? signedIn.length === 0
       const toggleRest = (v) => {
@@ -494,6 +495,7 @@ window.__ModuleLoader__.load({
             h('div', { style: S.grow },
               h('span', { style: S.label }, s.label),
               h(PriceTag, { pricing: s.pricing }),
+              s.stage === 'experimental' ? h('span', { style: { fontSize: 11, color: C.warn, marginLeft: 6, border: `1px solid ${C.warn}`, borderRadius: 4, padding: '0 4px' } }, L('试验来源', 'Experimental')) : null,
               s.risky ? h('span', { style: { fontSize: 11, color: C.err, marginLeft: 6, border: `1px solid ${C.err}`, borderRadius: 4, padding: '0 4px' } }, L('高风险', 'High risk')) : null,
               (() => {
                 const x = s.enabled ? exhausted(s.usage) : null
@@ -504,6 +506,8 @@ window.__ModuleLoader__.load({
               h('span', { style: { ...S.meta, marginLeft: 8 } },
                 s.loggedIn ? (s.account || '') : s.kind === 'local' ? L('未运行', 'Not running') : L('未登录', 'Signed out'),
                 s.models ? ` · ${L(`${s.models} 个模型`, `${s.models} models`)}` : '',
+                s.requests24h ? ` · ${L(`近 24 小时 ${s.requests24h} 次请求`, `${s.requests24h} requests in 24h`)}` : '',
+                s.lastVerifiedAt ? ` · ${L(`上次验证 ${ago(s.lastVerifiedAt)}`, `last verified ${ago(s.lastVerifiedAt)}`)}` : '',
                 s.loggedIn && s.kind === 'apikey' && s.detail ? ` · ${s.detail}` : '')),
             s.loggedIn && s.enabled && s.models && !s.usage?.noAccess ? h('button', { type: 'button', style: S.btn, onClick: () => setPicking(picking === s.id ? '' : s.id) }, L('选模型', 'Models')) : null,
             s.loggedIn && s.kind !== 'opencode' && s.kind !== 'local' ? h('button', { type: 'button', style: S.btn, onClick: () => logout(s) }, s.kind === 'apikey' ? L('删除 key', 'Remove key') : L('退出登录', 'Sign out')) : null,
@@ -771,6 +775,7 @@ window.__ModuleLoader__.load({
           out.push(h('a', { key: 'go', href: e.url, target: '_blank', rel: 'noopener noreferrer', style: { ...S.btn, textDecoration: 'none' } }, L('去领 ↗', 'Claim ↗')))
           if (sourceOf(e.source)) out.push(h('button', { key: 'key', type: 'button', style: S.btnPrimary, onClick: () => fill(e) }, L('填 key', 'Add key')))
         }
+        else out.push(h('a', { key: 'evidence', href: e.url, target: '_blank', rel: 'noopener noreferrer', style: { ...S.btn, textDecoration: 'none' } }, L('核对官网 ↗', 'Check source ↗')))
         if (e.status === 'confirm') out.push(h('button', { key: 'cf', type: 'button', style: S.btn, disabled: busy === e.id, onClick: () => {
           if (!window.confirm(L(`放进免费池之前请确认：\n\n「${e.confirm}」\n\n如果不是这样，用它的请求可能会扣你的钱。确认属实吗？`, `Before adding it to the free pool, please confirm:\n\n"${e.confirm}"\n\nIf this is not true, requests through it may charge you. Is it true?`))) return
           void act(e.id, 'POST', '/free/confirm', { source: e.source, on: true })
@@ -846,9 +851,17 @@ window.__ModuleLoader__.load({
                 [CYCLE_LABEL[e.cycle] ? CYCLE_LABEL[e.cycle]() : e.cycle, e.amount, ...(e.gates || []), e.until ? L(`到 ${e.until}`, `until ${e.until}`) : '', e.kind === 'checkin' ? L('只能签到，在产品里用', 'check-in only, used inside the product') : '', e.charges && e.kind === 'api' ? L('用完会扣钱', 'charges once used up') : ''].filter(Boolean).join(' · '),
                 e.used != null && e.capTokens ? h('span', { style: { marginLeft: 6 } }, h(Bar, { pct: (e.used / e.capTokens) * 100 }), ` ${fmtTokens(e.used)} / ${fmtTokens(e.capTokens)}`) : null,
                 e.note ? h('div', null, e.note) : null,
-                // 新不新、还活不活（§14.40）
+                e.kind === 'api' ? h('div', { style: { color: C.sub } }, ({
+                  account: L('判定依据：账号免费档', 'Basis: free account tier'),
+                  priced: L('判定依据：平台模型目录实时标价', 'Basis: live platform model pricing'),
+                  list: e.proofModelCount ? L(`判定依据：逐个核验的 ${e.proofModelCount} 个免费模型`, `Basis: ${e.proofModelCount} individually verified free models`) : L('判定依据：免费模型名单尚未登记具体型号', 'Basis: no specific free models are listed yet'),
+                  pattern: L('判定依据：官方免费型号规则', 'Basis: official free-model pattern'),
+                }[e.proof] || L('判定依据：目录记录', 'Basis: catalog entry'))) : null,
+                // 新不新、还活不活（§14.40）；平台实时定价不依赖目录核验日期
                 h('div', null,
-                  e.verifiedDays != null ? h('span', { style: { color: e.fresh === 'stale' ? C.err : e.fresh === 'warn' ? C.warn : C.sub, marginRight: 10 } }, e.fresh === 'warn' ? L(`核实于 ${e.verifiedDays} 天前，待重新核实`, `checked ${e.verifiedDays} days ago, due for a re-check`) : L(`核实于 ${e.verifiedDays} 天前`, `checked ${e.verifiedDays} days ago`)) : null,
+                  e.kind === 'api' && e.proof === 'priced' ? h('span', { style: { color: C.sub, marginRight: 10 } }, L('每次按平台模型目录价格判断', 'checked against platform model pricing'))
+                    : e.kind === 'api' && e.verifiedDays == null ? h('span', { style: { color: C.warn, marginRight: 10 } }, L('没有核验日期', 'no verification date'))
+                      : e.kind === 'api' ? h('span', { style: { color: e.fresh === 'stale' ? C.err : e.fresh === 'warn' ? C.warn : C.sub, marginRight: 10 } }, e.fresh === 'warn' ? L(`核实于 ${e.verifiedDays} 天前，待重新核实`, `checked ${e.verifiedDays} days ago, due for a re-check`) : L(`核实于 ${e.verifiedDays} 天前`, `checked ${e.verifiedDays} days ago`)) : null,
                   e.health && (e.health.ok || e.health.fail) ? h('span', { style: { color: e.health.ok ? C.ok : C.err, marginRight: 10 } }, L(`最近 7 天：成功 ${e.health.ok} 次 · 失败 ${e.health.fail} 次`, `last 7 days: ${e.health.ok} ok · ${e.health.fail} failed`)) : null,
                   e.status === 'suspect' && e.suspectReason ? h('span', { style: { color: C.err } }, L(`原因：${e.suspectReason}`, `Why: ${e.suspectReason}`)) : null),
                 (e.related || []).length ? h('div', { style: { color: C.accent } }, L('同一家还有：', 'Same company: '), e.related.map((r) => `${r.name}（${r.kind === 'checkin' ? (r.status === 'connected' ? '在签' : '没加签到') : r.status === 'missing' ? '还没领' : r.status === 'connected' ? '在免费池' : '已接入'}）`).join('；')) : null)),
@@ -961,6 +974,24 @@ window.__ModuleLoader__.load({
     }
 
     /** 从真实请求学到「在 dsh 里用不了」的模型和被拒的 key（§14.42）：已自动从模型列表去掉，这里说清楚、能恢复 */
+    function ProductMetricsCard() {
+      const [data, setData] = useState(null)
+      const [open, setOpen] = useState(false)
+      const load = useCallback(() => api('GET', '/product/metrics').then(setData, () => {}), [])
+      useEffect(() => { void load(); const t = setInterval(load, 5 * 60_000); return () => clearInterval(t) }, [load])
+      if (!data) return null
+      const pct = (n, d) => d ? `${Math.round(n / d * 100)}%` : '—'
+      return h('div', { style: S.section }, h('div', { style: S.card },
+        h('button', { type: 'button', 'aria-expanded': open, onClick: () => setOpen(!open), style: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', width: '100%', fontSize: 13, color: C.text } }, `${open ? '▾' : '▸'} `, h('b', null, L('本机产品指标（近 7 天）', 'Local product metrics (7 days)'))),
+        h('div', { style: { ...S.meta, marginTop: 5 } }, L('只保存在本机，不上传；用于查看 dsh 首次成功、免费池、签到和余额异常。', 'Stored locally and never uploaded; tracks first dsh success, free pool, check-in and balance alerts.')),
+        open ? h('div', { style: { fontSize: 12, lineHeight: 1.8, marginTop: 6 } },
+          h('div', null, L(`安装就绪 → 首次 dsh 成功：${data.setupToFirstDshSuccessMs == null ? '待产生真实成功请求' : `${Math.round(data.setupToFirstDshSuccessMs / 60000)} 分钟`}`, `Setup ready → first successful dsh request: ${data.setupToFirstDshSuccessMs == null ? 'waiting for a real successful request' : `${Math.round(data.setupToFirstDshSuccessMs / 60000)} min`}`)),
+          h('div', null, L(`dsh key：${data.dshKey.successes}/${data.dshKey.requests} 成功`, `dsh key: ${data.dshKey.successes}/${data.dshKey.requests} succeeded`)),
+          h('div', null, L(`免费池成功率：${pct(data.freePool.successes, data.freePool.requests)}（${data.freePool.successes}/${data.freePool.requests}）`, `Free pool success rate: ${pct(data.freePool.successes, data.freePool.requests)} (${data.freePool.successes}/${data.freePool.requests})`)),
+          h('div', null, L(`签到成功率：${pct(data.checkin.successes, data.checkin.attempts)}（${data.checkin.successes}/${data.checkin.attempts}）`, `Check-in success rate: ${pct(data.checkin.successes, data.checkin.attempts)} (${data.checkin.successes}/${data.checkin.attempts})`)),
+          h('div', null, L(`意外余额下降提醒：${data.balanceDropAlerts} 次`, `Unexpected balance drop alerts: ${data.balanceDropAlerts}`))) : null))
+    }
+
     function ModelHealthCard() {
       const [data, setData] = useState(null)
       const [open, setOpen] = useState(false)
@@ -984,10 +1015,14 @@ window.__ModuleLoader__.load({
               data.sweeping
                 ? L(`正在体检：${data.sweeping.done} / ${data.sweeping.total}${data.sweeping.current ? `（${prettyModel(data.sweeping.current)}）` : ''}`, `Checking: ${data.sweeping.done} / ${data.sweeping.total}${data.sweeping.current ? ` (${prettyModel(data.sweeping.current)})` : ''}`)
                 : data.lastSweep
-                  ? L(`上次体检 ${ago(data.lastSweep.at)}：测了 ${data.lastSweep.checked} 个免费模型，${data.lastSweep.ok} 个能用、${data.lastSweep.broken} 个用不了${data.lastSweep.skipped ? `、${data.lastSweep.skipped} 个这次没测成` : ''}${data.lastSweep.paidSkipped ? `；${data.lastSweep.paidSkipped} 个收费模型没自动测（要测就手动点「测一下」）` : ''}`, `Last check ${ago(data.lastSweep.at)}: ${data.lastSweep.checked} free models, ${data.lastSweep.ok} ok, ${data.lastSweep.broken} not usable${data.lastSweep.skipped ? `, ${data.lastSweep.skipped} not reached` : ''}${data.lastSweep.paidSkipped ? `; ${data.lastSweep.paidSkipped} paid models not tested automatically` : ''}`)
+                  ? L(`上次体检 ${ago(data.lastSweep.at)}：测了 ${data.lastSweep.checked} 个免费模型，${data.lastSweep.ok} 个请求成功（附带工具参数）、${data.lastSweep.broken} 个明确不可用${data.lastSweep.skipped ? `、${data.lastSweep.skipped} 个这次没测成` : ''}${data.lastSweep.paidSkipped ? `；${data.lastSweep.paidSkipped} 个收费模型没自动测（要测就手动点「测一下」）` : ''}`, `Last check ${ago(data.lastSweep.at)}: ${data.lastSweep.checked} free models, ${data.lastSweep.ok} requests succeeded (with tools attached), ${data.lastSweep.broken} confirmed unusable${data.lastSweep.skipped ? `, ${data.lastSweep.skipped} not reached` : ''}${data.lastSweep.paidSkipped ? `; ${data.lastSweep.paidSkipped} paid models not tested automatically` : ''}`)
                   : L('还没做过全面体检：每天自动一次，也可以现在就测', 'No full check yet: it runs daily, or start one now')),
             h('button', { type: 'button', style: { ...S.btn, padding: '2px 8px' }, disabled: Boolean(data.sweeping), onClick: () => void act('POST', '/models/check', {}) }, data.sweeping ? L('体检中…', 'Checking…') : L('现在全部检查一遍', 'Check all now'))),
+          h('div', { style: { ...S.meta, marginTop: 4 } }, L('体检发送短请求并附带工具参数；成功说明接口接受了这次请求，不保证完整对话或实际工具调用都正常。', 'Checks send a short request with tools attached. Success means the endpoint accepted it; it does not guarantee a full conversation or actual tool execution.')),
           open ? h('div', { style: { marginTop: 8, fontSize: 12, lineHeight: 1.8 } },
+            h('div', { style: { ...S.meta, marginBottom: 6 } }, L('证据分层：探测仅证明接口接受带工具参数的短请求；以下是 dsh API key 的真实请求记录。', 'Evidence levels: a probe only proves the endpoint accepted a short request with tool parameters; below are real requests made with the dsh API key.')),
+            Object.entries(data.proof || {}).sort((a, b) => Date.parse(b[1].lastSuccessAt || '') - Date.parse(a[1].lastSuccessAt || '')).slice(0, 30).map(([model, p]) => h('div', { key: `proof-${model}`, style: { ...S.line, minHeight: 22 } },
+              h('span', { style: S.grow }, h('span', { style: S.mono }, prettyModel(model)), h('span', { style: { color: C.sub, marginLeft: 8 } }, L(`${p.requests} 次真实请求，${p.failures} 次失败；最近成功 ${ago(p.lastSuccessAt)}`, `${p.requests} real requests, ${p.failures} failed; last success ${ago(p.lastSuccessAt)}`))))),
             data.badKeys.map((k) => h('div', { key: `k-${k.source}`, style: { color: C.err } }, L(`${k.label}：key 不对（请求被拒），在上面「来源」里点「填 key」重新填一把`, `${k.label}: key rejected; enter a new one under Sources above`))),
             data.broken.map((b) => h('div', { key: b.model, style: { ...S.line, minHeight: 22 } },
               h('span', { style: S.grow }, h('span', { style: S.mono }, prettyModel(b.model)), h('span', { style: { color: C.sub, marginLeft: 8 } }, why[b.reason] || b.reason)),
@@ -1974,6 +2009,7 @@ window.__ModuleLoader__.load({
         h(EndpointCard, { endpoints: data.endpoints }),
         h(SourcesCard, { sources: data.sources, reload: () => load(false), onLogin: (s, session) => setLogin({ source: s, session }), onKey: (s) => setKeyDialog(s || true) }),
         h(ModelHealthCard, null),
+        h(ProductMetricsCard, null),
         h(CombosCard, null),
         h(KeysCard, { keys: data.keys, reload: () => load(false) }),
         h(ModelsCard, { stats: data.stats }),

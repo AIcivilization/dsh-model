@@ -1,7 +1,7 @@
 {
   "name": "dsh-model",
-  "version": "0.38.6",
-  "description": "A free pool that combines official free API quotas behind one key (soon-to-expire first, never charges you), daily check-in credits claimed for you (Trae, Qoder, WorkBuddy, MiniMax Code, WPS Lingxi…), one OpenAI-compatible address that relays every model, and 36 free or subscription sources. For DeepSeek Harness (dsh) and any OpenAI-compatible tool. 免费池：一把 key 用上各家官方免费额度 · 每天自动签到领积分 · 一个地址中转所有模型。",
+  "version": "0.38.7",
+  "description": "A free pool that combines eligible official free API quotas behind one key, daily check-in credits claimed for you, one OpenAI-compatible address for model sources, and 44 built-in sources plus custom endpoints. For DeepSeek Harness (dsh) and other OpenAI-compatible tools. 免费池：一把 key 聚合符合条件的官方免费额度 · 每天自动签到领积分 · 一个地址中转模型。",
   "keywords": [
     "siliconflow",
     "checkin",
@@ -59,6 +59,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check:docs": "node scripts/check-doc-consistency.mjs",
     "test": "vitest run",
     "test:contract": "vitest run tests/engine-contract",
     "pin-engine": "node scripts/pin-engine.mjs",

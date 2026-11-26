@@ -2,7 +2,7 @@
 
 # dsh-model
 
-**📅 Daily check-in credits claimed for you (12 products, plus your own) · 🆓 a free pool: one key for every provider's official free quota · 🔁 one address that relays every model · 🧩 37 sources**
+**📅 Daily check-in credits claimed for you (12 products, plus your own) · 🆓 a free pool for eligible official API quotas · 🔁 one address for your models · 🧩 44 built-in sources plus custom endpoints**
 
 Install once and all of this is taken care of. dsh gets a management page; without dsh, the command line does everything.
 
@@ -22,16 +22,15 @@ English · [中文](README.md)
 
 ## ✅ Why dsh-model
 
-| | dsh-model | Typical "free model" plugins |
-|---|---|---|
-| How models are connected | Each vendor's **official** API and proper subscription sign-ins | IDE clients' private APIs, some rewriting requests to get past the vendor's blocking |
-| Account safety | **No rewritten requests, no getting around a vendor's blocking**: if a vendor blocks it, we stop | Breaks when the vendor changes its protocol; accounts can be banned |
-| Where it works | One address for dsh, editors, scripts and other computers | Mostly inside dsh only |
-| Sources | **36**: free, subscription, local and pay as you go, plus your own | A dozen or so account channels |
-| Free quota | **Free pool** `free/auto`: official free quotas combined, soon-to-expire first, **anything that charges stays out by default** | — |
-| Check-in | Trae, Qoder, WorkBuddy, Doubao, OfficeAce, MiniMax Code, WPS Lingxi, DuMate, AStudio, Huawei CodeArts, SenseTime Raccoon, China Telecom TeleAgent, plus **your own custom services**; **several accounts each**, can run on an always-on VPS | Some |
-| Install | Installing from the plugin marketplace **sets itself up**; no GitHub needed in China | Restart dsh after installing |
-| Transparency | No server of our own, no telemetry; every address it talks to is in the [egress list](docs/EGRESS.md) | — |
+| Capability | dsh-model |
+|---|---|
+| Connections | Official APIs and supported sign-in flows; each source labels its connection type, cost and risks |
+| Request handling | **No rewriting requests to get around a vendor block**; a blocked route is reported and stopped |
+| Where it works | One OpenAI-compatible endpoint for dsh, editors, scripts and other devices |
+| Sources | **44 built-in sources**: free, subscription, local and pay as you go, plus custom endpoints |
+| Free quota | **Free pool** `free/auto`: eligible official free quotas combined, earlier resets and expirations first; quotas that may switch to paid stay out by default |
+| Check-in | 12 products plus custom services; supports multiple accounts and always-on VPS use |
+| Transparency | No model relay server of our own or telemetry; network addresses are listed in the [egress list](docs/EGRESS.md) |
 
 ## 📅 1. Daily check-in: credits land on their own
 
@@ -84,7 +83,7 @@ ModelScope's daily free calls, Cloudflare's daily Neurons, OpenRouter's `:free` 
 
 - **Soon-to-expire first**: daily quotas → monthly → ones with an end date → always-free → local models as the last resort.
 - **Moves on when one runs out**: a provider that hits its limit cools down until it resets (daily ones at midnight Beijing time, monthly ones on the 1st) and the next one takes over.
-- **Never spends your money**: new-user vouchers and quotas that "switch to pay as you go" stay **out** of the pool; to add one you set a token cap, and it is taken out at 90%.
+- **Reduces accidental charges**: new-user vouchers and quotas that "switch to pay as you go" stay **out** by default; adding one requires a token cap, and it is removed at 90% of that cap. Provider billing rules can change, so use provider-side budgets or limits too.
 - **See what is left to claim**: the "Free quota" card lists every quota (cycle, the free amount the provider gives, requirements, end date), with "Claim" to open the official page and "Add key" to put it in the pool.
 - **Finds new ones**: once a day it checks the quota catalog for new entries and connected platforms for new free models, and **asks you** before adding.
 - **Add your own**: any OpenAI-compatible service, as many as you like; tick "free quota" and it joins the pool.
@@ -231,7 +230,7 @@ See the [design doc](docs/DESIGN.md) (Chinese).
 ## Notes
 
 - Meant for personal use: one account of your own per provider; do not use it to serve others.
-- Using subscription and WorkBuddy credentials outside the official clients may break the providers' terms and put the account at risk. Decide for yourself.
+- Some subscription sign-ins and check-in integrations use credentials or product interfaces outside their official clients and may be restricted by provider terms. Review the source-specific notice before enabling them.
 - Windows 10 / 11 (x64, ARM64), macOS and Linux, Node ≥ 20.
 - The engine ships with npm, so no proxy is needed: the engine (CLIProxyAPI) is split into per-platform npm packages, and installing dsh-model pulls only the one for your platform (npm has mirrors in China), so setup no longer needs GitHub. Only when no package exists for your platform does it fall back to downloading from GitHub: setup then uses the system proxy (Windows, macOS) or `HTTPS_PROXY` automatically, and you can pass `--proxy <url>` or download the file yourself and set `DSH_MODEL_ENGINE_ARCHIVE`.
 - Windows: the background services start at sign-in with no window. If an antivirus blocks them (the program is gone or will not start), trust `%USERPROFILE%\.dsh-model` and run `dsh-model repair`.

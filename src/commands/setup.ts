@@ -28,6 +28,7 @@ import { installAdmin } from '../service/admin.js'
 import { rm } from 'node:fs/promises'
 import { uninstalledMarker } from './uninstall.js'
 import { DEFAULT_PUBLIC_PORT, publicHost } from '../remote/public.js'
+import { recordSetupReady, recordSetupStart } from '../daemon/product-metrics.js'
 
 export interface SetupOptions {
   port?: number
@@ -45,6 +46,7 @@ export async function setup(ctx: Ctx, opts: SetupOptions): Promise<number> {
   return withLock(ctx, async () => {
     const all = await loadAll(ctx)
     await ensureDir(ctx.paths.home, { owner: ctx.owner })
+    await recordSetupStart(ctx.paths.home, ctx.owner)
     // 主动安装：不再是「卸载过」，插件可以照常自动修好
     await rm(uninstalledMarker(ctx.paths.home), { force: true })
     resolveProxy(all, opts, await detectProxy(ctx.env, ctx.platform))
@@ -147,6 +149,7 @@ export async function setup(ctx: Ctx, opts: SetupOptions): Promise<number> {
 
     info('')
     if (failures.length) warn(L(`有 ${failures.length} 项没完成：${failures.join('、')}。修好后重新执行 dsh-model setup 即可`, `${failures.length} item(s) not done: ${failures.join(', ')}. Fix them and re-run dsh-model setup`))
+    else await recordSetupReady(ctx.paths.home, ctx.owner)
     const base = all.state.remote?.mode === 'caddy' && all.state.remote.publicUrl ? all.state.remote.publicUrl : `http://127.0.0.1:${all.config.port}/v1`
     next(L(`在 dsh 的模型列表里选 dsh-model 下的模型。其他软件：Base URL ${base}，key 用 dsh-model key add <名称> 领取`, `Pick a dsh-model model in dsh. Other software: Base URL ${base}, get a key with dsh-model key add <name>`))
     info(L('  订阅上游（codex 等）：dsh-model login <上游>', '  Subscription upstreams (codex etc.): dsh-model login <upstream>'))

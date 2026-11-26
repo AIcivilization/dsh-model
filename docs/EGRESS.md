@@ -2,9 +2,9 @@
 
 [English](#english) · 中文
 
-> 结论：**dsh-model 没有自己的服务器，也没有遥测**。它只在你用到某个功能时，直接连那一家的官方地址；你的 key、登录和对话不会发给我们或任何第三方。
+> 结论：**dsh-model 没有自有模型中转服务器，也没有遥测**。启用模型、登录、签到、远程访问或更新时，会连接下表中的服务；自定义来源还会连接用户填写的地址。对话会发送给你所选的模型上游，dsh-model 项目方不接收这些请求。
 >
-> 本清单按 0.31.3 的代码整理。可以自己复核：
+> 本清单按 **0.38.7** 的代码整理。免费目录会独立更新；来源与接口可能随上游变化。可以自己复核：
 > `grep -rhoE "https?://[a-zA-Z0-9.-]+" src plugin/index.js | sort -u`
 
 ## 1. 本机
@@ -110,9 +110,9 @@
 
 ## English
 
-**dsh-model has no server of its own and no telemetry.** It talks to a vendor's official address only when you use that feature; your keys, sign-ins and conversations are never sent to us or to any third party. Sections above:
+**dsh-model has no model relay server of its own and no telemetry.** It connects to the services listed below when you enable models, sign in, check in, configure remote access or update. Custom sources also connect to the address you enter. Prompts go to the model upstream you select; the dsh-model project does not receive those requests. Sections above:
 1. **Local**: the endpoint (always needs a key), the daemon's control port and the local model apps.
-2. **Model sources**: each provider's official API, only for sources you turned on.
+2. **Model sources**: provider APIs and sign-in endpoints used by sources you turned on. Some subscription or check-in integrations use product-specific interfaces; see the source notes and risk disclosures above.
 3. **Usage checks**: only for subscriptions you signed in to.
 4. **Check-in**: only for the accounts you added.
 5. **Install and update**: the npm registry, with GitHub only as the engine fallback (checked against pinned sha256); once a day the free-quota catalog (`free-catalog.json`) from the latest npm package via npmmirror or jsDelivr.

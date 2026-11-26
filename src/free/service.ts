@@ -72,6 +72,10 @@ export interface FreeEntryView {
   amount: string
   cycle: CatalogEntry['cycle']
   charges: boolean
+  /** 免费池判断依据；priced 使用实时模型目录价格，其余依赖有时效的目录核验 */
+  proof?: 'account' | 'priced' | 'list' | 'pattern'
+  /** pool=list 时目录中逐个登记的免费模型数量 */
+  proofModelCount?: number
   gates: string[]
   until?: string
   url: string
@@ -400,6 +404,7 @@ export class FreePool {
         ...localized(e),
         cycle: e.cycle,
         charges: e.charges,
+        ...(e.kind === 'api' ? { proof: e.pool ?? 'list', ...((e.pool ?? 'list') === 'list' ? { proofModelCount: e.freeModels?.length ?? 0 } : {}) } : {}),
         gates: e.gates ?? [],
         ...(e.until ? { until: e.until } : {}),
         url: e.url,
