@@ -39,7 +39,7 @@ English · [中文](README.md)
 
 | Product | How it connects | Every day |
 |---|---|---|
-| **Trae** | Detected automatically if Trae is installed and signed in; nothing to do | Check-in credits (200 a day in testing) |
+| **Trae** | Detected automatically if Trae (desktop or the Trae CLI) is installed and signed in; nothing to do, so a VPS with the Trae CLI checks in too | Check-in credits (200 a day in testing) |
 | **Qoder** | Paste a personal access token once (China or international) | That day's check-in credits |
 | **WorkBuddy (China)** | Sign in once (several accounts are fine) | Check-in credits |
 | **Doubao** (experimental) | On Mac / Windows click "Read from this computer" to use the account signed in to the Doubao app or a browser; or paste the cookie by hand (personal accounts only) | Daily trial credits |
@@ -242,6 +242,7 @@ Thanks to the people whose reports made dsh-model better:
 
 - [@jf888123](https://github.com/jf888123): reasoning effort in dsh ([#1](https://github.com/AIcivilization/dsh-model/issues/1))
 - [@sirius0427](https://github.com/sirius0427): configurable address for Ollama / LM Studio on another machine ([#2](https://github.com/AIcivilization/dsh-model/issues/2))
+- [@boyingliu01](https://github.com/boyingliu01): Trae check-in reads the Trae CLI sign-in, with the diagnosis and a patch ([#3](https://github.com/AIcivilization/dsh-model/issues/3))
 
 Questions or ideas are welcome as [issues](https://github.com/AIcivilization/dsh-model/issues).
 

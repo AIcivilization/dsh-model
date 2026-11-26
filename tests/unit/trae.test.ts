@@ -63,6 +63,25 @@ describe('Trae check-in', () => {
     }
   })
 
+  it('reads the Trae CLI login (~/.trae/cli/auth.json), skipping other regions (§14.52)', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-model-trae-'))
+    await mkdir(join(home, '.trae', 'cli'), { recursive: true })
+    const token = fakeJwt(2000000000)
+    await writeFile(join(home, '.trae', 'cli', 'auth.json'), JSON.stringify({ auth_mode: 'trae', trae: { access_token: token, user_id: '4065', region: 'CN', refresh_token: 'never-read', personal_device: { device_id: 'dev-1', platform_code: 'IDE_PC' } } }))
+    await mkdir(join(home, '.trae-cn', 'cli'), { recursive: true })
+    await writeFile(join(home, '.trae-cn', 'cli', 'auth.json'), JSON.stringify({ trae: { access_token: fakeJwt(2000000000), user_id: '9', region: 'SG' } }))
+    const saved = { xdg: process.env.XDG_CONFIG_HOME, appdata: process.env.APPDATA }
+    delete process.env.XDG_CONFIG_HOME
+    delete process.env.APPDATA
+    try {
+      const list = await findTraeCredentials(home)
+      expect(list).toEqual([{ token, deviceId: 'dev-1', source: 'Trae CLI', accountId: '4065' }])
+    } finally {
+      if (saved.xdg) process.env.XDG_CONFIG_HOME = saved.xdg
+      if (saved.appdata) process.env.APPDATA = saved.appdata
+    }
+  })
+
   it('picks a live login over an expired one, even when the expired one is found first', async () => {
     const now = Math.floor(Date.now() / 1000)
     const stale = { token: fakeJwt(now - 7 * 86400), deviceId: 'd1', source: 'TRAE SOLO CN' }

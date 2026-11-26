@@ -1131,3 +1131,13 @@ GitHub issue #2（sirius0427，2026-11-15）：自建的 LM Studio 和跑 dsh �
 - 入口：设置页来源里 Ollama / LM Studio 那行的「改地址」（留空恢复默认）；命令行 `dsh-model source base ollama|lmstudio <地址|default>`；控制接口 `POST /control/sources/<id>/base {base}`。
 - 连不上时的提示分本机和别的机器：别的机器的 LM Studio 要在 Developer 里启动服务并勾上「Serve on Local Network」，Ollama 要用 `OLLAMA_HOST=0.0.0.0` 启动，并放行防火墙端口。
 - 不加 API key：LM Studio、Ollama 默认不要 key；需要 key 的网关用「+ 手动添加来源」。
+
+### 14.52 Trae 签到认 Trae CLI 的登录（0.38.6）
+
+GitHub issue #3（boyingliu01，2026-11-25，附定位和补丁）：装了 Trae CLI（`trae-cli` / `traecli`）并已登录，签到卡片里却完全没有 Trae，连失败记录都没有。原因是找 Trae 登录只看桌面 App 的 `storage.json` 和旧的 `~/.trae*/trae-jwt-token`，新版 CLI 的登录在 `~/.trae/cli/auth.json`（明文 JSON），一份都没找到，Trae 就不出现。
+
+改动：再读 `~/.trae/cli/auth.json`、`~/.trae-cn/cli/auth.json` 的 `trae.access_token`、`trae.user_id`、`trae.personal_device.device_id`，和桌面 App 的登录一起按账号去重、挑没过期的。签到请求不变。
+
+和「不导入 CLI 登录」（§1.2）不冲突：那条是不把 CLI 的续期令牌复制过来接模型，因为续期令牌会轮换，两边会互相踢掉。这里和桌面 App 一样，每次签到现读 access token、不落盘、不续期，`refresh_token` 根本不读，CLI 的登录不受影响；令牌过期了由 CLI 自己续，下次签到读到新的。只用于签到，不接 Trae 的模型（§1.2 照旧）。
+
+海外区（`region` 不是 CN）的 CLI 登录不当成签到账号：签到接口在 api.trae.cn，签不了，只会天天记失败。登录过期的提示加了一句「用 Trae CLI 的话运行一次 trae-cli」。

@@ -39,7 +39,7 @@
 
 | 产品 | 怎么接入 | 每天 |
 |---|---|---|
-| **Trae** | 本机装了 Trae 并登录过，自动识别，什么都不用做 | 签到送积分（实测每天 200） |
+| **Trae** | 本机装了 Trae（桌面版或 Trae CLI）并登录过，自动识别，什么都不用做；所以装了 Trae CLI 的 VPS 也能签 | 签到送积分（实测每天 200） |
 | **Qoder** | 粘贴一次个人访问令牌（国内版、国际版都行） | 领当天的签到积分 |
 | **WorkBuddy 国内版** | 登录一次（可以加几个账号） | 签到送积分 |
 | **豆包**（实验） | Mac / Windows 上点「从本机自动读取」，读豆包电脑版或浏览器里已登录的账号；也可以手动粘贴 Cookie（只支持个人账号） | 「天天领额度」送体验额度 |
@@ -242,6 +242,7 @@ dsh · 编辑器 · 脚本 ──Bearer key──▶ 引擎 127.0.0.1:8317/v1（
 
 - [@jf888123](https://github.com/jf888123)：dsh 里调推理强度（[#1](https://github.com/AIcivilization/dsh-model/issues/1)）
 - [@sirius0427](https://github.com/sirius0427)：Ollama / LM Studio 装在别的机器上时可改地址（[#2](https://github.com/AIcivilization/dsh-model/issues/2)）
+- [@boyingliu01](https://github.com/boyingliu01)：Trae 签到认 Trae CLI 的登录，附了定位和补丁（[#3](https://github.com/AIcivilization/dsh-model/issues/3)）
 
 有问题或建议，欢迎 [提 issue](https://github.com/AIcivilization/dsh-model/issues)。
 

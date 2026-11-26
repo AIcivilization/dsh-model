@@ -3,7 +3,10 @@
 // 登录信息复用本机已登录的 Trae 桌面 App 或 CLI（只读，不落盘，只在内存里用）：
 //   1) 桌面 App：<应用数据>/{TRAE SOLO CN | Trae CN | Trae | TRAE SOLO}/User/globalStorage/storage.json
 //      里的 iCubeAuthInfo://icube.cloudide（加密信封）
-//   2) CLI：~/.trae-cn/trae-jwt-token、~/.trae/trae-jwt-token
+//   2) 旧版 CLI：~/.trae-cn/trae-jwt-token、~/.trae/trae-jwt-token
+//   3) Trae CLI（trae-cli / traecli）：~/.trae/cli/auth.json、~/.trae-cn/cli/auth.json，明文 JSON（§14.52，GitHub issue #3）
+//      只读 trae.access_token、user_id、personal_device.device_id；refresh_token 不读、不续期，
+//      所以不会和 CLI 抢令牌（过期了由 CLI 自己续，下次签到再读到新的）。
 // 解密算法、接口与请求头照 G57651/dsh-dual-checkin 的 trae 适配器（MIT），它又照 dsh-connect-trae 的 decrypt.ts。
 // 2026-10-14 在 Trae CN 3.4.2 上核对：存储位置和格式没变。
 //   POST https://api.trae.cn/trae/api/v2/ug/checkin_credits/status   今天签没签、能领多少
@@ -125,6 +128,22 @@ async function readTraeCredentials(home: string): Promise<TraeCredential[]> {
       if (token.split('.').length === 3) found.push({ token, deviceId: '', source: `~/${dir}`, ...(accountId ? { accountId } : {}) })
     } catch {
       // 没有
+    }
+  }
+  for (const dir of ['.trae', '.trae-cn']) {
+    try {
+      const auth = JSON.parse(await readFile(join(home, dir, 'cli', 'auth.json'), 'utf8')) as { trae?: { access_token?: unknown; user_id?: unknown; region?: unknown; personal_device?: { device_id?: unknown } } }
+      const t = auth.trae
+      const token = typeof t?.access_token === 'string' ? t.access_token.trim() : ''
+      if (token.split('.').length !== 3) continue
+      // 签到接口是国内版（api.trae.cn）的：海外区的账号签不了，不当成签到账号
+      if (t?.region !== undefined && String(t.region).toUpperCase() !== 'CN') continue
+      const uid = t?.user_id
+      const accountId = uid !== undefined && uid !== null && uid !== '' ? String(uid) : tokenAccountId(token)
+      const deviceId = typeof t?.personal_device?.device_id === 'string' ? t.personal_device.device_id : ''
+      found.push({ token, deviceId, source: 'Trae CLI', ...(accountId ? { accountId } : {}) })
+    } catch {
+      // 没装 CLI、没登录或读不了
     }
   }
   return found
