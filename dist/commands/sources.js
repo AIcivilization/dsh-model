@@ -93,8 +93,19 @@ export async function sources(ctx, opts = {}) {
     return 0;
 }
 export async function source(ctx, sub, id, opts) {
-    if (!sub || !id || !['enable', 'disable', 'logout', 'on', 'off'].includes(sub)) {
-        throw new DshModelError('usage', L('用法：dsh-model source enable|disable|logout <来源>', 'Usage: dsh-model source enable|disable|logout <source>'));
+    if (!sub || !id || !['enable', 'disable', 'logout', 'on', 'off', 'base'].includes(sub)) {
+        throw new DshModelError('usage', L('用法：dsh-model source enable|disable|logout <来源>，或 source base ollama|lmstudio <地址|default>', 'Usage: dsh-model source enable|disable|logout <source>, or source base ollama|lmstudio <address|default>'));
+    }
+    if (sub === 'base') {
+        // 本机模型服务改地址（§14.51）：default / 不写 = 恢复本机
+        const raw = opts.base && opts.base !== 'default' ? opts.base : null;
+        const s = (await control(ctx, 'POST', `/sources/${id}/base`, { base: raw }));
+        ok(L(`${s.label} 的地址：${s.base}`, `${s.label} address: ${s.base}`));
+        if (s.loggedIn)
+            ok(L(`连上了，${s.models} 个模型`, `Connected, ${s.models} models`));
+        else
+            warn(s.detail ?? L('还没连上', 'Not reachable yet'));
+        return 0;
     }
     if (sub === 'disable' || sub === 'off') {
         await control(ctx, 'POST', `/sources/${id}/disable`);

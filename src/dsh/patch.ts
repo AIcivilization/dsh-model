@@ -99,8 +99,36 @@ export function upsertProvider(text: string | null, providerId: string, spec: Pr
   }
   // 空的 {} 是 flow 样式，写入内容后改成块样式，和 dsh 自己写的风格一致
   ;(providers as YAMLMap).flow = false
-  providers.set(providerId, doc.createNode(spec))
+  const prev = providers.get(providerId, true)
+  const kept = prev ? keepUserSettings((prev as { toJSON(): unknown }).toJSON() as Record<string, unknown>, spec) : spec
+  providers.set(providerId, doc.createNode(kept))
   return { text: stringify(doc), createdLlmEntry }
+}
+
+/** 用户在 dsh 设置里给 dsh-model 的模型开的推理等级、请求兼容开关（§14.50）：同步时保留，不归 dsh-model 管 */
+const USER_ROUTE_KEYS = ['reasoning', 'compat'] as const
+const USER_MODEL_KEYS = ['reasoningEfforts', 'compat'] as const
+
+/**
+ * 以前同步时整个 provider 节点直接换成新的，用户在 dsh「设置 → 模型 → 推理等级」里打开的等级，
+ * 下一次同步（最迟半小时）就被抹掉，dsh-model 的模型永远调不了推理强度。现在按模型 id 把这几项带过去。
+ */
+export function keepUserSettings(prev: Record<string, unknown>, spec: ProviderSpec): ProviderSpec {
+  const out: Record<string, unknown> = { ...spec }
+  for (const k of USER_ROUTE_KEYS) if (out[k] === undefined && prev[k] !== undefined && prev[k] !== null) out[k] = prev[k]
+  const prevModels = new Map(
+    (Array.isArray(prev.models) ? prev.models : [])
+      .filter((m): m is Record<string, unknown> => Boolean(m) && typeof m === 'object' && typeof (m as { id?: unknown }).id === 'string')
+      .map((m) => [m.id as string, m]),
+  )
+  out.models = spec.models.map((m) => {
+    const old = prevModels.get(m.id)
+    if (!old) return m
+    const next: Record<string, unknown> = { ...m }
+    for (const k of USER_MODEL_KEYS) if (next[k] === undefined && old[k] !== undefined && old[k] !== null) next[k] = old[k]
+    return next
+  })
+  return out as unknown as ProviderSpec
 }
 
 /**

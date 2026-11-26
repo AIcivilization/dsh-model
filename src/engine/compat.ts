@@ -11,7 +11,7 @@ import { readJson } from '../util/fs.js'
 import { L } from '../i18n.js'
 import { checkedInKinds } from '../checkin/index.js'
 import { loadModelHealth } from '../daemon/model-health.js'
-import { LOCAL_SERVERS, loadLocalCatalog } from '../integrations/local.js'
+import { loadLocalCatalog, localServers } from '../integrations/local.js'
 import { keyProvider, loadKeyCatalog } from '../integrations/apikeys.js'
 import { COMBO_PREFIX, type Combo } from '../combo.js'
 import { activeEntries, loadCatalog } from '../free/catalog.js'
@@ -197,16 +197,17 @@ export async function loadCompatUpstreams(ctx: Ctx): Promise<CompatUpstream[]> {
   }
   // 本机模型服务（Ollama、LM Studio）：在运行、有模型、没被关掉就接进来
   const local = await loadLocalCatalog(ctx.paths.home)
-  for (const s of LOCAL_SERVERS) {
+  for (const s of await localServers(ctx.paths.home)) {
     const st = local[s.id]
-    if (!st?.reachable || !st.models.length || disabled.has(s.id)) continue
+    // 地址刚改、还没重新问过：先不接，等下一次检测（免得把旧机器的模型指到新地址上）
+    if (!st?.reachable || !st.models.length || disabled.has(s.id) || (st.base && st.base !== s.base)) continue
     out.push({
       name: s.id,
       label: s.label,
       baseUrl: s.base,
       apiKey: 'local',
       direct: true,
-      models: st.models.map((id) => ({ name: id, alias: `${s.id}/${id}`, displayName: `${s.label} · ${id}`, dshName: `${id} · ${costTag('local')}`, rate: 0, cost: 'local' as const, group: s.id, groupLabel: `${s.label}（本地）` })),
+      models: st.models.map((id) => ({ name: id, alias: `${s.id}/${id}`, displayName: `${s.label} · ${id}`, dshName: `${id} · ${costTag('local')}`, rate: 0, cost: 'local' as const, group: s.id, groupLabel: s.custom ? `${s.label}（${new URL(s.base).host}）` : `${s.label}（本地）` })),
     })
   }
   addAutoModels(out)

@@ -97,7 +97,7 @@ Check-in credits that only work inside a product (Trae, Qoder, MiniMax Code…) 
 |---|---|
 | **Free (suggested)** | **SiliconFlow** (reachable from China; some models free after identity verification), **Gemini** (if you can reach Google; the best free models) |
 | Free · limited | **ModelScope** (about 2,000 calls a day), **Zhipu GLM** (the Flash models), **iFlytek Spark** (Spark Lite), Tencent Hunyuan (hunyuan-lite), Baidu Qianfan (ERNIE Speed / Lite), Mistral, NVIDIA, Groq, OpenRouter (`:free` models) |
-| Local | Ollama, LM Studio: appear once started, no sign-in |
+| Local | Ollama, LM Studio: appear once started, no sign-in; on another machine, use "Change address" |
 | Subscription | Codex (ChatGPT Plus / Pro), Kimi Code, Grok, Muse, Devin: sign in from the management page |
 | Free · daily | **Cloudflare Workers AI** (10,000 Neurons a day, stops when used up), **InternLM** (monthly credits during the beta), **SenseNova** (public beta credit pools, rolling 5-hour / weekly caps) |
 | New-user / monthly credits (charge once used up) | SCNet (100M tokens), Ant Ling (¥10 a month), Tencent Cloud TokenHub (1M tokens), Alibaba Cloud Bailian, Volcengine Ark |
@@ -150,6 +150,8 @@ dsh-model does every sign-in itself. No provider CLI is installed and the server
 
 If a source is signed in but has no usable plan (say, a Kimi account without Kimi Code), dsh-model detects it, hides its models in dsh and shows where to subscribe.
 
+**Reasoning effort**: dsh-model models have no reasoning menu by default (dsh does not guess whether a custom provider's model reasons). To set it, in dsh go to Settings → Models, edit the dsh-model group, open "Custom settings", expand that model's "Model options", turn on "Reasoning levels", keep the levels the model supports (for example off, low, medium, high) and save. The model picker in the chat box then offers the effort, sent as `reasoning_effort`. dsh-model keeps these settings when it syncs models (since 0.38.5). If the upstream rejects a level, pick another or turn it off.
+
 > After updating dsh-model, restart dsh once so the management page picks up the new code. Model and switch changes need no restart.
 
 ## Sources and cost
@@ -157,7 +159,7 @@ If a source is signed in but has no usable plan (say, a Kimi account without Kim
 | Source | Cost | Notes |
 |---|---|---|
 | WorkBuddy / WorkBuddy AI | Free | Credits come with the account. **Since 2026-10 WorkBuddy recognises conversations sent by dsh and blocks them**, so it barely works inside dsh; check-in still works |
-| Ollama / LM Studio | Free | Models running on this machine; they appear once installed and started, no sign-in |
+| Ollama / LM Studio | Free | Models running on this machine; they appear once installed and started, no sign-in. Running on another machine on your network: "Change address" under Sources, or `dsh-model source base lmstudio http://192.168.1.20:1234` |
 | Gemini (Google AI Studio), Groq | Free · limited | Paste a free API key; daily / per-minute limits apply |
 | OpenRouter | Free · limited | `:free` models are free (about 50 requests a day) |
 | SiliconFlow | Free · limited | Some small models are free after identity verification |
@@ -233,6 +235,15 @@ See the [design doc](docs/DESIGN.md) (Chinese).
 - Windows 10 / 11 (x64, ARM64), macOS and Linux, Node ≥ 20.
 - The engine ships with npm, so no proxy is needed: the engine (CLIProxyAPI) is split into per-platform npm packages, and installing dsh-model pulls only the one for your platform (npm has mirrors in China), so setup no longer needs GitHub. Only when no package exists for your platform does it fall back to downloading from GitHub: setup then uses the system proxy (Windows, macOS) or `HTTPS_PROXY` automatically, and you can pass `--proxy <url>` or download the file yourself and set `DSH_MODEL_ENGINE_ARCHIVE`.
 - Windows: the background services start at sign-in with no window. If an antivirus blocks them (the program is gone or will not start), trust `%USERPROFILE%\.dsh-model` and run `dsh-model repair`.
+
+## Contributors
+
+Thanks to the people whose reports made dsh-model better:
+
+- [@jf888123](https://github.com/jf888123): reasoning effort in dsh ([#1](https://github.com/AIcivilization/dsh-model/issues/1))
+- [@sirius0427](https://github.com/sirius0427): configurable address for Ollama / LM Studio on another machine ([#2](https://github.com/AIcivilization/dsh-model/issues/2))
+
+Questions or ideas are welcome as [issues](https://github.com/AIcivilization/dsh-model/issues).
 
 ## License
 

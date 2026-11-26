@@ -1101,3 +1101,33 @@ dsh-checkin-all（同作者的独立签到插件，MIT）里已经做好、我�
 - 去掉编译器报的几处没用的 import / 变量。
 
 新测试 `tests/unit/concurrency.test.ts`：同时写 key、各种签到账号、OfficeAce 续期、手动凭据，全部保留；同进程三个 `withLock` 同时只有一个在里面、嵌套不卡死；取消请求时发 `onAbort`。前两条在旧代码上会失败。
+
+### 14.50 推理强度：同步时保留用户在 dsh 里开的推理等级（0.38.5）
+
+GitHub issue #1「推理强度怎么设置」（只有标题）。
+
+查下来：
+- dsh 0.2.2 的规则：自定义 provider（dsh-model 写进 `cordis.patch.yml` 的 `llm-pi-ai.providers.dsh-model*`）的模型，没有 `reasoningEfforts` 就当成不会推理，模型选择器里没有推理等级，也不发 `reasoning_effort`。dsh-model 写的模型只有 id、名字、上下文、输出上限、模态，所以全都调不了。
+- dsh 自己给了入口：「设置 → 模型 → 编辑 provider → 自定义设置 → 模型选项 → 推理等级」，写回同一个 provider 的 `models[].reasoningEfforts`。
+- 但 dsh-model 每次同步（启动、开关来源、每 30 分钟刷新目录）都把整个 provider 节点换成新的，用户开的等级最迟半小时就没了。这才是用户怎么设都没用的原因。
+
+改动：
+- `upsertProvider` 写之前先读旧节点，按模型 id 把用户设的 `reasoningEfforts`、`compat` 带到新节点；provider 上的 `reasoning`（默认等级）、`compat` 也带上。dsh-model 自己给了值的字段以 dsh-model 为准。模型下线了，它的设置跟着去掉。
+- 不替用户自动声明推理等级：各家接口对 `reasoning_effort` 支持不一，而且 dsh 对声明了推理的模型会把系统提示改用 `developer` 角色发，有的上游直接拒绝，自动打开可能把现在能用的模型弄坏。要不要开、开哪几档，由用户在 dsh 里按模型决定；这次只保证开了不会被冲掉。
+- README（中英）写明设置路径。
+
+### 14.51 Ollama / LM Studio 地址可改（0.38.5）
+
+GitHub issue #2（sirius0427，2026-11-15）：自建的 LM Studio 和跑 dsh 的不在同一台机器，写死 127.0.0.1 不合适。
+
+以前：Ollama 认 `OLLAMA_HOST` 环境变量（守护进程由系统服务拉起，平时拿不到），LM Studio 固定 `http://127.0.0.1:1234/v1`。
+
+现在：
+- 地址存在 `$DSH_MODEL_HOME/local-servers.json`（`{ "lmstudio": "http://192.168.1.20:1234/v1" }`），没写的用默认。`localServers(home)` 给出实际地址，检测、引擎上游、来源列表都用它。
+- 填法宽松：`192.168.1.20:1234`、`http://host:1234`、`http://host:1234/v1` 都行，自动补 `http://` 和 `/v1`；只认 http / https，不收带账号密码、查询串的地址。和默认一样就当成恢复默认。
+- 检测结果里记下问的是哪个地址。地址改了、还没检测过新地址时，旧地址的模型不接进引擎，来源也不显示在运行，免得把旧机器的模型名指到新机器上。改地址时马上检测一次，变了就同步。
+- 别的机器的检测超时 4 秒（本机 1.5 秒）。测试环境的「不看本机」开关只跳过默认地址，用户填的照问。
+- dsh 里的分组名带上那台机器（`LM Studio（192.168.1.20:1234）`），本机的照旧是「（本地）」。
+- 入口：设置页来源里 Ollama / LM Studio 那行的「改地址」（留空恢复默认）；命令行 `dsh-model source base ollama|lmstudio <地址|default>`；控制接口 `POST /control/sources/<id>/base {base}`。
+- 连不上时的提示分本机和别的机器：别的机器的 LM Studio 要在 Developer 里启动服务并勾上「Serve on Local Network」，Ollama 要用 `OLLAMA_HOST=0.0.0.0` 启动，并放行防火墙端口。
+- 不加 API key：LM Studio、Ollama 默认不要 key；需要 key 的网关用「+ 手动添加来源」。

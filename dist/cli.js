@@ -66,6 +66,8 @@ function help() {
   sources                              来源列表：开关、登录状态、账号、模型数
   source enable|disable|logout <来源> [--accept-risk]
                                        打开（未登录就打印链接登录）/ 关闭（保留登录）/ 退出登录
+  source base ollama|lmstudio <地址|default>
+                                       Ollama / LM Studio 装在别的机器上：改成那台的地址（default 恢复本机）
   login <来源> / logout <来源>          同 source enable / source logout
   stats                                按 key / 来源 / 模型的成功率、延迟、速度
   failures                             最近 24 小时失败的请求，以及该怎么办
@@ -101,6 +103,8 @@ Usage: dsh-model <command> [options]
   sources                              Sources: switch, sign-in state, account, models
   source enable|disable|logout <source> [--accept-risk]
                                        Turn on (prints a login link if needed) / off (keeps sign-in) / sign out
+  source base ollama|lmstudio <address|default>
+                                       Ollama / LM Studio on another machine: point to its address (default = this machine)
   login <source> / logout <source>     Same as source enable / source logout
   stats                                Success rate, latency and speed by key / source / model
   failures                             Failed requests in the last 24 hours, and what to do
@@ -172,7 +176,7 @@ export async function main(argv) {
             case 'sources':
                 return await sources(ctx, { all: o.all });
             case 'source':
-                return await source(ctx, a1, a2, { acceptRisk: o['accept-risk'] });
+                return await source(ctx, a1, a2, { acceptRisk: o['accept-risk'], ...(rest[0] !== undefined ? { base: rest[0] } : {}) });
             case 'stats':
                 return await stats(ctx);
             case 'failures':

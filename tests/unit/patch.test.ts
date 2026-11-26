@@ -52,6 +52,26 @@ describe('upsertProvider', () => {
     expect((readProvider(twice, ID) as { models: unknown[] }).models).toHaveLength(2)
   })
 
+  it('keeps reasoning levels and compat switches the user set in dsh across syncs (§14.50)', () => {
+    const once = upsertProvider(fx('no-llm.yml'), ID, spec).text
+    // 用户在 dsh「设置 → 模型 → 推理等级」里打开，dsh 写进同一个 provider
+    const doc = YAML.parse(once)
+    const prov = doc[2].config.providers[ID]
+    prov.reasoning = 'high'
+    prov.compat = { supportsDeveloperRole: false }
+    prov.models[0].reasoningEfforts = { off: null, low: 'low', high: 'high' }
+    const edited = YAML.stringify(doc)
+    const next = providerSpec(8317, [{ id: 'gpt-5', name: 'gpt-5 (renamed)' }, { id: 'kimi-k2', name: 'kimi-k2' }])
+    const synced = readProvider(upsertProvider(edited, ID, next).text, ID) as { reasoning?: string; compat?: unknown; models: Record<string, unknown>[] }
+    expect(synced.reasoning).toBe('high')
+    expect(synced.compat).toEqual({ supportsDeveloperRole: false })
+    expect(synced.models[0]).toMatchObject({ id: 'gpt-5', name: 'gpt-5 (renamed)', reasoningEfforts: { off: null, low: 'low', high: 'high' } })
+    expect(synced.models[1]!.reasoningEfforts).toBeUndefined()
+    // 模型下线了：它的设置跟着去掉
+    const gone = readProvider(upsertProvider(edited, ID, providerSpec(8317, [{ id: 'kimi-k2', name: 'kimi-k2' }])).text, ID) as { models: Record<string, unknown>[] }
+    expect(gone.models).toEqual([{ id: 'kimi-k2', name: 'kimi-k2' }])
+  })
+
   it('refuses non-array patch files and non-map configs', () => {
     expect(() => upsertProvider('foo: bar\n', ID, spec)).toThrow(/not a top-level array|顶层不是数组/)
     expect(() => upsertProvider('- id: llm-pi-ai\n  config: !!js "x"\n', ID, spec)).toThrow()

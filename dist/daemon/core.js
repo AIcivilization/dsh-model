@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { latestVersion, selfJobLog } from '../commands/self.js';
-import { LOCAL_SERVERS, loadLocalCatalog, refreshLocalCatalog } from '../integrations/local.js';
+import { loadLocalCatalog, localServers, normalizeLocalBase, refreshLocalCatalog, setLocalBase } from '../integrations/local.js';
 import { loadKeyCatalog, refreshKeyCatalogs, removeApiKey, setApiKey } from '../integrations/apikeys.js';
 import { adminInstalled, adminRequestPath } from '../service/admin.js';
 import { atomicWrite } from '../util/fs.js';
@@ -242,6 +242,7 @@ export class Daemon {
         const cats = await loadCatalogs(this.ctx.paths.home);
         const secrets = await loadSecrets(this.ctx);
         const local = await loadLocalCatalog(this.ctx.paths.home);
+        const servers = await localServers(this.ctx.paths.home);
         const keyCat = await loadKeyCatalog(this.ctx.paths.home);
         const badKeys = (await loadModelHealth(this.ctx.paths.home)).badKeys;
         // 订阅来源能服务的模型数：管理接口按凭据列模型（只数没停用的）
@@ -309,10 +310,13 @@ export class Daemon {
             }
             if (def.kind === 'local') {
                 const st = local[def.id];
-                const srv = LOCAL_SERVERS.find((x) => x.id === def.id);
-                const up = Boolean(st?.reachable);
+                const srv = servers.find((x) => x.id === def.id);
+                // 地址刚改、还没问过新地址：不算在运行
+                const up = Boolean(st?.reachable) && (!st?.base || st.base === srv.base);
                 return {
                     ...base,
+                    base: srv.base,
+                    customBase: srv.custom,
                     loggedIn: up,
                     enabled: up && (st?.models.length ?? 0) > 0 && !disabled.has(def.id),
                     ...(up ? { account: srv.base.replace(/\/v1$/, '') } : { detail: L(`没检测到 ${srv.label} 在运行（${srv.base.replace(/\/v1$/, '')}）`, `${srv.label} is not running (${srv.base.replace(/\/v1$/, '')})`) }),
@@ -323,6 +327,26 @@ export class Daemon {
             const has = Boolean(secrets.opencode?.key);
             return { ...base, loggedIn: has, enabled: has && !disabled.has('opencode'), models: has ? modelCount('opencode') : 0 };
         });
+    }
+    /** 改本机模型服务的地址（别的机器上的 LM Studio / Ollama，§14.51）；null = 恢复默认 */
+    async setLocalSourceBase(id, raw) {
+        const def = mustSource(id);
+        if (def.kind !== 'local')
+            throw new DshModelError('not_local', L(`${def.label} 不是本机模型服务，没有地址可改`, `${def.label} is not a local model server`));
+        let base = null;
+        if (raw !== null && raw !== undefined && String(raw).trim()) {
+            try {
+                base = normalizeLocalBase(String(raw));
+            }
+            catch {
+                throw new DshModelError('invalid_base_url', L('地址不对：写成 http://192.168.1.20:1234 这样（http 或 https，主机加端口）', 'That address is not valid: write it like http://192.168.1.20:1234 (http or https, host and port)'));
+            }
+        }
+        await setLocalBase(this.ctx.paths.home, def.id, base, this.ctx.owner);
+        // 马上问一次新地址，变了就同步进引擎和 dsh
+        if (await refreshLocalCatalog(this.ctx.paths.home, this.ctx.owner).catch(() => false))
+            await this.resync();
+        return (await this.sources()).find((s) => s.id === def.id);
     }
     async setSourceDisabled(id, off) {
         await withLock(this.ctx, async () => {
@@ -346,8 +370,15 @@ export class Daemon {
         if (def.kind === 'local') {
             await refreshLocalCatalog(this.ctx.paths.home, this.ctx.owner);
             const now = (await this.sourcesRaw()).find((s) => s.id === def.id);
-            if (!now.loggedIn || !now.models)
-                throw new DshModelError('local_not_running', now.detail ?? L(`${def.label} 没在运行`, `${def.label} is not running`), L(`先装好并启动它：${def.subscribeUrl}`, `Install and start it first: ${def.subscribeUrl}`));
+            if (!now.loggedIn || !now.models) {
+                const remote = now.customBase;
+                const hint = remote
+                    ? def.id === 'lmstudio'
+                        ? L('在那台机器的 LM Studio 里打开「Developer → Start Server」并勾上「Serve on Local Network」，防火墙放行端口；或点「改地址」检查地址', 'On that machine, start the server in LM Studio (Developer → Start Server) with "Serve on Local Network" on, and allow the port through the firewall; or check the address with "Change address"')
+                        : L('在那台机器上用 OLLAMA_HOST=0.0.0.0 启动 Ollama，防火墙放行 11434 端口；或点「改地址」检查地址', 'On that machine, start Ollama with OLLAMA_HOST=0.0.0.0 and allow port 11434 through the firewall; or check the address with "Change address"')
+                    : L(`先装好并启动它：${def.subscribeUrl}；装在别的机器上的话点「改地址」`, `Install and start it first: ${def.subscribeUrl}; if it runs on another machine, use "Change address"`);
+                throw new DshModelError('local_not_running', now.detail ?? L(`${def.label} 没在运行`, `${def.label} is not running`), hint);
+            }
         }
         if (def.kind === 'apikey' && !state.loggedIn) {
             throw new DshModelError('needs_key', L(`${def.label} 需要先填 API key`, `${def.label} needs an API key first`), def.subscribeUrl ? L(`在 ${def.subscribeUrl} 创建`, `Create one at ${def.subscribeUrl}`) : undefined);
@@ -1815,6 +1846,8 @@ export class Daemon {
                     return ok(await this.disable(seg[1]).then(() => ({ enabled: false })));
                 if (seg[2] === 'logout')
                     return ok(await this.logout(seg[1]).then(() => ({ loggedIn: false })));
+                if (seg[2] === 'base')
+                    return ok(await this.setLocalSourceBase(seg[1], b.base));
             }
             if (seg[0] === 'sources' && seg[1] && seg[2] === 'models') {
                 if (method === 'GET')

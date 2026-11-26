@@ -79,8 +79,37 @@ export function upsertProvider(text, providerId, spec) {
     // 空的 {} 是 flow 样式，写入内容后改成块样式，和 dsh 自己写的风格一致
     ;
     providers.flow = false;
-    providers.set(providerId, doc.createNode(spec));
+    const prev = providers.get(providerId, true);
+    const kept = prev ? keepUserSettings(prev.toJSON(), spec) : spec;
+    providers.set(providerId, doc.createNode(kept));
     return { text: stringify(doc), createdLlmEntry };
+}
+/** 用户在 dsh 设置里给 dsh-model 的模型开的推理等级、请求兼容开关（§14.50）：同步时保留，不归 dsh-model 管 */
+const USER_ROUTE_KEYS = ['reasoning', 'compat'];
+const USER_MODEL_KEYS = ['reasoningEfforts', 'compat'];
+/**
+ * 以前同步时整个 provider 节点直接换成新的，用户在 dsh「设置 → 模型 → 推理等级」里打开的等级，
+ * 下一次同步（最迟半小时）就被抹掉，dsh-model 的模型永远调不了推理强度。现在按模型 id 把这几项带过去。
+ */
+export function keepUserSettings(prev, spec) {
+    const out = { ...spec };
+    for (const k of USER_ROUTE_KEYS)
+        if (out[k] === undefined && prev[k] !== undefined && prev[k] !== null)
+            out[k] = prev[k];
+    const prevModels = new Map((Array.isArray(prev.models) ? prev.models : [])
+        .filter((m) => Boolean(m) && typeof m === 'object' && typeof m.id === 'string')
+        .map((m) => [m.id, m]));
+    out.models = spec.models.map((m) => {
+        const old = prevModels.get(m.id);
+        if (!old)
+            return m;
+        const next = { ...m };
+        for (const k of USER_MODEL_KEYS)
+            if (next[k] === undefined && old[k] !== undefined && old[k] !== null)
+                next[k] = old[k];
+        return next;
+    });
+    return out;
 }
 /**
  * 移除 providers.<id>。dropEntryIfEmpty：llm-pi-ai 条目是我们建的、且移除后只剩空壳，就整条删掉。

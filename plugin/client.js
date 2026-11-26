@@ -471,6 +471,13 @@ window.__ModuleLoader__.load({
         if (!window.confirm(s.kind === 'apikey' ? L(`删除 ${s.label} 的 key？（它的模型会从 dsh 里消失）`, `Remove the ${s.label} key? (its models disappear from dsh)`) : L(`退出 ${s.label} 的登录？（它的模型会从 dsh 里消失）`, `Sign out of ${s.label}? (its models disappear from dsh)`))) return
         try { await api('POST', `/sources/${s.id}/logout`); await reload() } catch (e) { setErr(e.message) }
       }
+      // 本机模型服务改地址（§14.51）：LM Studio / Ollama 装在别的机器上时填那台的地址；留空 = 恢复默认
+      const changeBase = async (s) => {
+        const v = window.prompt(L(`${s.label} 的地址（装在别的机器上就填那台的，比如 http://192.168.1.20:${s.id === 'ollama' ? 11434 : 1234}）。\n留空恢复默认（本机）。`, `${s.label} address (if it runs on another machine, enter that one, e.g. http://192.168.1.20:${s.id === 'ollama' ? 11434 : 1234}).\nLeave empty for the default (this machine).`), s.customBase ? s.base.replace(/\/v1$/, '') : '')
+        if (v === null) return
+        setBusy((b) => ({ ...b, [s.id]: true }))
+        try { await api('POST', `/sources/${s.id}/base`, { base: v.trim() || null }); setErr(''); await reload() } catch (e) { setErr(e.message) } finally { setBusy((b) => ({ ...b, [s.id]: false })) }
+      }
       // 已登录的照常列出；没登录的收进一个可折叠的列表（默认收起；一个都没登录时默认展开）
       // 顶部只放正在用的（已登录且打开）；没登录的、关掉的都收进折叠列表
       const signedIn = visible.filter((s) => s.loggedIn && s.enabled)
@@ -500,7 +507,8 @@ window.__ModuleLoader__.load({
                 s.loggedIn && s.kind === 'apikey' && s.detail ? ` · ${s.detail}` : '')),
             s.loggedIn && s.enabled && s.models && !s.usage?.noAccess ? h('button', { type: 'button', style: S.btn, onClick: () => setPicking(picking === s.id ? '' : s.id) }, L('选模型', 'Models')) : null,
             s.loggedIn && s.kind !== 'opencode' && s.kind !== 'local' ? h('button', { type: 'button', style: S.btn, onClick: () => logout(s) }, s.kind === 'apikey' ? L('删除 key', 'Remove key') : L('退出登录', 'Sign out')) : null,
-            (s.kind === 'opencode' || s.kind === 'apikey') && s.loggedIn ? h('button', { type: 'button', style: S.btn, onClick: () => onKey(s) }, L('换 key', 'Change key')) : null),
+            (s.kind === 'opencode' || s.kind === 'apikey') && s.loggedIn ? h('button', { type: 'button', style: S.btn, onClick: () => onKey(s) }, L('换 key', 'Change key')) : null,
+            s.kind === 'local' ? h('button', { type: 'button', style: S.btn, disabled: busy[s.id], title: s.base || '', onClick: () => changeBase(s) }, L('改地址', 'Change address')) : null),
           picking === s.id ? h(ModelPicker, { source: s, onClose: (saved) => { setPicking(''); if (saved) void reload() } }) : null,
           s.kind === 'workbuddy' && s.loggedIn ? h('div', { style: { fontSize: 12, color: C.warn, paddingLeft: 46, marginTop: 4, lineHeight: 1.6 } }, L('注意：WorkBuddy 现在会认出 dsh 发出的对话并拦下（「请求被拦截」），「测一下」能通也不代表能用。积分建议在官方 WorkBuddy 软件里用；签到照常。', 'Note: WorkBuddy now recognises conversations sent by dsh and blocks them ("请求被拦截"); a passing Test does not mean it works. Use the credits in the official WorkBuddy app; check-in still works.')) : null,
           s.enabled ? h(Usage, { usage: s.usage, subscribeUrl: s.subscribeUrl }) : null,

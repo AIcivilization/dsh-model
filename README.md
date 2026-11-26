@@ -97,7 +97,7 @@
 |---|---|
 | **免费（推荐）** | **硅基流动**（国内直连，实名后部分模型免费）、**Gemini**（能上外网，免费模型里质量最好） |
 | 免费 · 额度少 | **魔搭 ModelScope**（每天约 2000 次）、**智谱 GLM**（Flash 系列免费）、**讯飞星火**（Spark Lite 免费）、腾讯混元（hunyuan-lite）、百度千帆（ERNIE Speed / Lite）、Mistral、NVIDIA、Groq、OpenRouter（`:free` 模型） |
-| 本机 | Ollama、LM Studio：启动后自动出现，不用登录 |
+| 本机 | Ollama、LM Studio：启动后自动出现，不用登录；装在别的机器上点「改地址」 |
 | 订阅 | Codex（ChatGPT Plus / Pro）、Kimi Code、Grok、Muse、Devin：在管理页里登录即可 |
 | 免费 · 每天 | **Cloudflare Workers AI**（每天 1 万 Neurons，超额即停）、**书生 InternLM**（测试期每月送额度）、**商汤日日新 SenseNova**（公测积分池，滚动 5 小时 / 每周上限） |
 | 新人 / 每月额度（用完扣钱） | 超算互联网（1 亿 Token）、蚂蚁百灵（每月 10 元）、腾讯云 TokenHub（100 万 Token）、阿里云百炼、火山方舟 |
@@ -149,6 +149,8 @@ dsh-model setup
 
 已登录但没有可用套餐的来源（比如 Kimi 账号没有开通 Kimi Code），dsh-model 会实测出来，把它的模型从 dsh 里隐藏，并给出开通链接。
 
+**推理强度**：dsh-model 的模型默认没有推理等级菜单（dsh 对自定义 provider 的模型不猜它会不会推理）。要调的话，在 dsh 的「设置 → 模型」里编辑对应的 dsh-model 分组，打开「自定义设置」，展开那个模型的「模型选项」，打开「推理等级」，按该模型支持的档位保留几行（比如 off、low、medium、high）后保存。之后聊天框的模型选择器里就能选推理强度，dsh 会以 `reasoning_effort` 发出去。dsh-model 同步模型时会保留这些设置（0.38.5 起）。上游不支持的档位会被它拒绝，换个档位或关掉即可。
+
 > 更新 dsh-model 后，要重启一次 dsh，管理页的新代码才会生效。模型和开关的变化不需要重启。
 
 ## 来源与费用
@@ -156,7 +158,7 @@ dsh-model setup
 | 来源 | 费用 | 说明 |
 |---|---|---|
 | WorkBuddy / WorkBuddy AI | 免费 | 账号自带积分。**2026-10 起 WorkBuddy 会认出 dsh 发出的对话并拦下**，在 dsh 里基本用不了；签到照常 |
-| Ollama / LM Studio | 免费 | 本机运行的模型。装好并启动后自动出现，不用登录 |
+| Ollama / LM Studio | 免费 | 本机运行的模型。装好并启动后自动出现，不用登录。装在局域网另一台机器上：来源里点「改地址」，或 `dsh-model source base lmstudio http://192.168.1.20:1234` |
 | Gemini（Google AI Studio）、Groq | 免费·额度少 | 填免费 API key 即可，每天 / 每分钟有上限 |
 | OpenRouter | 免费·额度少 | 名字带 `:free` 的模型免费（每天约 50 次） |
 | 硅基流动 | 免费·额度少 | 实名认证后部分小模型免费 |
@@ -233,6 +235,15 @@ dsh · 编辑器 · 脚本 ──Bearer key──▶ 引擎 127.0.0.1:8317/v1（
 - 支持 Windows 10 / 11（x64、ARM64）、macOS、Linux，需要 Node ≥ 20。
 - 引擎随 npm 一起装，国内免代理：引擎（CLIProxyAPI）按平台拆成了几个 npm 包，装 dsh-model 时只把当前平台那一个带下来（npm 国内有镜像），setup 不用再连 GitHub。npm 上没有对应平台的包时，才回退到从 GitHub 下载：这时 setup 会自动用上系统代理（Windows、macOS）或 `HTTPS_PROXY`，也可以用 `--proxy <地址>` 指定代理，或手动下载后设置 `DSH_MODEL_ENGINE_ARCHIVE`。
 - Windows：后台服务登录后自动运行、不弹窗口。如果被杀毒软件拦下（程序不见了或启动不了），把 `%USERPROFILE%\.dsh-model` 加入信任，再执行 `dsh-model repair`。
+
+## 贡献者
+
+感谢提出问题、帮 dsh-model 变得更好的朋友：
+
+- [@jf888123](https://github.com/jf888123)：dsh 里调推理强度（[#1](https://github.com/AIcivilization/dsh-model/issues/1)）
+- [@sirius0427](https://github.com/sirius0427)：Ollama / LM Studio 装在别的机器上时可改地址（[#2](https://github.com/AIcivilization/dsh-model/issues/2)）
+
+有问题或建议，欢迎 [提 issue](https://github.com/AIcivilization/dsh-model/issues)。
 
 ## License
 
